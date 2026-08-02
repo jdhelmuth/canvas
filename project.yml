@@ -1,0 +1,85 @@
+name: Canvas
+options:
+  bundleIdPrefix: com.johnhelmuth
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+  minimumXcodeGenVersion: "2.40.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 575UAD2C77
+    TARGETED_DEVICE_FAMILY: "2"
+    SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "YES"
+    INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: "YES"
+    INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+    INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Canvas needs access to your photos so it can display the albums you choose as a private digital frame."
+    INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Canvas does not need to add or change photos."
+    INFOPLIST_KEY_UIBackgroundModes: "audio"
+    GOOGLE_PHOTOS_CLIENT_ID: "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com"
+    GOOGLE_PHOTOS_CALLBACK_SCHEME: "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005"
+    CODE_SIGN_STYLE: Automatic
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      ENABLE_TESTABILITY: YES
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+targets:
+  Canvas:
+    type: application
+    platform: iOS
+    info:
+      path: Canvas/Info.plist
+      properties:
+        CFBundleDisplayName: Canvas Slideshow
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        GooglePhotosClientID: $(GOOGLE_PHOTOS_CLIENT_ID)
+        GooglePhotosCallbackScheme: $(GOOGLE_PHOTOS_CALLBACK_SCHEME)
+        ITSAppUsesNonExemptEncryption: false
+    sources:
+      - path: Canvas
+    resources:
+      - path: Canvas/Resources
+      - path: Canvas/PrivacyInfo.xcprivacy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johnhelmuth.canvas
+        PRODUCT_NAME: Canvas
+        TARGETED_DEVICE_FAMILY: "2"
+        INFOPLIST_KEY_CFBundleDisplayName: Canvas Slideshow
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "2"
+        UIRequiredDeviceCapabilities:
+          - arm64
+    scheme:
+      testTargets:
+        - CanvasTests
+        - CanvasUITests
+      gatherCoverageData: true
+  CanvasTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CanvasTests
+    dependencies:
+      - target: Canvas
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johnhelmuth.canvas.tests
+        GENERATE_INFOPLIST_FILE: YES
+  CanvasUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CanvasUITests
+    dependencies:
+      - target: Canvas
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.johnhelmuth.canvas.uitests
+        GENERATE_INFOPLIST_FILE: YES

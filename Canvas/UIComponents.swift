@@ -1,0 +1,242 @@
+import SwiftUI
+import Foundation
+import UIKit
+
+/// Shared clock renderer used by both the proportional settings preview and
+/// fullscreen playback. A single view keeps style, color, weight, and opacity
+/// behavior identical in both places.
+struct ClockOverlayView: View {
+    let date: Date
+    let settings: OverlaySettings
+    let mediaImage: UIImage?
+
+    init(date: Date, settings: OverlaySettings, mediaImage: UIImage? = nil) {
+        self.date = date
+        self.settings = settings
+        self.mediaImage = mediaImage
+    }
+
+    private var clockSize: CGFloat { CGFloat(settings.clockSize ?? max(settings.fontSize, 64)) }
+    private var textOpacity: Double {
+        OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity).text
+    }
+    private var resolvedClockColor: ClockColor {
+        let configured = settings.clockColor ?? .white
+        return configured.isAdaptive ? AdaptiveClockColorResolver.color(for: mediaImage) : configured
+    }
+    private var color: Color { resolvedClockColor.color }
+    private var legibilityShadow: Color {
+        resolvedClockColor == .black ? .white.opacity(0.34) : .black.opacity(0.34)
+    }
+
+    var body: some View {
+        Group {
+            if (settings.clockStyle ?? .digital) == .analog {
+                AnalogClockView(
+                    date: date,
+                    face: settings.analogClockFace ?? .arabic,
+                    color: color,
+                    opacity: textOpacity,
+                    font: settings.clockFont ?? .system,
+                    weight: settings.clockWeight ?? .semibold
+                )
+                .frame(width: clockSize, height: clockSize)
+            } else {
+                Text(date, style: .time)
+                    .font(.system(size: clockSize, weight: (settings.clockWeight ?? .semibold).fontWeight, design: (settings.clockFont ?? .system).design))
+                    .fontWidth((settings.clockWidth ?? .standard).fontWidth)
+                    .foregroundStyle(color)
+                    .opacity(textOpacity)
+            }
+        }
+        .shadow(color: legibilityShadow, radius: 2, x: 0, y: 1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel((settings.clockStyle ?? .digital) == .analog ? "Analog clock, \((settings.analogClockFace ?? .arabic).title)" : "Digital clock")
+        .accessibilityValue(date.formatted(date: .omitted, time: .shortened))
+    }
+}
+
+struct AnalogClockView: View {
+    let date: Date
+    let face: AnalogClockFace
+    let color: Color
+    let opacity: Double
+    let font: ClockFont
+    let weight: ClockWeight
+
+    private var calendar: Calendar { Calendar.current }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let side = min(proxy.size.width, proxy.size.height)
+            let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+            let radius = max(0, side * 0.40)
+            let hour = Double(calendar.component(.hour, from: date) % 12)
+            let minute = Double(calendar.component(.minute, from: date))
+            let second = Double(calendar.component(.second, from: date))
+            let hourAngle = (hour + minute / 60) * 30
+            let minuteAngle = (minute + second / 60) * 6
+            let secondAngle = second * 6
+
+            ZStack {
+                Circle()
+                    .fill(.black.opacity(0.12))
+                    .overlay(Circle().stroke(color.opacity(opacity * 0.8), lineWidth: max(1, side * 0.014)))
+                faceMarkers(side: side, center: center, radius: radius)
+                AnalogClockHand(angle: hourAngle, length: side * 0.23)
+                    .stroke(color.opacity(opacity), style: StrokeStyle(lineWidth: max(2, side * 0.035), lineCap: .round))
+                AnalogClockHand(angle: minuteAngle, length: side * 0.32)
+                    .stroke(color.opacity(opacity), style: StrokeStyle(lineWidth: max(1.5, side * 0.022), lineCap: .round))
+                AnalogClockHand(angle: secondAngle, length: side * 0.35)
+                    .stroke(color.opacity(opacity * 0.78), style: StrokeStyle(lineWidth: max(1, side * 0.01), lineCap: .round))
+                Circle()
+                    .fill(color.opacity(opacity))
+                    .frame(width: max(4, side * 0.045), height: max(4, side * 0.045))
+                    .position(center)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Analog clock, \(face.title)")
+        .accessibilityValue(date.formatted(date: .omitted, time: .shortened))
+    }
+
+    @ViewBuilder
+    private func faceMarkers(side: CGFloat, center: CGPoint, radius: CGFloat) -> some View {
+        switch face {
+        case .arabic, .roman:
+            let labels = face == .arabic
+                ? (1...12).map(String.init)
+                : ["XII", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI"]
+            let markerSize = max(7, side * 0.105)
+            ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
+                let angle = Double(index) * 30 * Double.pi / 180
+                markerLabel(label, size: markerSize, center: center, radius: radius, angle: angle)
+            }
+        case .dashes:
+            let markerWidth = max(2, side * 0.018)
+            let markerHeight = max(8, side * 0.095)
+            ForEach(0..<12, id: \.self) { index in
+                let angle = Double(index) * 30 * Double.pi / 180
+                dashMarker(width: markerWidth, height: markerHeight, center: center, radius: radius, angle: angle, rotation: Double(index) * 30)
+            }
+        }
+    }
+
+    private func markerLabel(_ label: String, size: CGFloat, center: CGPoint, radius: CGFloat, angle: Double) -> some View {
+        Text(label)
+            .font(.system(size: size))
+            .fontWeight(weight.fontWeight)
+            .fontDesign(font.design)
+            .foregroundStyle(color.opacity(opacity))
+            .position(
+                x: center.x + CGFloat(sin(angle)) * radius,
+                y: center.y - CGFloat(cos(angle)) * radius
+            )
+    }
+
+    private func dashMarker(width: CGFloat, height: CGFloat, center: CGPoint, radius: CGFloat, angle: Double, rotation: Double) -> some View {
+        Capsule()
+            .fill(color.opacity(opacity))
+            .frame(width: width, height: height)
+            .rotationEffect(.degrees(rotation))
+            .position(
+                x: center.x + CGFloat(sin(angle)) * radius,
+                y: center.y - CGFloat(cos(angle)) * radius
+            )
+    }
+}
+
+private struct AnalogClockHand: Shape {
+    let angle: Double
+    let length: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radians = angle * Double.pi / 180
+        let end = CGPoint(
+            x: center.x + CGFloat(sin(radians)) * length,
+            y: center.y - CGFloat(cos(radians)) * length
+        )
+        var path = Path()
+        path.move(to: center)
+        path.addLine(to: end)
+        return path
+    }
+}
+
+struct CanvasBackground: View {
+    var body: some View {
+        LinearGradient(colors: [Color(uiColor: .systemBackground), Color(uiColor: .secondarySystemBackground)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            .ignoresSafeArea()
+    }
+}
+
+struct AppMark: View {
+    let size: CGFloat
+    var body: some View {
+        Group {
+            if let icon = Self.bundledAppIcon {
+                Image(uiImage: icon).resizable().scaledToFill()
+            } else {
+                RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
+                    .fill(Color(red: 0.04, green: 0.08, blue: 0.17))
+                    .overlay(Image(systemName: "photo.artframe").foregroundStyle(.orange))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: size * 0.12, y: size * 0.06)
+        .accessibilityHidden(true)
+    }
+
+    private static let bundledAppIcon: UIImage? = {
+        let info = Bundle.main.infoDictionary
+        let iconDictionaries = [info?["CFBundleIcons~ipad"], info?["CFBundleIcons"]]
+        for value in iconDictionaries {
+            guard let icons = value as? [String: Any],
+                  let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+                  let files = primary["CFBundleIconFiles"] as? [String] else { continue }
+            for filename in files.reversed() {
+                if let image = UIImage(named: filename) { return image }
+            }
+        }
+        return UIImage(named: "AppIcon")
+    }()
+}
+
+struct ArcShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path(); path.move(to: CGPoint(x: rect.minX, y: rect.midY + rect.height * 0.18))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.midY + rect.height * 0.12), control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.08))
+        return path
+    }
+}
+
+struct PrimaryCanvasButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.headline).foregroundStyle(.white).padding(.horizontal, 20).padding(.vertical, 13).background(LinearGradient(colors: [.orange, .pink], startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule()).opacity(configuration.isPressed ? 0.78 : 1)
+    }
+}
+struct SecondaryCanvasButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.headline).foregroundStyle(.primary).padding(.horizontal, 18).padding(.vertical, 12).background(.thinMaterial, in: Capsule()).overlay(Capsule().stroke(.secondary.opacity(0.18))).opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+extension ButtonStyle where Self == PrimaryCanvasButtonStyle { static var primaryCanvas: Self { .init() } }
+extension ButtonStyle where Self == SecondaryCanvasButtonStyle { static var secondaryCanvas: Self { .init() } }
+
+extension Double {
+    var cleanSeconds: String {
+        if self.truncatingRemainder(dividingBy: 60) == 0 && self >= 60 { return "\(Int(self / 60)) min" }
+        return self == floor(self) ? "\(Int(self)) sec" : "\(String(format: "%.1f", self)) sec"
+    }
+}
+
+extension Color {
+    init(hex: String) {
+        let value = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var number: UInt64 = 0; Scanner(string: value).scanHexInt64(&number)
+        self.init(.sRGB, red: Double((number >> 16) & 0xff) / 255, green: Double((number >> 8) & 0xff) / 255, blue: Double(number & 0xff), opacity: 1)
+    }
+}
