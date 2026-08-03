@@ -105,6 +105,17 @@ enum CaptureDateOverlayPolicy {
     static func visibleDates(_ dates: [Date?], enabled: Bool) -> [Date?] {
         enabled ? dates : dates.map { _ in nil }
     }
+
+    /// Video and Live Photo surfaces own their single capture-date layer. The
+    /// outer player overlay is reserved for still-image/loading surfaces so a
+    /// UIKit-backed media view cannot receive the same badge twice.
+    static func mediaSurfaceOwnsDate(for kind: MediaKind?) -> Bool {
+        kind == .video || kind == .livePhoto
+    }
+
+    static func showsStandaloneDate(enabled: Bool, kind: MediaKind?, layoutImagesEmpty: Bool) -> Bool {
+        enabled && !mediaSurfaceOwnsDate(for: kind) && layoutImagesEmpty
+    }
 }
 
 /// Keeps the two overlay opacity controls independent: the general value is
@@ -150,7 +161,7 @@ enum AppleAlbumCategory: String, CaseIterable, Identifiable {
         switch self {
         case .smart: "Smart Albums"
         case .user: "My Albums"
-        case .shared: "Shared Albums"
+        case .shared: "Shared"
         case .other: "Other & System"
         }
     }
@@ -158,15 +169,59 @@ enum AppleAlbumCategory: String, CaseIterable, Identifiable {
     static func category(for album: AlbumReference) -> AppleAlbumCategory {
         guard album.source == .applePhotos else { return .other }
         if album.isSmart { return .smart }
-        if album.isShared { return .shared }
+        if album.isShared || album.subtype == Int(PHAssetCollectionSubtype.albumCloudShared.rawValue) { return .shared }
         if album.subtype == Int(PHAssetCollectionSubtype.albumRegular.rawValue) { return .user }
         return .other
+    }
+
+    static func albums(from albums: [AlbumReference], in category: AppleAlbumCategory) -> [AlbumReference] {
+        albums.filter { self.category(for: $0) == category }
+    }
+}
+
+/// Persists category identifiers rather than enum positions so adding a new
+/// category in a later build does not discard an existing user's order. Unknown
+/// identifiers are retained in the stored array and known categories missing
+/// from older settings are appended in the default order.
+enum AppleAlbumCategoryOrdering {
+    static let defaultCategories: [AppleAlbumCategory] = [.smart, .user, .shared, .other]
+    static var defaultIdentifiers: [String] { defaultCategories.map(\.rawValue) }
+
+    static func normalizedIdentifiers(from stored: [String]?) -> [String] {
+        let values = stored ?? []
+        var seenKnown = Set<AppleAlbumCategory>()
+        var result: [String] = []
+        for identifier in values {
+            if let category = AppleAlbumCategory(rawValue: identifier) {
+                guard seenKnown.insert(category).inserted else { continue }
+            }
+            result.append(identifier)
+        }
+        for category in defaultCategories where !seenKnown.contains(category) {
+            result.append(category.rawValue)
+        }
+        return result
+    }
+
+    static func categories(from stored: [String]?) -> [AppleAlbumCategory] {
+        normalizedIdentifiers(from: stored).compactMap(AppleAlbumCategory.init(rawValue:))
+    }
+
+    static func moving(fromOffsets offsets: IndexSet, toOffset destination: Int, in stored: [String]?) -> [String] {
+        var normalized = normalizedIdentifiers(from: stored)
+        let knownSlots = normalized.indices.filter { AppleAlbumCategory(rawValue: normalized[$0]) != nil }
+        var categories = knownSlots.map { AppleAlbumCategory(rawValue: normalized[$0])! }
+        categories.move(fromOffsets: offsets, toOffset: destination)
+        for (slot, category) in zip(knownSlots, categories) {
+            normalized[slot] = category.rawValue
+        }
+        return normalized
     }
 }
 
 /// Adaptive clock color is intentionally a two-choice contrast decision. It
 /// uses a tiny local luminance sample, never image upload or cloud metadata,
-/// and can be applied independently to each paired tile.
+/// and is applied only to the single shared clock layer.
 enum AdaptiveClockColorResolver {
     static func color(forLuminance luminance: CGFloat) -> ClockColor {
         luminance >= 0.58 ? .black : .white
@@ -179,6 +234,51 @@ enum AdaptiveClockColorResolver {
     static func color(for image: UIImage?) -> ClockColor {
         guard let image else { return .white }
         return color(forLuminance: CaptureDateContrastResolver.luminance(of: image))
+    }
+}
+
+/// The slideshow owns one clock layer for the whole displayed frame. Adaptive
+/// color samples a representative image for that layer; it never creates a
+/// clock per tile. Keeping the render plan pure makes the single-layer rule
+/// regression-testable without requiring a device UI run.
+struct ClockOverlayRenderPlan: Equatable {
+    let sharedClockCount: Int
+    let perTileClockCounts: [Int]
+    let adaptiveColorUsesRepresentativeImage: Bool
+
+    var totalClockCount: Int {
+        sharedClockCount + perTileClockCounts.reduce(0, +)
+    }
+}
+
+enum ClockOverlayPlacementPolicy {
+    static func plan(showTime: Bool, color: ClockColor?, visibleTileCount: Int) -> ClockOverlayRenderPlan {
+        ClockOverlayRenderPlan(
+            sharedClockCount: showTime ? 1 : 0,
+            perTileClockCounts: Array(repeating: 0, count: max(0, visibleTileCount)),
+            adaptiveColorUsesRepresentativeImage: showTime && color == .adaptive
+        )
+    }
+}
+
+/// Guards the UIKit-backed Live Photo bridge against restarting playback on
+/// every SwiftUI update and against late results from a previous asset.
+enum LivePhotoPlaybackPolicy {
+    static func shouldStartPlayback(isPlaying: Bool, playbackActive: Bool) -> Bool {
+        isPlaying && !playbackActive
+    }
+
+    static func shouldRestartAfterPlayback(loop: Bool, isPlaying: Bool) -> Bool {
+        loop && isPlaying
+    }
+
+    static func acceptsLoadedPhoto(
+        assetID: String,
+        currentAssetID: String?,
+        requestGeneration: Int,
+        currentGeneration: Int
+    ) -> Bool {
+        assetID == currentAssetID && requestGeneration == currentGeneration
     }
 }
 
@@ -311,6 +411,29 @@ enum PlaybackIndexResolver {
     }
 }
 
+enum PlaybackAdvancePolicy {
+    /// A swipe supplies an explicit displayed-group target. It must not be
+    /// treated as the automatic end-of-loop transition that may reshuffle.
+    static func shouldShuffleAfterAdvance(
+        direction: Int,
+        targetIndex: Int?,
+        currentIndex: Int,
+        shuffleEachLoop: Bool
+    ) -> Bool {
+        shuffleEachLoop && targetIndex == nil && direction > 0 && currentIndex == 0
+    }
+}
+
+enum PlaybackMediaSurfacePolicy {
+    static func usesSingleTile(for kind: MediaKind) -> Bool {
+        kind != .photo
+    }
+
+    static func allowsCompanions(for kind: MediaKind) -> Bool {
+        kind == .photo
+    }
+}
+
 struct PlaybackGroupSelection: Equatable {
     let indices: [Int]
 
@@ -325,21 +448,36 @@ enum PlaybackGroupResolver {
         imageSizes: [CGSize],
         currentIndex: Int,
         layout: LayoutStyle,
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        singleMediaIndices: Set<Int> = []
     ) -> PlaybackGroupSelection {
         guard imageSizes.indices.contains(currentIndex) else { return PlaybackGroupSelection(indices: []) }
+        if singleMediaIndices.contains(currentIndex) {
+            return PlaybackGroupSelection(indices: [currentIndex])
+        }
         switch layout {
         case .single, .fitBlurred, .intelligentFill, .solidBackground:
             return PlaybackGroupSelection(indices: [currentIndex])
         case .pairHorizontal, .pairVertical:
-            let partner = currentIndex + 1 < imageSizes.count ? [currentIndex + 1] : []
+            let partner = currentIndex + 1 < imageSizes.count && !singleMediaIndices.contains(currentIndex + 1) ? [currentIndex + 1] : []
             return PlaybackGroupSelection(indices: [currentIndex] + partner)
         case .collageThree:
-            return PlaybackGroupSelection(indices: Array(currentIndex..<min(imageSizes.count, currentIndex + 3)))
+            var indices: [Int] = []
+            for index in currentIndex..<min(imageSizes.count, currentIndex + 3) {
+                guard !singleMediaIndices.contains(index) else { break }
+                indices.append(index)
+            }
+            return PlaybackGroupSelection(indices: indices.isEmpty ? [currentIndex] : indices)
         case .gridFour:
-            return PlaybackGroupSelection(indices: Array(currentIndex..<min(imageSizes.count, currentIndex + 4)))
+            var indices: [Int] = []
+            for index in currentIndex..<min(imageSizes.count, currentIndex + 4) {
+                guard !singleMediaIndices.contains(index) else { break }
+                indices.append(index)
+            }
+            return PlaybackGroupSelection(indices: indices.isEmpty ? [currentIndex] : indices)
         case .automatic, .portraitPair:
-            let suffix = Array(imageSizes[currentIndex...])
+            let boundary = imageSizes.indices.first(where: { $0 > currentIndex && singleMediaIndices.contains($0) }) ?? imageSizes.count
+            let suffix = Array(imageSizes[currentIndex..<boundary])
             let local = PairLayoutResolver.selection(imageSizes: suffix, canvasSize: canvasSize)
             let mapped = local.indices.compactMap { offset -> Int? in
                 let index = currentIndex + offset
@@ -352,14 +490,21 @@ enum PlaybackGroupResolver {
     static func groupStarts(
         imageSizes: [CGSize],
         layout: LayoutStyle,
-        canvasSize: CGSize
+        canvasSize: CGSize,
+        singleMediaIndices: Set<Int> = []
     ) -> [Int] {
         guard !imageSizes.isEmpty else { return [] }
         var starts: [Int] = []
         var cursor = 0
         while cursor < imageSizes.count {
             starts.append(cursor)
-            let group = selection(imageSizes: imageSizes, currentIndex: cursor, layout: layout, canvasSize: canvasSize)
+            let group = selection(
+                imageSizes: imageSizes,
+                currentIndex: cursor,
+                layout: layout,
+                canvasSize: canvasSize,
+                singleMediaIndices: singleMediaIndices
+            )
             let last = group.indices.max() ?? cursor
             cursor = max(cursor + 1, last + 1)
         }
@@ -372,12 +517,24 @@ enum PlaybackGroupResolver {
         direction: Int,
         layout: LayoutStyle,
         canvasSize: CGSize,
-        repeatEnabled: Bool
+        repeatEnabled: Bool,
+        singleMediaIndices: Set<Int> = []
     ) -> Int? {
-        let starts = groupStarts(imageSizes: imageSizes, layout: layout, canvasSize: canvasSize)
+        let starts = groupStarts(
+            imageSizes: imageSizes,
+            layout: layout,
+            canvasSize: canvasSize,
+            singleMediaIndices: singleMediaIndices
+        )
         guard !starts.isEmpty else { return nil }
         let currentStart = starts.last(where: { start in
-            let group = selection(imageSizes: imageSizes, currentIndex: start, layout: layout, canvasSize: canvasSize)
+            let group = selection(
+                imageSizes: imageSizes,
+                currentIndex: start,
+                layout: layout,
+                canvasSize: canvasSize,
+                singleMediaIndices: singleMediaIndices
+            )
             return group.indices.contains(currentIndex)
         }) ?? starts.last(where: { $0 <= currentIndex }) ?? starts[0]
         guard let position = starts.firstIndex(of: currentStart) else { return starts[0] }

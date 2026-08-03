@@ -103,6 +103,7 @@ final class PlaybackViewModel: ObservableObject {
             return advance(direction: direction)
         }
         let imageSizes = queue.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
+        let singleMediaIndices = Set(queue.indices.filter { PlaybackMediaSurfacePolicy.usesSingleTile(for: queue[$0].kind) })
         let targetSize = canvasSize.width > 0 && canvasSize.height > 0
             ? canvasSize
             : UIScreen.main.bounds.size
@@ -112,7 +113,8 @@ final class PlaybackViewModel: ObservableObject {
             direction: direction,
             layout: settings.layout,
             canvasSize: targetSize,
-            repeatEnabled: settings.repeatEnabled
+            repeatEnabled: settings.repeatEnabled,
+            singleMediaIndices: singleMediaIndices
         ) else {
             // A grouped slideshow has no valid forward destination at the
             // end when repeat is off. Do not fall back to the next raw item;
@@ -142,7 +144,14 @@ final class PlaybackViewModel: ObservableObject {
             return false
         }
         currentIndex = nextIndex
-        if direction > 0, currentIndex == 0, settings.shuffleEachLoop { queue.shuffle() }
+        if PlaybackAdvancePolicy.shouldShuffleAfterAdvance(
+            direction: direction,
+            targetIndex: targetIndex,
+            currentIndex: currentIndex,
+            shuffleEachLoop: settings.shuffleEachLoop
+        ) {
+            queue.shuffle()
+        }
         loadTask = Task { [weak self] in
             guard let self else { return }
             await self.loadCurrent(generation: generation)
@@ -174,7 +183,9 @@ final class PlaybackViewModel: ObservableObject {
             currentImage = image
             layoutImages = [image]
             layoutAssets = [asset]
-            let companions = companionAssets(after: asset)
+            let companions = PlaybackMediaSurfacePolicy.allowsCompanions(for: asset.kind)
+                ? companionAssets(after: asset)
+                : []
             for companion in companions {
                 guard !Task.isCancelled, loadGeneration == generation else { return }
                 if let companionImage = await loader.image(for: companion, service: library, size: CGSize(width: 1000, height: 1000)) {

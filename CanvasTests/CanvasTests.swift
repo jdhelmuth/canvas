@@ -188,6 +188,66 @@ final class CanvasTests: XCTestCase {
         )
     }
 
+    func testLivePhotoIsSingleGroupBoundaryAndAdjacentGroupsRemainOrdered() {
+        let imageSizes = [
+            CGSize(width: 1170, height: 2532), // Live Photo: one UIKit tile
+            CGSize(width: 900, height: 1400),
+            CGSize(width: 1000, height: 1500),
+            CGSize(width: 2532, height: 1170), // another Live Photo boundary
+            CGSize(width: 800, height: 1200),
+            CGSize(width: 700, height: 1000)
+        ]
+        let singleMediaIndices: Set<Int> = [0, 3]
+        let canvasSize = CGSize(width: 1366, height: 1024)
+
+        XCTAssertEqual(
+            PlaybackGroupResolver.groupStarts(
+                imageSizes: imageSizes,
+                layout: .automatic,
+                canvasSize: canvasSize,
+                singleMediaIndices: singleMediaIndices
+            ),
+            [0, 1, 3, 4]
+        )
+        XCTAssertEqual(
+            PlaybackGroupResolver.nextGroupIndex(
+                imageSizes: imageSizes,
+                currentIndex: 1,
+                direction: 1,
+                layout: .automatic,
+                canvasSize: canvasSize,
+                repeatEnabled: false,
+                singleMediaIndices: singleMediaIndices
+            ),
+            3
+        )
+        XCTAssertEqual(
+            PlaybackGroupResolver.nextGroupIndex(
+                imageSizes: imageSizes,
+                currentIndex: 4,
+                direction: -1,
+                layout: .automatic,
+                canvasSize: canvasSize,
+                repeatEnabled: false,
+                singleMediaIndices: singleMediaIndices
+            ),
+            3
+        )
+        XCTAssertFalse(
+            PlaybackAdvancePolicy.shouldShuffleAfterAdvance(
+                direction: 1,
+                targetIndex: 3,
+                currentIndex: 3,
+                shuffleEachLoop: true
+            )
+        )
+        XCTAssertTrue(PlaybackMediaSurfacePolicy.usesSingleTile(for: .livePhoto))
+        XCTAssertTrue(PlaybackMediaSurfacePolicy.usesSingleTile(for: .video))
+        XCTAssertFalse(PlaybackMediaSurfacePolicy.usesSingleTile(for: .photo))
+        XCTAssertFalse(PlaybackMediaSurfacePolicy.allowsCompanions(for: .livePhoto))
+        XCTAssertTrue(PlaybackMediaSurfacePolicy.allowsCompanions(for: .photo))
+    }
+
     func testSingleTileCaptureDateBadgeStaysInsideBottomLeadingCorner() {
         let tile = CGSize(width: 1024, height: 1366)
         let badge = CGSize(width: 128, height: 30)
@@ -307,22 +367,97 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(OverlayBackgroundPolicy.effectiveOpacity(opacity: 1, transparency: 1), 0, accuracy: 0.0001)
     }
 
-    func testAdaptiveClockColorChoosesEachTileContrastIndependently() {
+    func testAdaptiveClockColorChangesOnlyOneSharedClockLayer() {
+        let plan = ClockOverlayPlacementPolicy.plan(showTime: true, color: .adaptive, visibleTileCount: 2)
+        XCTAssertEqual(plan.sharedClockCount, 1)
+        XCTAssertEqual(plan.perTileClockCounts, [0, 0])
+        XCTAssertEqual(plan.totalClockCount, 1)
+        XCTAssertTrue(plan.adaptiveColorUsesRepresentativeImage)
         XCTAssertEqual(AdaptiveClockColorResolver.colors(forLuminances: [0.12, 0.92, 0.58]), [.white, .black, .black])
         XCTAssertEqual(ClockColor.adaptive.title, "Adaptive")
         XCTAssertEqual(ClockColor.amber.title, "Amber")
         XCTAssertEqual(ClockColor.purple.title, "Purple")
     }
 
-    func testAppleAlbumCategoriesSeparateSmartUserSharedAndOtherCollections() {
+    func testCaptureDatePolicyKeepsLivePhotoDateToOneMediaSurfaceLayer() {
+        XCTAssertTrue(CaptureDateOverlayPolicy.mediaSurfaceOwnsDate(for: .livePhoto))
+        XCTAssertTrue(CaptureDateOverlayPolicy.mediaSurfaceOwnsDate(for: .video))
+        XCTAssertFalse(CaptureDateOverlayPolicy.showsStandaloneDate(enabled: true, kind: .livePhoto, layoutImagesEmpty: true))
+        XCTAssertFalse(CaptureDateOverlayPolicy.showsStandaloneDate(enabled: true, kind: .video, layoutImagesEmpty: true))
+        XCTAssertTrue(CaptureDateOverlayPolicy.showsStandaloneDate(enabled: true, kind: .photo, layoutImagesEmpty: true))
+    }
+
+    func testLivePhotoPlaybackPolicyPreventsRestartLoopsAndStaleLoads() {
+        XCTAssertFalse(LivePhotoPlaybackPolicy.shouldStartPlayback(isPlaying: true, playbackActive: true))
+        XCTAssertTrue(LivePhotoPlaybackPolicy.shouldStartPlayback(isPlaying: true, playbackActive: false))
+        XCTAssertTrue(LivePhotoPlaybackPolicy.shouldRestartAfterPlayback(loop: true, isPlaying: true))
+        XCTAssertFalse(LivePhotoPlaybackPolicy.shouldRestartAfterPlayback(loop: true, isPlaying: false))
+        XCTAssertTrue(LivePhotoPlaybackPolicy.acceptsLoadedPhoto(assetID: "live-2", currentAssetID: "live-2", requestGeneration: 4, currentGeneration: 4))
+        XCTAssertFalse(LivePhotoPlaybackPolicy.acceptsLoadedPhoto(assetID: "live-1", currentAssetID: "live-2", requestGeneration: 3, currentGeneration: 4))
+        XCTAssertFalse(LivePhotoPlaybackPolicy.acceptsLoadedPhoto(assetID: "live-2", currentAssetID: "live-2", requestGeneration: 3, currentGeneration: 4))
+    }
+
+    func testAppleAlbumCategoriesMergeCloudSharedIntoSharedWithoutLosingSelections() {
         let smart = AlbumReference(id: "smart", title: "Favorites", subtype: Int(PHAssetCollectionSubtype.smartAlbumFavorites.rawValue), estimatedCount: 2, isSmart: true, isShared: false)
         let user = AlbumReference(id: "user", title: "Family", subtype: Int(PHAssetCollectionSubtype.albumRegular.rawValue), estimatedCount: 2, isSmart: false, isShared: false)
-        let shared = AlbumReference(id: "shared", title: "Shared", subtype: Int(PHAssetCollectionSubtype.albumCloudShared.rawValue), estimatedCount: 2, isSmart: false, isShared: true)
+        let sharedFlag = AlbumReference(id: "shared-flag", title: "Shared flag", subtype: 0, estimatedCount: 2, isSmart: false, isShared: true)
+        let sharedSubtype = AlbumReference(id: "shared-subtype", title: "Shared subtype", subtype: Int(PHAssetCollectionSubtype.albumCloudShared.rawValue), estimatedCount: 3, isSmart: false, isShared: false)
         let other = AlbumReference(id: "other", title: "Imported", subtype: Int(PHAssetCollectionSubtype.albumImported.rawValue), estimatedCount: 2, isSmart: false, isShared: false)
         XCTAssertEqual(AppleAlbumCategory.category(for: smart), .smart)
         XCTAssertEqual(AppleAlbumCategory.category(for: user), .user)
-        XCTAssertEqual(AppleAlbumCategory.category(for: shared), .shared)
+        XCTAssertEqual(AppleAlbumCategory.category(for: sharedFlag), .shared)
+        XCTAssertEqual(AppleAlbumCategory.category(for: sharedSubtype), .shared)
         XCTAssertEqual(AppleAlbumCategory.category(for: other), .other)
+
+        let allAlbums = [smart, user, sharedFlag, sharedSubtype, other]
+        XCTAssertEqual(AppleAlbumCategory.albums(from: allAlbums, in: .shared).map(\.id), [sharedFlag.id, sharedSubtype.id])
+        XCTAssertEqual(AppleAlbumCategory.albums(from: allAlbums, in: .other).map(\.id), [other.id])
+        let selected = [sharedFlag, sharedSubtype]
+        XCTAssertEqual(selected.map(\.id), [sharedFlag.id, sharedSubtype.id])
+    }
+
+    func testAppleAlbumCategoryDefaultOrderIsStableAndIncludesEmptyCategories() {
+        XCTAssertEqual(
+            AppleAlbumCategoryOrdering.categories(from: nil),
+            [.smart, .user, .shared, .other]
+        )
+        XCTAssertEqual(
+            AppleAlbumCategoryOrdering.categories(from: ["other", "smart", "user", "shared"]),
+            [.other, .smart, .user, .shared]
+        )
+    }
+
+    func testAppleAlbumCategoryReorderingPreservesUnknownIdentifiers() {
+        let stored = ["smart", "future-category", "user", "shared", "other"]
+        let reordered = AppleAlbumCategoryOrdering.moving(fromOffsets: IndexSet(integer: 0), toOffset: 4, in: stored)
+        XCTAssertEqual(reordered, ["user", "future-category", "shared", "other", "smart"])
+        XCTAssertEqual(
+            AppleAlbumCategoryOrdering.categories(from: reordered),
+            [.user, .shared, .other, .smart]
+        )
+        XCTAssertTrue(reordered.contains("future-category"))
+    }
+
+    @MainActor
+    func testAppleAlbumCategoryReorderingPersistsAcrossSettingsStoreReload() {
+        let suiteName = "CanvasTests.album-category-order.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let first = SettingsStore(defaults: defaults)
+        let reordered = AppleAlbumCategoryOrdering.moving(
+            fromOffsets: IndexSet(integer: 0),
+            toOffset: 4,
+            in: first.settings.albumCategoryOrder
+        )
+        first.update { $0.albumCategoryOrder = reordered }
+
+        let restored = SettingsStore(defaults: defaults)
+        XCTAssertEqual(restored.settings.albumCategoryOrder, reordered)
+        XCTAssertEqual(
+            AppleAlbumCategoryOrdering.categories(from: restored.settings.albumCategoryOrder),
+            [.user, .shared, .other, .smart]
+        )
     }
 
     func testAnalogClockFaceOptionsAreSelectable() {
@@ -475,6 +610,48 @@ final class CanvasTests: XCTestCase {
         let restored = PresetApplication.settings(for: second, preserving: [first, second])
         XCTAssertEqual(restored.photoDuration, 60)
         XCTAssertEqual(restored.presets.map(\.id), [first.id, second.id])
+    }
+
+    func testPresetSavePolicyValidatesNamesAndStoresTrimmedSnapshot() {
+        var snapshot = CanvasSettings()
+        snapshot.photoDuration = 42
+        let existing = [CanvasPreset(name: "Evening", settings: CanvasSettings())]
+
+        if case .failure(.emptyName) = PresetSavePolicy.append(name: "  \n", snapshot: snapshot, to: existing) {
+            // expected
+        } else {
+            XCTFail("An empty preset name must be rejected visibly")
+        }
+        if case .failure(.duplicateName) = PresetSavePolicy.append(name: " evening ", snapshot: snapshot, to: existing) {
+            // expected
+        } else {
+            XCTFail("Duplicate preset names must be rejected")
+        }
+        guard case .success(let saved) = PresetSavePolicy.append(name: "  Morning  ", snapshot: snapshot, to: existing) else {
+            return XCTFail("A valid preset name should save")
+        }
+        XCTAssertEqual(saved.map(\.name), ["Evening", "Morning"])
+        XCTAssertEqual(saved.last?.settings.photoDuration, 42)
+        XCTAssertTrue(saved.last?.settings.presets.isEmpty == true)
+    }
+
+    @MainActor
+    func testPresetSavePersistsAcrossSettingsStoreReload() {
+        let suiteName = "CanvasTests.presets.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let first = SettingsStore(defaults: defaults)
+        var snapshot = first.settings
+        snapshot.photoDuration = 99
+        guard case .success(let presets) = PresetSavePolicy.append(name: "Night", snapshot: snapshot, to: first.settings.presets) else {
+            return XCTFail("The valid preset should be produced")
+        }
+        first.update { $0.presets = presets }
+
+        let restored = SettingsStore(defaults: defaults)
+        XCTAssertEqual(restored.settings.presets.map(\.name), ["Night"])
+        XCTAssertEqual(restored.settings.presets.first?.settings.photoDuration, 99)
     }
 
     func testLegacyAlbumReferenceDecodesAsApplePhotos() throws {

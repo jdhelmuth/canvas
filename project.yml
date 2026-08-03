@@ -38,6 +38,12 @@ targets:
         GooglePhotosClientID: $(GOOGLE_PHOTOS_CLIENT_ID)
         GooglePhotosCallbackScheme: $(GOOGLE_PHOTOS_CALLBACK_SCHEME)
         ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     sources:
       - path: Canvas
     resources:

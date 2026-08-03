@@ -448,6 +448,9 @@ struct CanvasSettings: Codable, Equatable {
     var schedules: [ScheduleRule] = []
     var appearanceMode: AppearanceMode = .system
     var hasCompletedOnboarding = false
+    /// Optional so settings written by older builds decode unchanged. When
+    /// absent, the album picker uses AppleAlbumCategory's stable default order.
+    var albumCategoryOrder: [String]? = nil
     var presets: [CanvasPreset] = []
 
     var effectiveFramingMode: MediaFramingMode {
@@ -637,6 +640,32 @@ enum PresetApplication {
         var restored = preset.settings
         restored.presets = currentPresets
         return restored
+    }
+}
+
+enum PresetSaveError: Error, Equatable {
+    case emptyName
+    case duplicateName
+}
+
+/// Validates and appends a preset snapshot without recursively embedding the
+/// preset library. Names are trimmed and compared case-insensitively so a
+/// save can never silently create an indistinguishable duplicate.
+enum PresetSavePolicy {
+    static func append(
+        name: String,
+        snapshot: CanvasSettings,
+        to presets: [CanvasPreset]
+    ) -> Result<[CanvasPreset], PresetSaveError> {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else { return .failure(.emptyName) }
+        guard !presets.contains(where: { $0.name.caseInsensitiveCompare(normalizedName) == .orderedSame }) else {
+            return .failure(.duplicateName)
+        }
+
+        var snapshot = snapshot
+        snapshot.presets = []
+        return .success(presets + [CanvasPreset(name: normalizedName, settings: snapshot)])
     }
 }
 

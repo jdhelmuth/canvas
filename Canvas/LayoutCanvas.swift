@@ -70,8 +70,6 @@ struct LayoutCanvas: View {
     let showCaptureDates: Bool
     let captureDateStyle: CaptureDateBadgeStyle
     let framingMode: MediaFramingMode
-    let clockSettings: OverlaySettings?
-    let clockDate: Date
 
     init(
         images: [UIImage],
@@ -84,9 +82,7 @@ struct LayoutCanvas: View {
         captureDates: [Date?] = [],
         showCaptureDates: Bool = false,
         captureDateStyle: CaptureDateBadgeStyle = .darkBadgeLightText,
-        framingMode: MediaFramingMode? = nil,
-        clockSettings: OverlaySettings? = nil,
-        clockDate: Date = Date()
+        framingMode: MediaFramingMode? = nil
     ) {
         self.images = images
         self.style = style
@@ -99,8 +95,6 @@ struct LayoutCanvas: View {
         self.showCaptureDates = showCaptureDates
         self.captureDateStyle = captureDateStyle
         self.framingMode = framingMode ?? (fit ? .fitWithBorder : .fillZoom)
-        self.clockSettings = clockSettings
-        self.clockDate = clockDate
     }
 
     var body: some View {
@@ -184,35 +178,10 @@ struct LayoutCanvas: View {
                     .frame(width: renderedSize.width, height: renderedSize.height)
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
-                    .overlay(alignment: overlayAlignment) {
-                        // Adaptive clock color is evaluated per visible tile
-                        // so a light photo beside a dark photo never forces
-                        // one illegible shared text color. Fixed colors
-                        // continue to use PlayerView's shared overlay.
-                        if let clockSettings,
-                           clockSettings.showTime,
-                           clockSettings.clockColor == .adaptive {
-                            ClockOverlayView(date: clockDate, settings: clockSettings, mediaImage: images[index])
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: overlayAlignment(for: clockSettings.position))
-                                .padding(12)
-                        }
-                    }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
         } else { Color.clear }
-    }
-
-    private var overlayAlignment: Alignment { .bottomLeading }
-
-    private func overlayAlignment(for position: OverlayPosition) -> Alignment {
-        switch position {
-        case .topLeading: .topLeading
-        case .topTrailing: .topTrailing
-        case .bottomLeading: .bottomLeading
-        case .bottomTrailing: .bottomTrailing
-        case .center: .center
-        }
     }
 }
 

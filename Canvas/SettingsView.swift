@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var showAlbumPicker = false
     @State private var newPresetName = ""
     @State private var showPresetPrompt = false
+    @State private var presetNameError: String?
     @State private var showAudioImporter = false
 
     var body: some View {
@@ -27,11 +28,7 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.fontWeight(.semibold) } }
             .sheet(isPresented: $showAlbumPicker) { AlbumPickerView(isOnboarding: false) }
-            .alert("Save preset", isPresented: $showPresetPrompt) {
-                TextField("Preset name", text: $newPresetName)
-                Button("Save") { savePreset() }
-                Button("Cancel", role: .cancel) { }
-            }
+            .sheet(isPresented: $showPresetPrompt) { presetSaveSheet }
             .fileImporter(isPresented: $showAudioImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
                 importAudio(result)
             }
@@ -329,12 +326,63 @@ struct SettingsView: View {
                     Button(role: .destructive) { store.settingsStore.settings.presets.removeAll { $0.id == preset.id } } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                 }
             }
-            Button { newPresetName = ""; showPresetPrompt = true } label: { Label("Save current setup", systemImage: "plus") }
+            Button {
+                newPresetName = ""
+                presetNameError = nil
+                showPresetPrompt = true
+            } label: {
+                Label("Save current setup", systemImage: "plus")
+            }
+            .accessibilityIdentifier("save-current-setup")
         }
     }
     private var privacySection: some View { Section("Storage & Privacy") { Label("Private by default", systemImage: "lock.shield.fill"); Text("Canvas stores preferences and exclusions locally. Apple photos remain in Apple Photos. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. Canvas has no uploads, analytics, ads, or tracking.").font(.footnote).foregroundStyle(.secondary) } }
 
-    private func savePreset() { guard !newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }; var snapshot = store.settings; snapshot.presets = []; store.settingsStore.settings.presets.append(CanvasPreset(name: newPresetName, settings: snapshot)) }
+    private var presetSaveSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Preset name") {
+                    TextField("Name", text: $newPresetName)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("preset-name-field")
+                    if let presetNameError {
+                        Text(presetNameError)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("preset-name-error")
+                    }
+                }
+            }
+            .navigationTitle("Save preset")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showPresetPrompt = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { savePreset() }
+                        .accessibilityIdentifier("confirm-save-preset")
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func savePreset() {
+        var snapshot = store.settings
+        snapshot.presets = []
+        switch PresetSavePolicy.append(name: newPresetName, snapshot: snapshot, to: store.settings.presets) {
+        case .success(let presets):
+            store.settingsStore.update { $0.presets = presets }
+            presetNameError = nil
+            showPresetPrompt = false
+        case .failure(.emptyName):
+            presetNameError = "Enter a name for this preset."
+        case .failure(.duplicateName):
+            presetNameError = "A preset with this name already exists."
+        }
+    }
     private func importAudio(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result else { return }
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Canvas Audio", isDirectory: true)
@@ -419,9 +467,7 @@ private struct ClockOverlayPreview: View {
                                     captureDates: previewItems.map(\.creationDate),
                                     showCaptureDates: store.settings.overlays.showCaptureDate,
                                     captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                                    framingMode: store.settings.effectiveFramingMode,
-                                    clockSettings: store.settings.overlays,
-                                    clockDate: context.date
+                                    framingMode: store.settings.effectiveFramingMode
                                 )
                             } else {
                                 MediaBackdropView(images: [], mode: .neutral, fallback: MediaBackdropView.neutralFallback)
@@ -502,12 +548,17 @@ private struct ClockOverlayPreview: View {
     private func previewOverlay(date: Date, size: CGSize) -> some View {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
-        let adaptiveClockPerTile = settings.showTime && settings.clockColor == .adaptive && !previewImages.isEmpty
-        let showStandardOverlay = (settings.showTime && !adaptiveClockPerTile) || settings.showDate || settings.showWeekday || settings.showAlbum || settings.showLocation || settings.showCaption || settings.showItemCount || settings.showBattery || settings.showWeather
+        let clockPlan = ClockOverlayPlacementPolicy.plan(
+            showTime: settings.showTime,
+            color: settings.clockColor,
+            visibleTileCount: previewImages.count
+        )
+        let showStandardOverlay = clockPlan.sharedClockCount > 0 || settings.showDate || settings.showWeekday || settings.showAlbum || settings.showLocation || settings.showCaption || settings.showItemCount || settings.showBattery || settings.showWeather
         if showStandardOverlay {
             VStack(alignment: .leading, spacing: 3) {
-                if settings.showTime {
+                if clockPlan.sharedClockCount == 1 {
                     ClockOverlayView(date: date, settings: settings, mediaImage: previewImages.first)
+                        .accessibilityIdentifier("canvas.clock.overlay")
                 }
                 if settings.showDate { Text(date, format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)) }
                 if settings.showWeekday { Text(date, format: .dateTime.weekday(.wide)).font(.system(size: settings.fontSize * 0.62)) }

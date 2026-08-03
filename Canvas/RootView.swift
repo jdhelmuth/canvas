@@ -10,6 +10,8 @@ struct RootView: View {
             if store.settings.hasCompletedOnboarding { LibraryHomeView() }
             else { OnboardingView() }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 store.library.refreshAuthorization()
@@ -213,6 +215,7 @@ struct LibraryHomeView: View {
             }
             .task(id: "\(previewKey)#\(previewSeed)") { await loadPreviewImages() }
         }
+        .ignoresSafeArea()
     }
 
     private var header: some View {
@@ -512,16 +515,20 @@ struct AlbumPickerView: View {
     @State private var knownGoogleAlbumIDs: Set<String> = []
 
     private func appleAlbums(in category: AppleAlbumCategory) -> [AlbumReference] {
-        filtered(store.library.albums.filter { AppleAlbumCategory.category(for: $0) == category })
+        filtered(AppleAlbumCategory.albums(from: store.library.albums, in: category))
     }
     private var googleAlbums: [AlbumReference] { filtered(store.googlePhotos.albumReferences) }
     private var availableAlbums: [AlbumReference] { store.library.albums + store.googlePhotos.albumReferences }
+    private var appleCategoryOrder: [AppleAlbumCategory] {
+        AppleAlbumCategoryOrdering.categories(from: store.settings.albumCategoryOrder)
+    }
     var body: some View {
         NavigationStack {
             List {
-                ForEach(AppleAlbumCategory.allCases) { category in
+                ForEach(appleCategoryOrder) { category in
                     albumCategorySection(category)
                 }
+                .onMove(perform: moveAppleCategory)
                 Section("Google Photos") {
                     Button { showGoogleImport = true } label: {
                         Label("Add or refresh a Google album", systemImage: "photo.badge.plus")
@@ -541,7 +548,10 @@ struct AlbumPickerView: View {
             }
             .searchable(text: $search, prompt: "Find an album")
             .navigationTitle("Choose albums")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { commit() }.fontWeight(.semibold) } }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { EditButton().accessibilityLabel("Reorder album sections") }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { commit() }.fontWeight(.semibold) }
+            }
             .onAppear { selection = Set(store.settings.selectedAlbums.map(\.id)); knownGoogleAlbumIDs = Set(store.googlePhotos.albumReferences.map(\.id)); store.library.refreshAlbums() }
             .onChange(of: store.googlePhotos.albums) { _, _ in
                 let current = Set(store.googlePhotos.albumReferences.map(\.id))
@@ -557,6 +567,14 @@ struct AlbumPickerView: View {
             }
             .sheet(isPresented: $showGoogleImport) { GooglePhotosImportView() }
         }
+    }
+    private func moveAppleCategory(from offsets: IndexSet, to destination: Int) {
+        let order = AppleAlbumCategoryOrdering.moving(
+            fromOffsets: offsets,
+            toOffset: destination,
+            in: store.settings.albumCategoryOrder
+        )
+        store.settingsStore.update { $0.albumCategoryOrder = order }
     }
     private func filtered(_ albums: [AlbumReference]) -> [AlbumReference] {
         albums.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }

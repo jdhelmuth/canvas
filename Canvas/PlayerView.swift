@@ -33,6 +33,10 @@ struct PlayerView: View {
             if controlsVisible && !isLocked { controls }
             if isLocked { lockBadge }
         }
+        // The slideshow is a photo surface, not a safe-area content panel.
+        // Apply this at the container boundary so the GeometryReader that
+        // determines each tile's viewport receives the entire display.
+        .ignoresSafeArea()
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .task {
@@ -158,9 +162,7 @@ struct PlayerView: View {
                             captureDates: model.layoutAssets.map(\.creationDate),
                             showCaptureDates: false,
                             captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                            framingMode: store.settings.effectiveFramingMode,
-                            clockSettings: store.settings.overlays,
-                            clockDate: Date()
+                            framingMode: store.settings.effectiveFramingMode
                         )
                         .scaleEffect(zoom)
                         .offset(dragOffset)
@@ -266,15 +268,18 @@ struct PlayerView: View {
     private func overlay(in size: CGSize) -> some View {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
-        // Adaptive color is evaluated separately in each visible tile by
-        // LayoutCanvas. Other media surfaces still use this shared overlay.
-        let adaptiveClockPerTile = settings.showTime && settings.clockColor == .adaptive && !model.layoutImages.isEmpty
-        let showStandardOverlay = (settings.showTime && !adaptiveClockPerTile) || settings.showDate || settings.showWeekday || settings.showAlbum || settings.showLocation || settings.showCaption || settings.showItemCount || settings.showBattery || settings.showWeather
+        let clockPlan = ClockOverlayPlacementPolicy.plan(
+            showTime: settings.showTime,
+            color: settings.clockColor,
+            visibleTileCount: model.layoutImages.count
+        )
+        let showStandardOverlay = clockPlan.sharedClockCount > 0 || settings.showDate || settings.showWeekday || settings.showAlbum || settings.showLocation || settings.showCaption || settings.showItemCount || settings.showBattery || settings.showWeather
         return ZStack {
             if showStandardOverlay {
                 VStack(alignment: .leading, spacing: 3) {
-                    if settings.showTime {
+                    if clockPlan.sharedClockCount == 1 {
                         ClockOverlayView(date: Date(), settings: settings, mediaImage: model.currentImage)
+                            .accessibilityIdentifier("canvas.clock.overlay")
                     }
                     if settings.showDate { Text(Date(), format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)) }
                     if settings.showAlbum, let title = model.currentAsset?.albumTitle { Text(title).font(.system(size: settings.fontSize * 0.62)) }
@@ -311,8 +316,11 @@ struct PlayerView: View {
                     )
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(for: settings.position)).padding(24)
             }
-            if settings.showCaptureDate,
-               (model.currentAsset?.kind == .video || model.currentAsset?.kind == .livePhoto || model.layoutImages.isEmpty),
+            if CaptureDateOverlayPolicy.showsStandaloneDate(
+                enabled: settings.showCaptureDate,
+                kind: model.currentAsset?.kind,
+                layoutImagesEmpty: model.layoutImages.isEmpty
+            ),
                let date = model.currentAsset?.creationDate {
                 CaptureDateBadge(date: date, image: model.currentImage)
                     .padding(12)

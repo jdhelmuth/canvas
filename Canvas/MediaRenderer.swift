@@ -48,32 +48,98 @@ struct LivePhotoAssetView: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: PHLivePhotoView, context: Context) {
-        view.delegate = context.coordinator
+        let coordinator = context.coordinator
+        view.delegate = coordinator
         view.contentMode = framingMode == .fitWithBorder ? .scaleAspectFit : .scaleAspectFill
         VideoAudioState.apply(to: view, muted: muted)
-        context.coordinator.loop = loop
-        context.coordinator.isPlaying = isPlaying
+        coordinator.loop = loop
+        coordinator.isPlaying = isPlaying
+        if !isPlaying {
+            coordinator.stopPlayback(view)
+        }
         let identifier = asset.localIdentifier
-        guard context.coordinator.loadedID != identifier else {
-            if isPlaying { view.startPlayback(with: .full) } else { view.stopPlayback() }
+        guard coordinator.loadedID != identifier else {
+            if isPlaying { coordinator.startPlaybackIfNeeded(view) }
             return
         }
-        context.coordinator.loadedID = identifier
+        let generation = coordinator.beginLoading(assetID: identifier, view: view)
         let options = PHLivePhotoRequestOptions(); options.isNetworkAccessAllowed = true; options.deliveryMode = .highQualityFormat
         let contentMode: PHImageContentMode = framingMode == .fitWithBorder ? .aspectFit : .aspectFill
-        PHImageManager.default().requestLivePhoto(for: asset, targetSize: UIScreen.main.bounds.size, contentMode: contentMode, options: options) { photo, _ in
-            DispatchQueue.main.async { view.livePhoto = photo; if isPlaying, photo != nil { view.startPlayback(with: .full) } }
+        let requestID = PHImageManager.default().requestLivePhoto(for: asset, targetSize: UIScreen.main.bounds.size, contentMode: contentMode, options: options) { [weak view, weak coordinator] photo, _ in
+            DispatchQueue.main.async {
+                guard let view, let coordinator,
+                      LivePhotoPlaybackPolicy.acceptsLoadedPhoto(
+                          assetID: identifier,
+                          currentAssetID: coordinator.loadedID,
+                          requestGeneration: generation,
+                          currentGeneration: coordinator.requestGeneration
+                      ) else { return }
+                coordinator.requestID = nil
+                guard let photo else { return }
+                view.livePhoto = photo
+                coordinator.playbackActive = false
+                if coordinator.isPlaying { coordinator.startPlaybackIfNeeded(view) }
+            }
         }
+        coordinator.requestID = requestID
     }
     func makeCoordinator() -> Coordinator { Coordinator() }
+    static func dismantleUIView(_ uiView: PHLivePhotoView, coordinator: Coordinator) {
+        coordinator.invalidate(uiView)
+    }
+
     final class Coordinator: NSObject, PHLivePhotoViewDelegate {
         var loadedID: String?
+        var requestID: PHImageRequestID?
+        var requestGeneration = 0
         var loop = false
         var isPlaying = false
+        var playbackActive = false
+
+        func beginLoading(assetID: String, view: PHLivePhotoView) -> Int {
+            cancelPendingRequest()
+            requestGeneration &+= 1
+            loadedID = assetID
+            playbackActive = false
+            view.stopPlayback()
+            view.livePhoto = nil
+            return requestGeneration
+        }
+
+        func startPlaybackIfNeeded(_ view: PHLivePhotoView) {
+            guard LivePhotoPlaybackPolicy.shouldStartPlayback(isPlaying: isPlaying, playbackActive: playbackActive) else { return }
+            playbackActive = true
+            view.startPlayback(with: .full)
+        }
+
+        func stopPlayback(_ view: PHLivePhotoView) {
+            view.stopPlayback()
+            playbackActive = false
+        }
+
+        func invalidate(_ view: PHLivePhotoView) {
+            cancelPendingRequest()
+            requestGeneration &+= 1
+            loadedID = nil
+            isPlaying = false
+            loop = false
+            playbackActive = false
+            view.stopPlayback()
+            view.livePhoto = nil
+            view.delegate = nil
+        }
+
+        private func cancelPendingRequest() {
+            if let requestID {
+                PHImageManager.default().cancelImageRequest(requestID)
+                self.requestID = nil
+            }
+        }
 
         func livePhotoView(_ livePhotoView: PHLivePhotoView, didEndPlaybackWith playbackStyle: PHLivePhotoViewPlaybackStyle) {
-            guard loop, isPlaying else { return }
-            livePhotoView.startPlayback(with: .full)
+            playbackActive = false
+            guard LivePhotoPlaybackPolicy.shouldRestartAfterPlayback(loop: loop, isPlaying: isPlaying) else { return }
+            startPlaybackIfNeeded(livePhotoView)
         }
     }
 }
