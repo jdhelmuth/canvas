@@ -22,16 +22,17 @@ final class CanvasTests: XCTestCase {
                 isFavorite: false,
                 pixelWidth: 100,
                 pixelHeight: 100,
-                albumTitle: index < 10 ? "Large album" : (index == 10 ? "Small album A" : "Small album B"),
+                albumTitle: index < 10 ? "Large album" : "Small album",
                 appleAsset: nil,
                 localURL: nil,
-                contentHash: nil
+                contentHash: nil,
+                libraryID: index < 10 ? "large-library" : (index == 10 ? "small-library-a" : "small-library-b")
             )
         }
 
         let queue = QueueBuilder.build(assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 42)
         XCTAssertEqual(queue.map(\.id).count, assets.count)
-        XCTAssertEqual(Set(queue.prefix(3).map(\.albumTitle)), Set(["Large album", "Small album A", "Small album B"]))
+        XCTAssertEqual(Set(queue.prefix(3).compactMap(\.libraryID)), Set(["large-library", "small-library-a", "small-library-b"]))
         XCTAssertEqual(Set(queue.map(\.id)), Set(assets.map(\.id)))
     }
 

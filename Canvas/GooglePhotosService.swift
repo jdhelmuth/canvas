@@ -500,7 +500,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
             album.items.compactMap { item in
                 let url = mediaRoot.appendingPathComponent(item.relativePath)
                 guard fileManager.fileExists(atPath: url.path) else { return nil }
-                let value = CanvasMediaItem(id: item.id, source: .googlePhotos, kind: item.kind, creationDate: item.creationDate, filename: item.filename, isFavorite: false, pixelWidth: item.pixelWidth, pixelHeight: item.pixelHeight, albumTitle: album.title, appleAsset: nil, localURL: url, contentHash: item.contentHash)
+                let value = CanvasMediaItem(id: item.id, source: .googlePhotos, kind: item.kind, creationDate: item.creationDate, filename: item.filename, isFavorite: false, pixelWidth: item.pixelWidth, pixelHeight: item.pixelHeight, albumTitle: album.title, appleAsset: nil, localURL: url, contentHash: item.contentHash, libraryID: album.id)
                 return filters.accepts(value.descriptor) ? value : nil
             }
         }

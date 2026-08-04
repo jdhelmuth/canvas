@@ -311,6 +311,39 @@ struct CanvasMediaItem: Identifiable, Hashable {
     let appleAsset: PHAsset?
     let localURL: URL?
     let contentHash: String?
+    /// Stable selected-library identity used to balance albums that happen
+    /// to share the same display title.
+    let libraryID: String?
+
+    init(
+        id: String,
+        source: PhotoSource,
+        kind: MediaKind,
+        creationDate: Date?,
+        filename: String,
+        isFavorite: Bool,
+        pixelWidth: Int,
+        pixelHeight: Int,
+        albumTitle: String,
+        appleAsset: PHAsset?,
+        localURL: URL?,
+        contentHash: String?,
+        libraryID: String? = nil
+    ) {
+        self.id = id
+        self.source = source
+        self.kind = kind
+        self.creationDate = creationDate
+        self.filename = filename
+        self.isFavorite = isFavorite
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.albumTitle = albumTitle
+        self.appleAsset = appleAsset
+        self.localURL = localURL
+        self.contentHash = contentHash
+        self.libraryID = libraryID
+    }
 
     static func == (lhs: CanvasMediaItem, rhs: CanvasMediaItem) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }

@@ -83,7 +83,7 @@ struct QueueBuilder {
     }
 
     private static func libraryKey(for asset: CanvasMediaItem) -> String {
-        "\(asset.source.rawValue)|\(asset.albumTitle)"
+        "\(asset.source.rawValue)|\(asset.libraryID ?? asset.albumTitle)"
     }
 }
 

@@ -123,7 +123,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
             for asset in assets(for: [reference], filters: filters) {
                 guard seen.insert(asset.localIdentifier).inserted else { continue }
                 let kind: MediaKind = asset.mediaType == .video ? .video : (asset.mediaSubtypes.contains(.photoLive) ? .livePhoto : .photo)
-                output.append(CanvasMediaItem(id: "apple:\(asset.localIdentifier)", source: .applePhotos, kind: kind, creationDate: asset.creationDate, filename: asset.value(forKey: "filename") as? String ?? "", isFavorite: asset.isFavorite, pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, albumTitle: reference.title, appleAsset: asset, localURL: nil, contentHash: nil))
+                output.append(CanvasMediaItem(id: "apple:\(asset.localIdentifier)", source: .applePhotos, kind: kind, creationDate: asset.creationDate, filename: asset.value(forKey: "filename") as? String ?? "", isFavorite: asset.isFavorite, pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, albumTitle: reference.title, appleAsset: asset, localURL: nil, contentHash: nil, libraryID: reference.id))
             }
         }
         return output
