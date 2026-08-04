@@ -112,7 +112,7 @@ struct LayoutCanvas: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if showCaptureDates {
                     CaptureDateOverlayLayer(
-                        imageSizes: images.map(\.size),
+                        imageSizes: images.map(\.canvasDisplaySize),
                         captureDates: captureDates,
                         style: style,
                         canvasSize: proxy.size,
@@ -132,51 +132,53 @@ struct LayoutCanvas: View {
         switch selection.style {
         case .pairHorizontal, .portraitPair:
             HStack(spacing: spacing) {
-                imageView(at: selection.indices[safe: 0] ?? 0)
-                imageView(at: selection.indices[safe: 1] ?? 1)
+                imageView(at: selection.indices[safe: 0] ?? 0, selectedLayout: selection.style)
+                imageView(at: selection.indices[safe: 1] ?? 1, selectedLayout: selection.style)
             }
         case .pairVertical:
             VStack(spacing: spacing) {
-                imageView(at: selection.indices[safe: 0] ?? 0)
-                imageView(at: selection.indices[safe: 1] ?? 1)
+                imageView(at: selection.indices[safe: 0] ?? 0, selectedLayout: selection.style)
+                imageView(at: selection.indices[safe: 1] ?? 1, selectedLayout: selection.style)
             }
         case .collageThree:
             HStack(spacing: spacing) {
-                imageView(at: selection.indices[safe: 0] ?? 0)
+                imageView(at: selection.indices[safe: 0] ?? 0, selectedLayout: selection.style)
                 VStack(spacing: spacing) {
-                    if selection.indices.count > 1 { imageView(at: selection.indices[1]) }
-                    if selection.indices.count > 2 { imageView(at: selection.indices[2]) }
+                    if selection.indices.count > 1 { imageView(at: selection.indices[1], selectedLayout: selection.style) }
+                    if selection.indices.count > 2 { imageView(at: selection.indices[2], selectedLayout: selection.style) }
                 }
             }
         case .gridFour:
             LazyVGrid(columns: [GridItem(.flexible(), spacing: spacing), GridItem(.flexible(), spacing: spacing)], spacing: spacing) {
-                ForEach(selection.indices.prefix(4), id: \.self) { index in imageView(at: index) }
+                ForEach(selection.indices.prefix(4), id: \.self) { index in imageView(at: index, selectedLayout: selection.style) }
             }
         case .fitBlurred:
-            imageView(at: selection.indices.first ?? 0)
+            imageView(at: selection.indices.first ?? 0, selectedLayout: selection.style)
         default:
-            imageView(at: selection.indices.first ?? 0)
+            imageView(at: selection.indices.first ?? 0, selectedLayout: selection.style)
         }
     }
 
     private func resolvedSelection(in size: CGSize) -> PairLayoutSelection {
-        LayoutCanvasSelectionResolver.selection(style: style, imageSizes: images.map(\.size), canvasSize: size)
+        LayoutCanvasSelectionResolver.selection(style: style, imageSizes: images.map(\.canvasDisplaySize), canvasSize: size)
     }
 
-    @ViewBuilder private func imageView(at index: Int) -> some View {
+    @ViewBuilder private func imageView(at index: Int, selectedLayout: LayoutStyle) -> some View {
         if images.indices.contains(index) {
             GeometryReader { proxy in
                 let image = images[index]
-                let renderedSize = MediaFramingGeometry.renderedSize(
-                    imageSize: image.size,
+                let plan = MediaFramingGeometry.plan(
+                    imageSize: image.canvasDisplaySize,
                     viewportSize: proxy.size,
-                    mode: framingMode
+                    preferredMode: framingMode,
+                    requestedLayout: style,
+                    selectedLayout: selectedLayout
                 )
                 Image(uiImage: images[index])
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: renderedSize.width, height: renderedSize.height)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .frame(width: plan.renderedFrame.width, height: plan.renderedFrame.height)
+                    .position(x: plan.renderedFrame.midX, y: plan.renderedFrame.midY)
                     .clipped()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

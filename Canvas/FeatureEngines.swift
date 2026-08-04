@@ -307,6 +307,18 @@ enum OverlayPreviewGeometry {
 /// SwiftUI's size proposal prevents different portrait sources from receiving
 /// different implicit zoom factors.
 enum MediaFramingGeometry {
+    /// Automatic layouts should feel edge-to-edge for ordinary camera photos,
+    /// but not at the cost of throwing away a large part of a square, panorama,
+    /// or unusually tall image. This limit is the fraction of the rendered
+    /// image that may sit outside its tile before Automatic switches to fit.
+    static let automaticMaximumCropFraction: CGFloat = 0.18
+
+    struct Plan: Equatable {
+        let mode: MediaFramingMode
+        let renderedFrame: CGRect
+        let cropFraction: CGFloat
+    }
+
     static func scale(imageSize: CGSize, viewportSize: CGSize, mode: MediaFramingMode) -> CGFloat {
         guard imageSize.width > 0, imageSize.height > 0,
               viewportSize.width > 0, viewportSize.height > 0 else { return 1 }
@@ -325,6 +337,58 @@ enum MediaFramingGeometry {
               viewportSize.width > 0, viewportSize.height > 0 else { return imageSize }
         let scale = scale(imageSize: imageSize, viewportSize: viewportSize, mode: mode)
         return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+    }
+
+    static func cropFraction(imageSize: CGSize, viewportSize: CGSize) -> CGFloat {
+        let rendered = renderedSize(imageSize: imageSize, viewportSize: viewportSize, mode: .fillZoom)
+        guard rendered.width > 0, rendered.height > 0 else { return 0 }
+        let visibleWidth = min(rendered.width, viewportSize.width)
+        let visibleHeight = min(rendered.height, viewportSize.height)
+        let visibleFraction = (visibleWidth * visibleHeight) / (rendered.width * rendered.height)
+        return max(0, min(1, 1 - visibleFraction))
+    }
+
+    /// Resolves framing once, in the tile's final coordinate space. Automatic
+    /// layouts retain a true minimum-cover fill for ordinary aspect ratios and
+    /// switch to fit only when that fill would become an excessive zoom. A
+    /// `.fitBlurred` selection always means fit, matching the layout's name and
+    /// the resolver's documented fallback behavior.
+    static func plan(
+        imageSize: CGSize,
+        viewportSize: CGSize,
+        preferredMode: MediaFramingMode,
+        requestedLayout: LayoutStyle,
+        selectedLayout: LayoutStyle
+    ) -> Plan {
+        let fillCrop = cropFraction(imageSize: imageSize, viewportSize: viewportSize)
+        let isAutomatic = requestedLayout == .automatic || requestedLayout == .portraitPair
+        let mode: MediaFramingMode
+        if preferredMode == .fitWithBorder || selectedLayout == .fitBlurred {
+            mode = .fitWithBorder
+        } else if isAutomatic && fillCrop > automaticMaximumCropFraction {
+            mode = .fitWithBorder
+        } else {
+            mode = .fillZoom
+        }
+
+        let size = renderedSize(imageSize: imageSize, viewportSize: viewportSize, mode: mode)
+        let frame = CGRect(
+            x: (viewportSize.width - size.width) / 2,
+            y: (viewportSize.height - size.height) / 2,
+            width: size.width,
+            height: size.height
+        )
+        return Plan(mode: mode, renderedFrame: frame, cropFraction: fillCrop)
+    }
+}
+
+extension UIImage {
+    /// UIKit's `size` is already expressed in the displayed orientation (and
+    /// in points rather than backing pixels). Keep geometry on that value so a
+    /// rotated local Google Photos file and an upright PhotoKit result follow
+    /// the same path without applying the EXIF transform twice.
+    var canvasDisplaySize: CGSize {
+        size
     }
 }
 

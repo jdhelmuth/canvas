@@ -104,7 +104,7 @@ struct PlayerView: View {
                         VideoAssetView(asset: asset, isPlaying: model.isPlaying, muted: store.settings.videoMuted, volume: store.settings.videoVolume, framingMode: store.settings.effectiveFramingMode)
                         if store.settings.overlays.showCaptureDate, let image = model.currentImage {
                             CaptureDateOverlayLayer(
-                                imageSizes: [image.size],
+                                imageSizes: [image.canvasDisplaySize],
                                 captureDates: [model.currentAsset?.creationDate],
                                 style: .single,
                                 canvasSize: proxy.size,
@@ -121,7 +121,7 @@ struct PlayerView: View {
                         LocalVideoView(url: url, isPlaying: model.isPlaying, muted: store.settings.videoMuted, volume: store.settings.videoVolume, framingMode: store.settings.effectiveFramingMode)
                         if store.settings.overlays.showCaptureDate, let image = model.currentImage {
                             CaptureDateOverlayLayer(
-                                imageSizes: [image.size],
+                                imageSizes: [image.canvasDisplaySize],
                                 captureDates: [model.currentAsset?.creationDate],
                                 style: .single,
                                 canvasSize: proxy.size,
@@ -138,7 +138,7 @@ struct PlayerView: View {
                         LivePhotoAssetView(asset: asset, isPlaying: model.isPlaying, loop: store.settings.loopLivePhotos, muted: store.settings.videoMuted, framingMode: store.settings.effectiveFramingMode)
                         if store.settings.overlays.showCaptureDate, let image = model.currentImage {
                             CaptureDateOverlayLayer(
-                                imageSizes: [image.size],
+                                imageSizes: [image.canvasDisplaySize],
                                 captureDates: [model.currentAsset?.creationDate],
                                 style: .single,
                                 canvasSize: proxy.size,
@@ -170,7 +170,7 @@ struct PlayerView: View {
                         // outside the pinch/drag transform applied to media.
                         if store.settings.overlays.showCaptureDate {
                             CaptureDateOverlayLayer(
-                                imageSizes: model.layoutImages.map(\.size),
+                                imageSizes: model.layoutImages.map(\.canvasDisplaySize),
                                 captureDates: model.layoutAssets.map(\.creationDate),
                                 style: fullscreenLayout,
                                 canvasSize: proxy.size,

@@ -437,6 +437,68 @@ final class CanvasTests: XCTestCase {
         XCTAssertLessThanOrEqual(fitSize.height, viewport.height + 0.0001)
     }
 
+    func testAutomaticFramingAvoidsExcessiveCropAndStaysCenteredAcrossAspectRatios() {
+        let elevenInchLandscape = CGSize(width: 1194, height: 834)
+        let elevenInchPortraitTile = CGSize(width: 593, height: 834)
+        let elevenInchLandscapeTileAfterRotation = CGSize(width: 834, height: 593)
+        let thirteenInchLandscape = CGSize(width: 1366, height: 1024)
+        let cases: [(name: String, image: CGSize, viewport: CGSize, selectedLayout: LayoutStyle, expected: MediaFramingMode)] = [
+            ("portrait on 11-inch landscape iPad", CGSize(width: 3024, height: 4032), elevenInchPortraitTile, .pairHorizontal, .fillZoom),
+            ("landscape on rotated 11-inch iPad", CGSize(width: 4032, height: 3024), elevenInchLandscapeTileAfterRotation, .pairVertical, .fillZoom),
+            ("landscape on 13-inch iPad", CGSize(width: 4032, height: 3024), thirteenInchLandscape, .single, .fillZoom),
+            ("square", CGSize(width: 3000, height: 3000), elevenInchLandscape, .single, .fitWithBorder),
+            ("panorama", CGSize(width: 8000, height: 1200), elevenInchLandscape, .single, .fitWithBorder),
+            ("extreme portrait", CGSize(width: 1200, height: 8000), elevenInchPortraitTile, .pairHorizontal, .fitWithBorder)
+        ]
+
+        for value in cases {
+            let plan = MediaFramingGeometry.plan(
+                imageSize: value.image,
+                viewportSize: value.viewport,
+                preferredMode: .fillZoom,
+                requestedLayout: .automatic,
+                selectedLayout: value.selectedLayout
+            )
+            XCTAssertEqual(plan.mode, value.expected, value.name)
+            XCTAssertEqual(plan.renderedFrame.midX, value.viewport.width / 2, accuracy: 0.0001, value.name)
+            XCTAssertEqual(plan.renderedFrame.midY, value.viewport.height / 2, accuracy: 0.0001, value.name)
+            if plan.mode == .fillZoom {
+                XCTAssertLessThanOrEqual(plan.cropFraction, MediaFramingGeometry.automaticMaximumCropFraction, value.name)
+                XCTAssertGreaterThanOrEqual(plan.renderedFrame.width, value.viewport.width - 0.0001, value.name)
+                XCTAssertGreaterThanOrEqual(plan.renderedFrame.height, value.viewport.height - 0.0001, value.name)
+            } else {
+                XCTAssertLessThanOrEqual(plan.renderedFrame.width, value.viewport.width + 0.0001, value.name)
+                XCTAssertLessThanOrEqual(plan.renderedFrame.height, value.viewport.height + 0.0001, value.name)
+            }
+        }
+    }
+
+    func testFitBlurredSelectionAlwaysPreservesWholeImage() {
+        let plan = MediaFramingGeometry.plan(
+            imageSize: CGSize(width: 4032, height: 3024),
+            viewportSize: CGSize(width: 1366, height: 1024),
+            preferredMode: .fillZoom,
+            requestedLayout: .automatic,
+            selectedLayout: .fitBlurred
+        )
+        XCTAssertEqual(plan.mode, .fitWithBorder)
+    }
+
+    func testFramingUsesUIImageDisplayOrientation() {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 200))
+        let upright = renderer.image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
+        }
+        guard let cgImage = upright.cgImage else {
+            return XCTFail("Expected a CGImage-backed fixture")
+        }
+        let rotated = UIImage(cgImage: cgImage, scale: upright.scale, orientation: .right)
+
+        XCTAssertEqual(upright.canvasDisplaySize, CGSize(width: 400, height: 200))
+        XCTAssertEqual(rotated.canvasDisplaySize, CGSize(width: 200, height: 400))
+    }
+
     func testHomeAlbumAreaIncludesSafeEdgeExtension() {
         XCTAssertEqual(HomeContentGeometry.bottomEdgeExtension(reportedSafeAreaBottom: 0), 36, accuracy: 0.001)
         XCTAssertEqual(HomeContentGeometry.bottomEdgeExtension(reportedSafeAreaBottom: 44), 44, accuracy: 0.001)
