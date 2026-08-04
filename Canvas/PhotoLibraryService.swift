@@ -28,6 +28,11 @@ enum PhotoAuthorizationState: Equatable {
 
 @MainActor
 final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
+    /// Canvas applies its own fit/fill decision after the image is loaded.
+    /// Requesting aspectFill here would crop the source photo to the square
+    /// thumbnail bounds before LayoutCanvas can calculate the correct crop.
+    nonisolated static let displayImageContentMode: PHImageContentMode = .aspectFit
+
     @Published private(set) var authorization: PhotoAuthorizationState
     @Published private(set) var albums: [AlbumReference] = []
     @Published private(set) var libraryRevision = 0
@@ -148,7 +153,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         }
     }
 
-    func requestImage(for asset: PHAsset, targetSize: CGSize, contentMode: PHImageContentMode = .aspectFill) async throws -> UIImage {
+    func requestImage(for asset: PHAsset, targetSize: CGSize, contentMode: PHImageContentMode = PhotoLibraryService.displayImageContentMode) async throws -> UIImage {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let options = PHImageRequestOptions()
@@ -192,7 +197,13 @@ final class AssetImageLoader: ObservableObject {
         let key = "\(asset.localIdentifier)-\(Int(size.width))x\(Int(size.height))" as NSString
         if let cached = cache.object(forKey: key) { return cached }
         do {
-            let image = try await service.requestImage(for: asset, targetSize: size)
+            // Keep the complete source aspect ratio. Canvas performs the
+            // intentional fit/fill crop in LayoutCanvas after loading.
+            let image = try await service.requestImage(
+                for: asset,
+                targetSize: size,
+                contentMode: PhotoLibraryService.displayImageContentMode
+            )
             cache.setObject(image, forKey: key)
             return image
         } catch { return nil }

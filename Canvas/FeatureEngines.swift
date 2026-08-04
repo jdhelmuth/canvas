@@ -412,6 +412,38 @@ enum PlaybackIndexResolver {
 }
 
 enum PlaybackAdvancePolicy {
+    /// A displayed pair/collage is one playback unit. Automatic transitions
+    /// and gestures must land on the next group start instead of exposing the
+    /// second tile of the current group as a standalone frame.
+    static func destinationIndex(
+        imageSizes: [CGSize],
+        currentIndex: Int,
+        direction: Int,
+        layout: LayoutStyle,
+        canvasSize: CGSize,
+        repeatEnabled: Bool,
+        usesDisplayedGroup: Bool,
+        singleMediaIndices: Set<Int> = []
+    ) -> Int? {
+        guard usesDisplayedGroup else {
+            return PlaybackIndexResolver.nextIndex(
+                current: currentIndex,
+                count: imageSizes.count,
+                direction: direction,
+                repeatEnabled: repeatEnabled
+            )
+        }
+        return PlaybackGroupResolver.nextGroupIndex(
+            imageSizes: imageSizes,
+            currentIndex: currentIndex,
+            direction: direction,
+            layout: layout,
+            canvasSize: canvasSize,
+            repeatEnabled: repeatEnabled,
+            singleMediaIndices: singleMediaIndices
+        )
+    }
+
     /// A swipe supplies an explicit displayed-group target. It must not be
     /// treated as the automatic end-of-loop transition that may reshuffle.
     static func shouldShuffleAfterAdvance(

@@ -1,5 +1,6 @@
 import XCTest
 import AVFoundation
+import Photos
 import PhotosUI
 @testable import Canvas
 
@@ -139,6 +140,41 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(SwipeTransitionState.from(direction: 1), .forward)
         XCTAssertEqual(SwipeTransitionState.from(direction: -1), .backward)
         XCTAssertEqual(SwipeTransitionState.from(direction: 0), .automatic)
+    }
+
+    func testAutomaticDisplayedPairTransitionUsesNextGroupStart() {
+        let portraits = [
+            CGSize(width: 900, height: 1400),
+            CGSize(width: 1000, height: 1500),
+            CGSize(width: 800, height: 1200),
+            CGSize(width: 1100, height: 1600)
+        ]
+        let canvasSize = CGSize(width: 1366, height: 1024)
+
+        XCTAssertEqual(
+            PlaybackAdvancePolicy.destinationIndex(
+                imageSizes: portraits,
+                currentIndex: 0,
+                direction: 1,
+                layout: .automatic,
+                canvasSize: canvasSize,
+                repeatEnabled: false,
+                usesDisplayedGroup: true
+            ),
+            2
+        )
+        XCTAssertEqual(
+            PlaybackAdvancePolicy.destinationIndex(
+                imageSizes: portraits,
+                currentIndex: 0,
+                direction: 1,
+                layout: .automatic,
+                canvasSize: canvasSize,
+                repeatEnabled: false,
+                usesDisplayedGroup: false
+            ),
+            1
+        )
     }
 
     func testDisplayedGroupSwipeUsesAdjacentGroupsForHeterogeneousOrientations() {
@@ -288,6 +324,10 @@ final class CanvasTests: XCTestCase {
         XCTAssertTrue(MediaFramingMode.fitWithBorder.preservesEntireImage)
         XCTAssertFalse(MediaFramingMode.fillZoom.preservesEntireImage)
         XCTAssertEqual(CanvasSettings().effectiveFramingMode, .fitWithBorder)
+    }
+
+    func testPhotoLibraryLoadsFullAspectBeforeCanvasAppliesFraming() {
+        XCTAssertEqual(PhotoLibraryService.displayImageContentMode, .aspectFit)
     }
 
     func testFillFramingUsesMinimumCoverScaleForEachPortraitImage() {

@@ -107,13 +107,14 @@ final class PlaybackViewModel: ObservableObject {
         let targetSize = canvasSize.width > 0 && canvasSize.height > 0
             ? canvasSize
             : UIScreen.main.bounds.size
-        guard let target = PlaybackGroupResolver.nextGroupIndex(
+        guard let target = PlaybackAdvancePolicy.destinationIndex(
             imageSizes: imageSizes,
             currentIndex: currentIndex,
             direction: direction,
             layout: settings.layout,
             canvasSize: targetSize,
             repeatEnabled: settings.repeatEnabled,
+            usesDisplayedGroup: true,
             singleMediaIndices: singleMediaIndices
         ) else {
             // A grouped slideshow has no valid forward destination at the
@@ -247,7 +248,11 @@ final class PlaybackViewModel: ObservableObject {
                 self.elapsed += tick
                 self.progress = min(self.elapsed / max(duration, 0.1), 1)
             }
-            if !Task.isCancelled { self.next() }
+            if !Task.isCancelled {
+                // Timed transitions must replace the displayed group as a
+                // whole, just like a swipe, rather than advancing one tile.
+                self.navigateByDisplayedGroup(direction: 1)
+            }
         }
     }
 }
