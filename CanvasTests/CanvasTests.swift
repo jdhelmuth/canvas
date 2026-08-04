@@ -5,6 +5,14 @@ import PhotosUI
 @testable import Canvas
 
 final class CanvasTests: XCTestCase {
+    @MainActor
+    func testAssetImageLoaderUsesBoundedMemoryCache() {
+        let loader = AssetImageLoader()
+
+        XCTAssertEqual(loader.cache.countLimit, AssetImageLoader.cacheCountLimit)
+        XCTAssertEqual(loader.cache.totalCostLimit, AssetImageLoader.cacheTotalCostLimit)
+    }
+
     func testShuffleIsDeterministicForSeed() {
         let ids = ["a", "b", "c", "d", "e"]
         XCTAssertEqual(QueueAlgorithm.orderedIDs(ids, mode: .shuffle, seed: 42), QueueAlgorithm.orderedIDs(ids, mode: .shuffle, seed: 42))

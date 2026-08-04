@@ -203,7 +203,36 @@ enum PhotoLibraryError: LocalizedError { case imageUnavailable; var errorDescrip
 
 @MainActor
 final class AssetImageLoader: ObservableObject {
+    // NSCache has no useful default memory budget. A frame can run for days,
+    // and retaining every 1,800px image eventually pushes the foreground app
+    // into Jetsam territory on an iPad. Keep enough history for smooth
+    // transitions while putting a hard upper bound on decoded image memory.
+    static let cacheCountLimit = 48
+    static let cacheTotalCostLimit = 256 * 1024 * 1024
+
     @Published private(set) var cache = NSCache<NSString, UIImage>()
+    private var prefetchTasks: [Task<Void, Never>] = []
+    private var memoryWarningObserver: NSObjectProtocol?
+
+    init() {
+        cache.countLimit = Self.cacheCountLimit
+        cache.totalCostLimit = Self.cacheTotalCostLimit
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.clear()
+        }
+    }
+
+    deinit {
+        prefetchTasks.forEach { $0.cancel() }
+        if let memoryWarningObserver {
+            NotificationCenter.default.removeObserver(memoryWarningObserver)
+        }
+    }
+
     func image(for asset: PHAsset, service: PhotoLibraryService, size: CGSize) async -> UIImage? {
         let key = "\(asset.localIdentifier)-\(Int(size.width))x\(Int(size.height))" as NSString
         if let cached = cache.object(forKey: key) { return cached }
@@ -215,7 +244,7 @@ final class AssetImageLoader: ObservableObject {
                 targetSize: size,
                 contentMode: PhotoLibraryService.displayImageContentMode
             )
-            cache.setObject(image, forKey: key)
+            store(image, forKey: key)
             return image
         } catch { return nil }
     }
@@ -224,7 +253,9 @@ final class AssetImageLoader: ObservableObject {
         if let cached = cache.object(forKey: key) { return cached }
         var image: UIImage?
         if let asset = item.appleAsset {
-            image = await self.image(for: asset, service: service, size: size)
+            // The asset-keyed path already owns the cache entry. Avoid adding
+            // a second key for the same decoded UIImage on every Apple item.
+            return await self.image(for: asset, service: service, size: size)
         } else if let url = item.localURL, item.kind == .video {
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
@@ -235,16 +266,45 @@ final class AssetImageLoader: ObservableObject {
         } else {
             image = nil
         }
-        if let image { cache.setObject(image, forKey: key) }
+        if let image { store(image, forKey: key) }
         return image
     }
-    func clear() { cache.removeAllObjects() }
+
+    func clear() {
+        prefetchTasks.forEach { $0.cancel() }
+        prefetchTasks.removeAll()
+        cache.removeAllObjects()
+    }
+
     func prefetch(_ assets: [PHAsset], service: PhotoLibraryService, size: CGSize) {
-        for asset in assets.prefix(4) {
-            Task { _ = await image(for: asset, service: service, size: size) }
+        prefetchTasks.forEach { $0.cancel() }
+        prefetchTasks = assets.prefix(4).map { asset in
+            Task { [weak self] in
+                guard let self else { return }
+                _ = await self.image(for: asset, service: service, size: size)
+            }
         }
     }
+
     func prefetch(_ items: [CanvasMediaItem], service: PhotoLibraryService, size: CGSize) {
-        for item in items.prefix(4) { Task { _ = await image(for: item, service: service, size: size) } }
+        prefetchTasks.forEach { $0.cancel() }
+        prefetchTasks = items.prefix(4).map { item in
+            Task { [weak self] in
+                guard let self else { return }
+                _ = await self.image(for: item, service: service, size: size)
+            }
+        }
+    }
+
+    private func store(_ image: UIImage, forKey key: NSString) {
+        let cost: Int
+        if let cgImage = image.cgImage {
+            cost = max(1, cgImage.bytesPerRow * cgImage.height)
+        } else {
+            let width = max(1, Int(image.size.width * image.scale))
+            let height = max(1, Int(image.size.height * image.scale))
+            cost = max(1, width * height * 4)
+        }
+        cache.setObject(image, forKey: key, cost: cost)
     }
 }
