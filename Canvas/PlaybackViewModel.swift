@@ -44,7 +44,7 @@ final class PlaybackViewModel: ObservableObject {
         let appleItems = library.mediaItems(for: settings.selectedAlbums, filters: settings.filters)
         let googleItems = googlePhotos?.items(for: settings.selectedAlbums, filters: settings.filters) ?? []
         let assets = MediaIdentityMatcher.deduplicated(appleItems + googleItems)
-        queue = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: settings.repeatEnabled, previousIDs: previousIDs, recentAvoidance: settings.recentAvoidance, shuffleSeed: Int(Date().timeIntervalSince1970))
+        queue = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: settings.repeatEnabled, previousIDs: previousIDs, recentAvoidance: settings.recentAvoidance, shuffleSeed: Int.random(in: Int.min...Int.max))
         queueCount = queue.count
         currentIndex = min(currentIndex, max(0, queue.count - 1))
         await loadCurrent(generation: generation)
@@ -151,7 +151,14 @@ final class PlaybackViewModel: ObservableObject {
             currentIndex: currentIndex,
             shuffleEachLoop: settings.shuffleEachLoop
         ) {
-            queue.shuffle()
+            queue = QueueBuilder.build(
+                queue,
+                mode: settings.queueMode,
+                repeatEnabled: true,
+                previousIDs: previousIDs,
+                recentAvoidance: settings.recentAvoidance,
+                shuffleSeed: Int.random(in: Int.min...Int.max)
+            )
         }
         loadTask = Task { [weak self] in
             guard let self else { return }

@@ -11,6 +11,53 @@ final class CanvasTests: XCTestCase {
         XCTAssertNotEqual(QueueAlgorithm.orderedIDs(ids, mode: .shuffle, seed: 42), ids)
     }
 
+    func testQueueShuffleSamplesEverySelectedLibraryBeforeRepeatingALargeLibrary() {
+        let assets = (0..<12).map { index in
+            CanvasMediaItem(
+                id: "apple:\(index)",
+                source: .applePhotos,
+                kind: .photo,
+                creationDate: nil,
+                filename: "photo-\(index).jpg",
+                isFavorite: false,
+                pixelWidth: 100,
+                pixelHeight: 100,
+                albumTitle: index < 10 ? "Large album" : (index == 10 ? "Small album A" : "Small album B"),
+                appleAsset: nil,
+                localURL: nil,
+                contentHash: nil
+            )
+        }
+
+        let queue = QueueBuilder.build(assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 42)
+        XCTAssertEqual(queue.map(\.id).count, assets.count)
+        XCTAssertEqual(Set(queue.prefix(3).map(\.albumTitle)), Set(["Large album", "Small album A", "Small album B"]))
+        XCTAssertEqual(Set(queue.map(\.id)), Set(assets.map(\.id)))
+    }
+
+    func testQueueShuffleSeedChangesTheOrderForFreshSessions() {
+        let assets = (0..<8).map { index in
+            CanvasMediaItem(
+                id: "apple:\(index)",
+                source: .applePhotos,
+                kind: .photo,
+                creationDate: nil,
+                filename: "photo-\(index).jpg",
+                isFavorite: false,
+                pixelWidth: 100,
+                pixelHeight: 100,
+                albumTitle: index < 4 ? "Family" : "Travel",
+                appleAsset: nil,
+                localURL: nil,
+                contentHash: nil
+            )
+        }
+
+        let first = QueueBuilder.build(assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 1).map(\.id)
+        let second = QueueBuilder.build(assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 2).map(\.id)
+        XCTAssertNotEqual(first, second)
+    }
+
     func testLinearQueueAndFavoriteOrdering() {
         let ids = ["a", "b", "c"]
         let dates: [String: Date] = ["a": Date(timeIntervalSince1970: 30), "b": Date(timeIntervalSince1970: 10), "c": Date(timeIntervalSince1970: 20)]

@@ -111,11 +111,22 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     func mediaItems(for references: [AlbumReference], filters: CanvasFilters) -> [CanvasMediaItem] {
         guard authorization.canRead else { return [] }
         let appleReferences = references.filter { $0.source == .applePhotos }
-        return assets(for: appleReferences, filters: filters).map { asset in
-            let albumTitle = appleReferences.first?.title ?? "Apple Photos"
-            let kind: MediaKind = asset.mediaType == .video ? .video : (asset.mediaSubtypes.contains(.photoLive) ? .livePhoto : .photo)
-            return CanvasMediaItem(id: "apple:\(asset.localIdentifier)", source: .applePhotos, kind: kind, creationDate: asset.creationDate, filename: asset.value(forKey: "filename") as? String ?? "", isFavorite: asset.isFavorite, pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, albumTitle: albumTitle, appleAsset: asset, localURL: nil, contentHash: nil)
+        var output: [CanvasMediaItem] = []
+        var seen = Set<String>()
+        output.reserveCapacity(appleReferences.reduce(into: 0) { $0 += max(0, $1.estimatedCount) })
+
+        // Build items album-by-album so the queue can balance the complete
+        // selected-library pool. A media asset shared by multiple selected
+        // albums remains one queue item, attributed to its first selected
+        // album, preserving the existing duplicate-suppression behavior.
+        for reference in appleReferences {
+            for asset in assets(for: [reference], filters: filters) {
+                guard seen.insert(asset.localIdentifier).inserted else { continue }
+                let kind: MediaKind = asset.mediaType == .video ? .video : (asset.mediaSubtypes.contains(.photoLive) ? .livePhoto : .photo)
+                output.append(CanvasMediaItem(id: "apple:\(asset.localIdentifier)", source: .applePhotos, kind: kind, creationDate: asset.creationDate, filename: asset.value(forKey: "filename") as? String ?? "", isFavorite: asset.isFavorite, pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, albumTitle: reference.title, appleAsset: asset, localURL: nil, contentHash: nil))
+            }
         }
+        return output
     }
 
     /// Returns an Apple album only for a near-exact metadata match. Partial overlap stays visible

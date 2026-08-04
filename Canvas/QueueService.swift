@@ -7,7 +7,7 @@ struct QueueBuilder {
         switch mode {
         case .shuffle:
             var generator = SeededGenerator(seed: UInt64(bitPattern: Int64(shuffleSeed)) ^ UInt64(assets.count))
-            output = assets.shuffled(using: &generator)
+            output = shuffledAcrossLibraries(assets, using: &generator)
         case .albumOrder: output = assets
         case .oldestFirst: output = assets.sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
         case .newestFirst: output = assets.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
@@ -22,6 +22,69 @@ struct QueueBuilder {
         }
         return repeatEnabled ? output : Array(output.prefix(output.count))
     }
+
+    /// Shuffle the complete selected-media pool while preventing a large
+    /// album from crowding out smaller selected albums. Each library bucket
+    /// contributes one randomized item per round, and the bucket order is
+    /// randomized again for every round. This keeps the queue genuinely
+    /// broad without dropping any eligible media or changing group layout
+    /// semantics (groups are still resolved from adjacent queue items).
+    private static func shuffledAcrossLibraries(
+        _ assets: [CanvasMediaItem],
+        using generator: inout SeededGenerator
+    ) -> [CanvasMediaItem] {
+        // Keep orientation bands together. Automatic pairing advances by
+        // adjacent queue groups; mixing portrait and landscape items between
+        // those bands would make a later compatible companion skip the item
+        // in between. Each band is still balanced across selected libraries.
+        let bands = Dictionary(grouping: assets, by: orientationKey)
+        var bandKeys = Array(bands.keys)
+        bandKeys.shuffle(using: &generator)
+
+        var output: [CanvasMediaItem] = []
+        output.reserveCapacity(assets.count)
+        for bandKey in bandKeys {
+            guard let band = bands[bandKey] else { continue }
+            output.append(contentsOf: shuffledLibraryBuckets(band, using: &generator))
+        }
+        return output
+    }
+
+    private static func shuffledLibraryBuckets(
+        _ assets: [CanvasMediaItem],
+        using generator: inout SeededGenerator
+    ) -> [CanvasMediaItem] {
+        var buckets = Dictionary(grouping: assets, by: libraryKey)
+        var activeKeys = Array(buckets.keys)
+        for key in activeKeys {
+            buckets[key]?.shuffle(using: &generator)
+        }
+
+        var output: [CanvasMediaItem] = []
+        output.reserveCapacity(assets.count)
+        while !activeKeys.isEmpty {
+            activeKeys.shuffle(using: &generator)
+            var nextKeys: [String] = []
+            nextKeys.reserveCapacity(activeKeys.count)
+            for key in activeKeys {
+                guard var bucket = buckets[key], !bucket.isEmpty else { continue }
+                output.append(bucket.removeLast())
+                if !bucket.isEmpty { nextKeys.append(key) }
+                buckets[key] = bucket
+            }
+            activeKeys = nextKeys
+        }
+        return output
+    }
+
+    private static func orientationKey(for asset: CanvasMediaItem) -> String {
+        guard asset.pixelWidth > 0, asset.pixelHeight > 0 else { return "unknown" }
+        return asset.pixelHeight > asset.pixelWidth ? "portrait" : "landscape"
+    }
+
+    private static func libraryKey(for asset: CanvasMediaItem) -> String {
+        "\(asset.source.rawValue)|\(asset.albumTitle)"
+    }
 }
 
 @MainActor
@@ -31,7 +94,7 @@ final class QueueService: ObservableObject {
     @Published private(set) var exhausted = false
 
     func rebuild(assets: [CanvasMediaItem], settings: CanvasSettings, previousIDs: [String] = []) {
-        self.assets = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: settings.repeatEnabled, previousIDs: previousIDs, recentAvoidance: settings.recentAvoidance, shuffleSeed: Int(Date().timeIntervalSince1970))
+        self.assets = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: settings.repeatEnabled, previousIDs: previousIDs, recentAvoidance: settings.recentAvoidance, shuffleSeed: Int.random(in: Int.min...Int.max))
         index = min(index, max(0, self.assets.count - 1))
         exhausted = self.assets.isEmpty
     }
@@ -41,7 +104,7 @@ final class QueueService: ObservableObject {
         guard !assets.isEmpty else { return }
         if index + 1 < assets.count { index += 1; return }
         guard repeatEnabled else { exhausted = true; return }
-        if reshuffle, let settings { assets = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: true, shuffleSeed: Int(Date().timeIntervalSince1970)); index = 0 }
+        if reshuffle, let settings { assets = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: true, shuffleSeed: Int.random(in: Int.min...Int.max)); index = 0 }
         else { index = 0 }
     }
     func previous() { guard !assets.isEmpty else { return }; index = index > 0 ? index - 1 : assets.count - 1 }
