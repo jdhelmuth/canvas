@@ -244,7 +244,7 @@ struct LibraryHomeView: View {
 
     private func content(albumAreaHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 20) {
-            if store.settings.selectedAlbums.isEmpty { emptyState }
+            if store.settings.selectedAlbums.isEmpty { emptyState(minimumHeight: albumAreaHeight) }
             else {
                 Button { startFrame() } label: {
                     playbackCard
@@ -294,13 +294,41 @@ struct LibraryHomeView: View {
         return size.width > size.height ? 3 : 2
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Image(systemName: "photo.on.rectangle.angled").font(.system(size: 44)).foregroundStyle(.orange)
-            Text("Pick a few albums to begin").font(.title2.weight(.semibold))
-            Text("Canvas will keep your choices local and build a responsive slideshow from the Photos library.").foregroundStyle(.secondary)
-            Button { showAlbumPicker = true } label: { Label("Choose albums", systemImage: "plus") }.buttonStyle(.primaryCanvas)
-        }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+    private func emptyState(minimumHeight: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            EmptyAlbumsArtwork()
+                .frame(width: 230, height: 188)
+                .padding(.bottom, 30)
+
+            Text("Bring your favorite moments into view")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 12)
+
+            Text("Choose albums from Apple Photos or Google Photos, then Canvas turns them into a calm, always-ready frame.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .frame(maxWidth: 540)
+                .padding(.bottom, 26)
+
+            Button { showAlbumPicker = true } label: {
+                Label("Choose albums", systemImage: "photo.badge.plus")
+            }
+            .buttonStyle(.primaryCanvas)
+            .accessibilityIdentifier("choose-albums-empty-state")
+            .padding(.bottom, 18)
+
+            Label("Only the albums you choose appear in Canvas", systemImage: "lock.fill")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 44)
+        .frame(maxWidth: .infinity, minHeight: max(minimumHeight, 520), alignment: .center)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("empty-albums-state")
     }
 
     private var permissionCard: some View {
@@ -308,7 +336,11 @@ struct LibraryHomeView: View {
             Label("Photos access needed", systemImage: "lock.shield").font(.title3.weight(.semibold))
             Text(store.library.authorization.explanation ?? "Allow access to choose albums.").foregroundStyle(.secondary)
             Button("Request access") { Task { await store.library.requestAccess() } }.buttonStyle(.primaryCanvas)
-        }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        }
+        .padding(24)
+        .frame(maxWidth: 680, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var playbackCard: some View {
@@ -433,6 +465,84 @@ struct LibraryHomeView: View {
             if let image = await store.loader.image(for: item, service: store.library, size: CGSize(width: 600, height: 600)) { loaded.append(image) }
         }
         previewImages = loaded
+    }
+}
+
+private struct EmptyAlbumsArtwork: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hasAppeared = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [.orange.opacity(0.24), .pink.opacity(0.11), .clear],
+                        center: .center,
+                        startRadius: 12,
+                        endRadius: 112
+                    )
+                )
+                .frame(width: 224, height: 224)
+                .blur(radius: 5)
+
+            photoTile(colors: [.indigo.opacity(0.90), .blue.opacity(0.62)])
+                .rotationEffect(.degrees(hasAppeared ? -9 : -2))
+                .offset(x: -28, y: 6)
+
+            photoTile(colors: [.pink.opacity(0.82), .orange.opacity(0.82)])
+                .rotationEffect(.degrees(hasAppeared ? 9 : 2))
+                .offset(x: 28, y: 6)
+
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(.primary.opacity(0.09), lineWidth: 1)
+                }
+                .overlay {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.orange.opacity(0.95), .pink.opacity(0.78)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 54, weight: .medium))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
+                    }
+                    .padding(15)
+                }
+                .frame(width: 154, height: 128)
+                .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
+                .scaleEffect(hasAppeared ? 1 : 0.94)
+        }
+        .opacity(hasAppeared ? 1 : 0)
+        .onAppear {
+            if reduceMotion {
+                hasAppeared = true
+            } else {
+                withAnimation(.spring(response: 0.62, dampingFraction: 0.76)) {
+                    hasAppeared = true
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func photoTile(colors: [Color]) -> some View {
+        RoundedRectangle(cornerRadius: 26, style: .continuous)
+            .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(.white.opacity(0.24), lineWidth: 1)
+            }
+            .frame(width: 142, height: 118)
+            .shadow(color: .black.opacity(0.12), radius: 14, y: 8)
     }
 }
 

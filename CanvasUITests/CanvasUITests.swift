@@ -15,6 +15,18 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Albums & Filters"].exists)
     }
 
+    func testEmptyHomeStateIsCenteredAndActionable() {
+        let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]; app.launch()
+        let emptyState = app.otherElements["empty-albums-state"]
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["choose-albums-empty-state"].exists)
+
+        let window = app.windows.firstMatch
+        XCTAssertEqual(emptyState.frame.midX, window.frame.midX, accuracy: 8)
+        XCTAssertGreaterThan(emptyState.frame.midY, window.frame.height * 0.35)
+        XCTAssertLessThan(emptyState.frame.midY, window.frame.height * 0.72)
+    }
+
     func testOnboardingSelectedAlbumContinuesAndCompletes() {
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-onboarding-album"]
