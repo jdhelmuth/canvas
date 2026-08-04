@@ -26,12 +26,20 @@ enum PhotoAuthorizationState: Equatable {
     }
 }
 
+/// PhotoKit must return an uncropped source for every Canvas media surface.
+/// The foreground view is the single owner of the user's fit/fill choice; if
+/// the request also uses aspect fill, Live Photos and stills can be cropped
+/// once by PhotoKit and then cropped again by the renderer.
+enum PhotoKitSourceFramingPolicy {
+    nonisolated static let contentMode: PHImageContentMode = .aspectFit
+}
+
 @MainActor
 final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
     /// Canvas applies its own fit/fill decision after the image is loaded.
     /// Requesting aspectFill here would crop the source photo to the square
     /// thumbnail bounds before LayoutCanvas can calculate the correct crop.
-    nonisolated static let displayImageContentMode: PHImageContentMode = .aspectFit
+    nonisolated static let displayImageContentMode = PhotoKitSourceFramingPolicy.contentMode
 
     @Published private(set) var authorization: PhotoAuthorizationState
     @Published private(set) var albums: [AlbumReference] = []

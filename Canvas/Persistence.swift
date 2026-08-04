@@ -17,9 +17,9 @@ final class SettingsStore: ObservableObject {
                 decoded.backgroundHex = "#151513"
                 migrated = true
             }
-            // Existing builds defaulted to a letterboxed fit presentation. The
-            // frame now defaults to intentional full-screen fill; preserve any
-            // later user changes after this one-time migration.
+            // Retain the original schema migration for users who already ran
+            // those builds. The explicit framingMode migration below is the
+            // current source of truth and defaults legacy users to no crop.
             if defaults.object(forKey: schemaKey) == nil {
                 decoded.fitMode = false
                 defaults.set(2, forKey: schemaKey)

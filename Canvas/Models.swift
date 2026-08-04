@@ -454,9 +454,8 @@ struct CanvasSettings: Codable, Equatable {
     var randomTransitions = false
     var excludedTransitions: Set<TransitionStyle> = []
     var layout: LayoutStyle = .automatic
-    // Full-screen fill is the default frame presentation. People can opt into
-    // preserving the complete image bounds (with the configured contextual
-    // background) from Settings.
+    // Retained only to decode the original Fit image toggle. Current settings
+    // use framingMode, whose safe default preserves the complete image.
     var fitMode = false
     /// Optional for backward-compatible decoding. New and migrated settings
     /// use Fit with border; the legacy boolean remains readable for older

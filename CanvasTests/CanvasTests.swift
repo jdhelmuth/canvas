@@ -382,8 +382,32 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(CanvasSettings().effectiveFramingMode, .fitWithBorder)
     }
 
-    func testPhotoLibraryLoadsFullAspectBeforeCanvasAppliesFraming() {
+    func testEveryPhotoKitSourceRequestPreservesFullAspectBeforeSurfaceFraming() {
         XCTAssertEqual(PhotoLibraryService.displayImageContentMode, .aspectFit)
+        XCTAssertEqual(PhotoKitSourceFramingPolicy.contentMode, .aspectFit)
+    }
+
+    func testSingleStageFramingDoesNotCompoundFillZoom() {
+        let original = CGSize(width: 3024, height: 4032)
+        let landscapeIPad = CGSize(width: 1366, height: 1024)
+
+        let oneStage = MediaFramingGeometry.renderedSize(
+            imageSize: original,
+            viewportSize: landscapeIPad,
+            mode: .fillZoom
+        )
+        XCTAssertEqual(oneStage.width, landscapeIPad.width, accuracy: 0.001)
+        XCTAssertEqual(oneStage.width / oneStage.height, original.width / original.height, accuracy: 0.0001)
+
+        // If PhotoKit first aspect-fills the source to the iPad's ratio, the
+        // renderer can no longer recover the original portrait composition.
+        // The shared request policy prevents that destructive first crop.
+        let prematurelyCropped = landscapeIPad
+        XCTAssertNotEqual(
+            prematurelyCropped.width / prematurelyCropped.height,
+            original.width / original.height,
+            accuracy: 0.0001
+        )
     }
 
     func testFillFramingUsesMinimumCoverScaleForEachPortraitImage() {

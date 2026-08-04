@@ -64,8 +64,16 @@ struct LivePhotoAssetView: UIViewRepresentable {
         }
         let generation = coordinator.beginLoading(assetID: identifier, view: view)
         let options = PHLivePhotoRequestOptions(); options.isNetworkAccessAllowed = true; options.deliveryMode = .highQualityFormat
-        let contentMode: PHImageContentMode = framingMode == .fitWithBorder ? .aspectFit : .aspectFill
-        let requestID = PHImageManager.default().requestLivePhoto(for: asset, targetSize: UIScreen.main.bounds.size, contentMode: contentMode, options: options) { [weak view, weak coordinator] photo, _ in
+        // Always load an uncropped Live Photo. PHLivePhotoView owns the one
+        // intentional fit/fill transform through its contentMode above. Using
+        // aspectFill at both stages makes common iPhone Live Photos appear far
+        // more zoomed on an iPad than the selected framing mode calls for.
+        let requestID = PHImageManager.default().requestLivePhoto(
+            for: asset,
+            targetSize: UIScreen.main.bounds.size,
+            contentMode: PhotoKitSourceFramingPolicy.contentMode,
+            options: options
+        ) { [weak view, weak coordinator] photo, _ in
             DispatchQueue.main.async {
                 guard let view, let coordinator,
                       LivePhotoPlaybackPolicy.acceptsLoadedPhoto(
