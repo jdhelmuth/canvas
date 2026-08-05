@@ -3,7 +3,7 @@ import Combine
 
 @MainActor
 final class SettingsStore: ObservableObject {
-    private static let currentSchema = 4
+    private static let currentSchema = 5
     @Published var settings: CanvasSettings { didSet { save() } }
     private let defaults: UserDefaults
     private let key = "canvas.settings.v1"
@@ -35,12 +35,14 @@ final class SettingsStore: ObservableObject {
                 defaults.set(3, forKey: schemaKey)
                 migrated = true
             }
-            // Builds through schema 3 could leave the frame explicitly saved
-            // as Fill / zoom, including on devices that never intentionally
-            // chose cropping. Reset that stale state once. A user can still
-            // select Fill / zoom afterward and schema 4 will preserve it.
+            // Schema 4 briefly forced every existing device to Fit. Restore
+            // Fill / zoom only for devices affected by that migration; other
+            // explicit framing choices remain untouched.
+            if defaults.integer(forKey: schemaKey) == 4 {
+                decoded.framingMode = .fillZoom
+                migrated = true
+            }
             if defaults.integer(forKey: schemaKey) < Self.currentSchema {
-                decoded.framingMode = .fitWithBorder
                 defaults.set(Self.currentSchema, forKey: schemaKey)
                 migrated = true
             }

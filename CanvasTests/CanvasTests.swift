@@ -437,6 +437,33 @@ final class CanvasTests: XCTestCase {
         XCTAssertLessThanOrEqual(fitSize.height, viewport.height + 0.0001)
     }
 
+    func testScreenshotSizedPortraitPairUsesOnlyMinimumCoverCropAtRest() {
+        // The reported iPad captures are 2388 x 1668, with two portrait tiles
+        // separated by a narrow gutter. A normal 3:4 source should lose only
+        // a thin strip at the sides, never most of the photo.
+        let screenshotTile = CGSize(width: 1190, height: 1668)
+        let source = CGSize(width: 3024, height: 4032)
+        let plan = MediaFramingGeometry.plan(
+            imageSize: source,
+            viewportSize: screenshotTile,
+            preferredMode: .fillZoom,
+            requestedLayout: .automatic,
+            selectedLayout: .pairHorizontal
+        )
+
+        XCTAssertEqual(plan.mode, .fillZoom)
+        XCTAssertEqual(InteractivePhotoZoomPolicy.restingScale, 1)
+        XCTAssertEqual(plan.renderedFrame.height, screenshotTile.height, accuracy: 0.001)
+        XCTAssertLessThan(plan.cropFraction, 0.06)
+    }
+
+    func testInteractivePhotoZoomCannotPersistBelowOrBeyondSupportedRange() {
+        XCTAssertEqual(InteractivePhotoZoomPolicy.scale(for: 0.2), 1)
+        XCTAssertEqual(InteractivePhotoZoomPolicy.scale(for: 1), 1)
+        XCTAssertEqual(InteractivePhotoZoomPolicy.scale(for: 2.25), 2.25)
+        XCTAssertEqual(InteractivePhotoZoomPolicy.scale(for: 10), 4)
+    }
+
     func testAutomaticFramingAvoidsExcessiveCropAndStaysCenteredAcrossAspectRatios() {
         let elevenInchLandscape = CGSize(width: 1194, height: 834)
         let elevenInchPortraitTile = CGSize(width: 593, height: 834)
@@ -934,23 +961,41 @@ final class CanvasTests: XCTestCase {
     }
 
     @MainActor
-    func testSchemaThreeFillZoomIsResetOnceToSafeFit() throws {
+    func testSchemaFourForcedFitIsRestoredOnceToFillZoom() throws {
         let suiteName = "CanvasTests.framing-migration.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        var stale = CanvasSettings()
-        stale.framingMode = .fillZoom
-        defaults.set(try JSONEncoder().encode(stale), forKey: "canvas.settings.v1")
-        defaults.set(3, forKey: "canvas.settings.schema")
+        var affected = CanvasSettings()
+        affected.framingMode = .fitWithBorder
+        defaults.set(try JSONEncoder().encode(affected), forKey: "canvas.settings.v1")
+        defaults.set(4, forKey: "canvas.settings.schema")
 
         let migrated = SettingsStore(defaults: defaults)
-        XCTAssertEqual(migrated.settings.effectiveFramingMode, .fitWithBorder)
-        XCTAssertEqual(defaults.integer(forKey: "canvas.settings.schema"), 4)
+        XCTAssertEqual(migrated.settings.effectiveFramingMode, .fillZoom)
+        XCTAssertEqual(defaults.integer(forKey: "canvas.settings.schema"), 5)
 
-        migrated.update { $0.framingMode = .fillZoom }
-        let userSelectedFill = SettingsStore(defaults: defaults)
-        XCTAssertEqual(userSelectedFill.settings.effectiveFramingMode, .fillZoom)
+        migrated.update { $0.framingMode = .fitWithBorder }
+        let userSelectedFit = SettingsStore(defaults: defaults)
+        XCTAssertEqual(userSelectedFit.settings.effectiveFramingMode, .fitWithBorder)
+    }
+
+    @MainActor
+    func testSchemaThreeExplicitFramingChoiceIsPreservedWhenAdvancingSchema() throws {
+        for framingMode in [MediaFramingMode.fillZoom, .fitWithBorder] {
+            let suiteName = "CanvasTests.framing-preserve-\(framingMode)-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+
+            var settings = CanvasSettings()
+            settings.framingMode = framingMode
+            defaults.set(try JSONEncoder().encode(settings), forKey: "canvas.settings.v1")
+            defaults.set(3, forKey: "canvas.settings.schema")
+
+            let restored = SettingsStore(defaults: defaults)
+            XCTAssertEqual(restored.settings.effectiveFramingMode, framingMode)
+            XCTAssertEqual(defaults.integer(forKey: "canvas.settings.schema"), 5)
+        }
     }
 
     @MainActor

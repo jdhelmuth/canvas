@@ -9,8 +9,7 @@ struct PlayerView: View {
     @StateObject private var model = PlaybackViewModel()
     @StateObject private var scheduleMonitor = ScheduleMonitor()
     @State private var controlsVisible = true
-    @State private var zoom: CGFloat = 1
-    @State private var dragOffset: CGSize = .zero
+    @GestureState private var gestureZoom: CGFloat = InteractivePhotoZoomPolicy.restingScale
     @State private var hideTask: Task<Void, Never>?
     @State private var isLocked = false
     @State private var showDetails = false
@@ -164,8 +163,7 @@ struct PlayerView: View {
                             captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
                             framingMode: store.settings.effectiveFramingMode
                         )
-                        .scaleEffect(zoom)
-                        .offset(dragOffset)
+                        .scaleEffect(gestureZoom)
                         // Capture dates live in the final device/tile space,
                         // outside the pinch/drag transform applied to media.
                         if store.settings.overlays.showCaptureDate {
@@ -366,7 +364,11 @@ struct PlayerView: View {
             swipeDirection = 0
         }
     }
-    private var magnifyGesture: some Gesture { MagnifyGesture().onChanged { value in zoom = min(max(value.magnification, 1), 4) }.onEnded { _ in withAnimation { zoom = 1; dragOffset = .zero } } }
+    private var magnifyGesture: some Gesture {
+        MagnifyGesture().updating($gestureZoom) { value, state, _ in
+            state = InteractivePhotoZoomPolicy.scale(for: value.magnification)
+        }
+    }
     private func scheduleHide() {
         hideTask?.cancel()
         let delay = store.settings.controlAutoHide

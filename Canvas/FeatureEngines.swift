@@ -88,6 +88,20 @@ enum SwipeTransitionState: Equatable {
     }
 }
 
+/// Pinch zoom is an interaction layered on top of the selected framing mode.
+/// Its resting value must stay exactly at one so Fill / zoom remains the
+/// minimum-cover transform calculated by `MediaFramingGeometry`, rather than
+/// retaining an extra multiplier when a gesture is cancelled by a slide
+/// transition.
+enum InteractivePhotoZoomPolicy {
+    static let restingScale: CGFloat = 1
+    static let maximumScale: CGFloat = 4
+
+    static func scale(for magnification: CGFloat) -> CGFloat {
+        min(max(magnification, restingScale), maximumScale)
+    }
+}
+
 /// Pure timing rules for slideshow controls. Keeping the gate and expiration
 /// decision outside SwiftUI makes the inactivity behavior deterministic and
 /// prevents a blocked/paused frame from hiding its recovery controls.
