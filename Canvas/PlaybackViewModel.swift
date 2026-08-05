@@ -188,9 +188,14 @@ final class PlaybackViewModel: ObservableObject {
         let image = await loader.image(for: asset, service: library, size: CGSize(width: 1800, height: 1800))
         guard !Task.isCancelled, loadGeneration == generation else { return }
         if let image {
-            currentImage = image
-            layoutImages = [image]
-            layoutAssets = [asset]
+            // Build the complete displayed group before publishing any of it.
+            // Publishing the primary image first and appending a portrait
+            // companion after an await changes LayoutCanvas from one tile to
+            // two while its entrance transition is still active. SwiftUI can
+            // then leave the group at an intermediate horizontal offset,
+            // exposing a black strip along the leading edge.
+            var loadedImages = [image]
+            var loadedAssets = [asset]
             let companions = PlaybackMediaSurfacePolicy.allowsCompanions(for: asset.kind)
                 ? companionAssets(after: asset)
                 : []
@@ -198,10 +203,14 @@ final class PlaybackViewModel: ObservableObject {
                 guard !Task.isCancelled, loadGeneration == generation else { return }
                 if let companionImage = await loader.image(for: companion, service: library, size: CGSize(width: 1000, height: 1000)) {
                     guard !Task.isCancelled, loadGeneration == generation else { return }
-                    layoutImages.append(companionImage)
-                    layoutAssets.append(companion)
+                    loadedImages.append(companionImage)
+                    loadedAssets.append(companion)
                 }
             }
+            guard !Task.isCancelled, loadGeneration == generation else { return }
+            currentImage = image
+            layoutImages = loadedImages
+            layoutAssets = loadedAssets
             loader.prefetch(Array(queue.dropFirst(currentIndex + 1).prefix(4)), service: library, size: CGSize(width: 700, height: 700))
         } else { errorMessage = "This item is unavailable or still downloading from iCloud." }
     }
