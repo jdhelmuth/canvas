@@ -934,6 +934,26 @@ final class CanvasTests: XCTestCase {
     }
 
     @MainActor
+    func testSchemaThreeFillZoomIsResetOnceToSafeFit() throws {
+        let suiteName = "CanvasTests.framing-migration.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var stale = CanvasSettings()
+        stale.framingMode = .fillZoom
+        defaults.set(try JSONEncoder().encode(stale), forKey: "canvas.settings.v1")
+        defaults.set(3, forKey: "canvas.settings.schema")
+
+        let migrated = SettingsStore(defaults: defaults)
+        XCTAssertEqual(migrated.settings.effectiveFramingMode, .fitWithBorder)
+        XCTAssertEqual(defaults.integer(forKey: "canvas.settings.schema"), 4)
+
+        migrated.update { $0.framingMode = .fillZoom }
+        let userSelectedFill = SettingsStore(defaults: defaults)
+        XCTAssertEqual(userSelectedFill.settings.effectiveFramingMode, .fillZoom)
+    }
+
+    @MainActor
     func testUnlimitedVideoMaximumPersists() {
         let suiteName = "CanvasTests.unlimited.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

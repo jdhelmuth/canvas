@@ -3,6 +3,7 @@ import Combine
 
 @MainActor
 final class SettingsStore: ObservableObject {
+    private static let currentSchema = 4
     @Published var settings: CanvasSettings { didSet { save() } }
     private let defaults: UserDefaults
     private let key = "canvas.settings.v1"
@@ -34,13 +35,22 @@ final class SettingsStore: ObservableObject {
                 defaults.set(3, forKey: schemaKey)
                 migrated = true
             }
+            // Builds through schema 3 could leave the frame explicitly saved
+            // as Fill / zoom, including on devices that never intentionally
+            // chose cropping. Reset that stale state once. A user can still
+            // select Fill / zoom afterward and schema 4 will preserve it.
+            if defaults.integer(forKey: schemaKey) < Self.currentSchema {
+                decoded.framingMode = .fitWithBorder
+                defaults.set(Self.currentSchema, forKey: schemaKey)
+                migrated = true
+            }
             settings = decoded
             // Persist migrations immediately so a launch followed by a force
             // quit does not silently rehydrate the old blue/letterboxed state.
             if migrated { save() }
         } else {
             settings = CanvasSettings()
-            defaults.set(3, forKey: schemaKey)
+            defaults.set(Self.currentSchema, forKey: schemaKey)
         }
     }
 
