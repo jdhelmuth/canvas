@@ -15,6 +15,23 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Albums & Filters"].exists)
     }
 
+    func testClockOverlayStrokeControlsSurface() {
+        let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]; app.launch()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
+        app.staticTexts["Clock & Overlays"].tap()
+        app.swipeUp()
+
+        let strokeToggle = app.switches["text-stroke-toggle"]
+        XCTAssertTrue(strokeToggle.waitForExistence(timeout: 3))
+        let strokeControl = strokeToggle.descendants(matching: .switch).firstMatch
+        XCTAssertTrue(strokeControl.exists)
+        strokeControl.tap()
+        for _ in 0..<3 { app.swipeUp() }
+        XCTAssertTrue(app.sliders["Stroke thickness-slider"].waitForExistence(timeout: 3))
+    }
+
     func testEmptyHomeStateIsCenteredAndActionable() {
         let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]; app.launch()
         let emptyState = app.otherElements["empty-albums-state"]

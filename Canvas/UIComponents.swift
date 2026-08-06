@@ -2,6 +2,59 @@ import SwiftUI
 import Foundation
 import UIKit
 
+/// SwiftUI has no built-in text outline modifier. Rendering a small ring of
+/// colored copies behind the original glyph gives the same readable outline
+/// treatment on iPadOS while keeping the control lightweight and animatable.
+struct TextStrokeModifier: ViewModifier {
+    let color: Color
+    let width: CGFloat
+    let enabled: Bool
+    let opacity: Double
+
+    private var offsets: [CGSize] {
+        let radius = max(width, 0.5)
+        return (0..<16).map { index in
+            let angle = (Double(index) / 16.0) * Double.pi * 2
+            return CGSize(
+                width: CGFloat(cos(angle)) * radius,
+                height: CGFloat(sin(angle)) * radius
+            )
+        }
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled && width > 0 {
+            ZStack {
+                ForEach(Array(offsets.enumerated()), id: \.offset) { _, offset in
+                    content
+                        .foregroundStyle(color.opacity(opacity))
+                        .offset(offset)
+                        .accessibilityHidden(true)
+                }
+                content
+            }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func textStroke(color: Color, width: CGFloat, enabled: Bool, opacity: Double = 1) -> some View {
+        modifier(TextStrokeModifier(color: color, width: width, enabled: enabled, opacity: opacity))
+    }
+
+    func overlayTextStroke(settings: OverlaySettings, mediaImage: UIImage?, opacity: Double = 1) -> some View {
+        textStroke(
+            color: OverlayTextStrokePolicy.color(settings.textStrokeColor, mediaImage: mediaImage).color,
+            width: OverlayTextStrokePolicy.width(settings.textStrokeWidth),
+            enabled: OverlayTextStrokePolicy.isEnabled(settings.textStrokeEnabled),
+            opacity: opacity
+        )
+    }
+}
+
 /// Shared clock renderer used by both the proportional settings preview and
 /// fullscreen playback. A single view keeps style, color, weight, and opacity
 /// behavior identical in both places.
@@ -25,6 +78,9 @@ struct ClockOverlayView: View {
         return configured.isAdaptive ? AdaptiveClockColorResolver.color(for: mediaImage) : configured
     }
     private var color: Color { resolvedClockColor.color }
+    private var strokeEnabled: Bool { OverlayTextStrokePolicy.isEnabled(settings.textStrokeEnabled) }
+    private var strokeColor: Color { OverlayTextStrokePolicy.color(settings.textStrokeColor, mediaImage: mediaImage).color }
+    private var strokeWidth: CGFloat { OverlayTextStrokePolicy.width(settings.textStrokeWidth) }
     private var legibilityShadow: Color {
         resolvedClockColor == .black ? .white.opacity(0.34) : .black.opacity(0.34)
     }
@@ -38,7 +94,10 @@ struct ClockOverlayView: View {
                     color: color,
                     opacity: textOpacity,
                     font: settings.clockFont ?? .system,
-                    weight: settings.clockWeight ?? .semibold
+                    weight: settings.clockWeight ?? .semibold,
+                    strokeColor: strokeColor,
+                    strokeWidth: strokeWidth,
+                    strokeEnabled: strokeEnabled
                 )
                 .frame(width: clockSize, height: clockSize)
             } else {
@@ -46,6 +105,7 @@ struct ClockOverlayView: View {
                     .font(.system(size: clockSize, weight: (settings.clockWeight ?? .semibold).fontWeight, design: (settings.clockFont ?? .system).design))
                     .fontWidth((settings.clockWidth ?? .standard).fontWidth)
                     .foregroundStyle(color)
+                    .textStroke(color: strokeColor, width: strokeWidth, enabled: strokeEnabled)
                     .opacity(textOpacity)
             }
         }
@@ -63,6 +123,9 @@ struct AnalogClockView: View {
     let opacity: Double
     let font: ClockFont
     let weight: ClockWeight
+    let strokeColor: Color
+    let strokeWidth: CGFloat
+    let strokeEnabled: Bool
 
     private var calendar: Calendar { Calendar.current }
 
@@ -129,6 +192,7 @@ struct AnalogClockView: View {
             .fontWeight(weight.fontWeight)
             .fontDesign(font.design)
             .foregroundStyle(color.opacity(opacity))
+            .textStroke(color: strokeColor, width: strokeWidth, enabled: strokeEnabled, opacity: opacity)
             .position(
                 x: center.x + CGFloat(sin(angle)) * radius,
                 y: center.y - CGFloat(cos(angle)) * radius

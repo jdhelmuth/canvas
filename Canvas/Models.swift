@@ -522,6 +522,11 @@ struct OverlaySettings: Codable, Equatable {
     var clockColor: ClockColor?
     var clockStyle: ClockStyle?
     var analogClockFace: AnalogClockFace?
+    /// Optional for backward-compatible decoding. When enabled, this outline
+    /// is shared by the clock and the supporting overlay text.
+    var textStrokeEnabled: Bool?
+    var textStrokeColor: ClockColor?
+    var textStrokeWidth: Double?
     /// Kept for decoding older presets. The UI now uses one neutral backing
     /// style and exposes continuous opacity/transparency controls instead of
     /// confusing material presets.

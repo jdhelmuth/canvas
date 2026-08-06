@@ -214,6 +214,20 @@ struct SettingsView: View {
             Picker("Clock color", selection: optionalOverlayBinding(\.clockColor, default: .white)) {
                 ForEach(ClockColor.allCases) { Text($0.title).tag($0) }
             }
+            Toggle("Text stroke", isOn: optionalOverlayBinding(\.textStrokeEnabled, default: false))
+                .accessibilityIdentifier("text-stroke-toggle")
+            if store.settings.overlays.textStrokeEnabled ?? false {
+                Picker("Stroke color", selection: optionalOverlayBinding(\.textStrokeColor, default: .black)) {
+                    ForEach(ClockColor.allCases) { Text($0.title).tag($0) }
+                }
+                InlineSliderRow(
+                    title: "Stroke thickness",
+                    value: optionalOverlayBinding(\.textStrokeWidth, default: OverlayTextStrokePolicy.defaultWidth),
+                    range: OverlayTextStrokePolicy.minimumWidth...OverlayTextStrokePolicy.maximumWidth,
+                    step: 0.5,
+                    valueText: { String(format: "%.1f pt", $0) }
+                )
+            }
             Toggle("Always visible", isOn: binding(\.overlays.alwaysVisible))
             Toggle("Current weather (opt-in)", isOn: binding(\.overlays.showWeather))
             if store.settings.overlays.showWeather {
@@ -467,7 +481,8 @@ private struct ClockOverlayPreview: View {
                                     captureDates: previewItems.map(\.creationDate),
                                     showCaptureDates: store.settings.overlays.showCaptureDate,
                                     captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                                    framingMode: store.settings.effectiveFramingMode
+                                    framingMode: store.settings.effectiveFramingMode,
+                                    overlaySettings: store.settings.overlays
                                 )
                             } else {
                                 MediaBackdropView(images: [], mode: .neutral, fallback: MediaBackdropView.neutralFallback)
@@ -560,23 +575,24 @@ private struct ClockOverlayPreview: View {
                     ClockOverlayView(date: date, settings: settings, mediaImage: previewImages.first)
                         .accessibilityIdentifier("canvas.clock.overlay")
                 }
-                if settings.showDate { Text(date, format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)) }
-                if settings.showWeekday { Text(date, format: .dateTime.weekday(.wide)).font(.system(size: settings.fontSize * 0.62)) }
-                if settings.showAlbum { Text("Selected album").font(.system(size: settings.fontSize * 0.62)) }
-                if settings.showItemCount { Text("1 / 12").font(.system(size: settings.fontSize * 0.62, design: .monospaced)) }
-                if settings.showBattery { Label("91%", systemImage: "battery.75percent").font(.system(size: settings.fontSize * 0.54)) }
+                if settings.showDate { Text(date, format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
+                if settings.showWeekday { Text(date, format: .dateTime.weekday(.wide)).font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
+                if settings.showAlbum { Text("Selected album").font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
+                if settings.showItemCount { Text("1 / 12").font(.system(size: settings.fontSize * 0.62, design: .monospaced)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
+                if settings.showBattery { Label("91%", systemImage: "battery.75percent").font(.system(size: settings.fontSize * 0.54)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
                 if settings.showWeather {
                     if let weather = store.weather.snapshot {
                         HStack(spacing: 5) {
                             Image(systemName: weather.symbolName)
-                            Text(weather.displayText)
-                            Text(weather.attributionText)
+                            Text(weather.displayText).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text)
+                            Text(weather.attributionText).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text)
                         }
                         .font(.system(size: settings.fontSize * 0.54))
                     }
                     if store.weather.status != .live {
                         Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
                             .font(.system(size: settings.fontSize * 0.48))
+                            .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text)
                             .lineLimit(2)
                     }
                 }

@@ -140,6 +140,26 @@ struct OverlayOpacityValues: Equatable {
     let text: Double
 }
 
+/// Keeps text outlines predictable across the live overlay and its settings
+/// preview. The optional fields are intentional: older persisted settings do
+/// not contain stroke keys and therefore continue with the outline disabled.
+enum OverlayTextStrokePolicy {
+    static let defaultWidth = 1.5
+    static let minimumWidth = 0.5
+    static let maximumWidth = 6.0
+
+    static func isEnabled(_ enabled: Bool?) -> Bool { enabled ?? false }
+
+    static func width(_ value: Double?) -> CGFloat {
+        CGFloat(min(max(value ?? defaultWidth, minimumWidth), maximumWidth))
+    }
+
+    static func color(_ configured: ClockColor?, mediaImage: UIImage?) -> ClockColor {
+        let selected = configured ?? .black
+        return selected.isAdaptive ? AdaptiveClockColorResolver.color(for: mediaImage) : selected
+    }
+}
+
 enum OverlayOpacityPolicy {
     static func values(backgroundOpacity: Double, clockOpacity: Double?) -> OverlayOpacityValues {
         OverlayOpacityValues(
@@ -735,10 +755,16 @@ struct TransitionEngine {
     static func choose(preferred: TransitionStyle, random: Bool, excluded: Set<TransitionStyle>, reduceMotion: Bool, seed: UInt64 = 1) -> TransitionStyle {
         if reduceMotion { return preferred.isReduceMotionSafe ? preferred : .crossfade }
         guard random else { return preferred }
-        let choices = TransitionStyle.allCases.filter { !excluded.contains($0) }
+        // Cut is intentionally available as an explicit selection, but a
+        // random slideshow should always visibly transition between frames.
+        let choices = Self.choices(excluding: excluded.union([.cut]))
         guard !choices.isEmpty else { return .crossfade }
         var generator = SeededGenerator(seed: seed)
         return choices.randomElement(using: &generator) ?? .crossfade
+    }
+
+    static func choices(excluding excluded: Set<TransitionStyle>) -> [TransitionStyle] {
+        TransitionStyle.allCases.filter { !excluded.contains($0) }
     }
 }
 

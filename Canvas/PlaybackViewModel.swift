@@ -4,16 +4,28 @@ import AVFoundation
 
 @MainActor
 final class PlaybackViewModel: ObservableObject {
+    /// The media and all of its visible companions are published as one
+    /// value. Publishing the asset first used to remove the outgoing frame
+    /// while the next image was still loading, which left SwiftUI with no
+    /// outgoing view to animate against.
+    struct DisplayedFrame {
+        let asset: CanvasMediaItem
+        let image: UIImage
+        let layoutImages: [UIImage]
+        let layoutAssets: [CanvasMediaItem]
+    }
+
     @Published private(set) var isPlaying = true
-    @Published private(set) var currentImage: UIImage?
-    @Published private(set) var layoutImages: [UIImage] = []
-    @Published private(set) var layoutAssets: [CanvasMediaItem] = []
-    @Published private(set) var currentAsset: CanvasMediaItem?
+    @Published private(set) var displayedFrame: DisplayedFrame?
     @Published private(set) var progress = 0.0
     @Published private(set) var errorMessage: String?
     @Published private(set) var queueCount = 0
     @Published private(set) var currentIndex = 0
     @Published private(set) var elapsed = 0.0
+    /// A fresh seed is emitted for every navigation event. The view can then
+    /// resolve random transitions once per frame instead of reusing a style
+    /// tied only to the queue index (which repeated the same choice each loop).
+    @Published private(set) var transitionSeed: UInt64 = 1
     private var library: PhotoLibraryService?
     private var googlePhotos: GooglePhotosService?
     private var loader: AssetImageLoader?
@@ -27,6 +39,11 @@ final class PlaybackViewModel: ObservableObject {
     private var playbackAllowed = true
     private var canvasSize: CGSize = .zero
     private var loadGeneration = 0
+
+    var currentAsset: CanvasMediaItem? { displayedFrame?.asset }
+    var currentImage: UIImage? { displayedFrame?.image }
+    var layoutImages: [UIImage] { displayedFrame?.layoutImages ?? [] }
+    var layoutAssets: [CanvasMediaItem] { displayedFrame?.layoutAssets ?? [] }
 
     func configure(library: PhotoLibraryService, googlePhotos: GooglePhotosService, loader: AssetImageLoader, settings: CanvasSettings) {
         guard !configured else { return }
@@ -144,6 +161,7 @@ final class PlaybackViewModel: ObservableObject {
             timerTask?.cancel()
             return false
         }
+        transitionSeed = UInt64.random(in: UInt64.min...UInt64.max)
         currentIndex = nextIndex
         if PlaybackAdvancePolicy.shouldShuffleAfterAdvance(
             direction: direction,
@@ -172,10 +190,6 @@ final class PlaybackViewModel: ObservableObject {
     private func loadCurrent(generation: Int) async {
         guard !Task.isCancelled, loadGeneration == generation else { return }
         guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let library, let loader else { return }
-        currentAsset = asset
-        currentImage = nil
-        layoutImages = []
-        layoutAssets = []
         elapsed = 0
         errorMessage = nil
         currentMediaDuration = asset.appleAsset?.duration ?? 0
@@ -208,11 +222,20 @@ final class PlaybackViewModel: ObservableObject {
                 }
             }
             guard !Task.isCancelled, loadGeneration == generation else { return }
-            currentImage = image
-            layoutImages = loadedImages
-            layoutAssets = loadedAssets
+            // Commit the complete group in one publication. The previous
+            // frame remains visible until this point, so every transition has
+            // a real outgoing and incoming surface to animate.
+            displayedFrame = DisplayedFrame(
+                asset: asset,
+                image: image,
+                layoutImages: loadedImages,
+                layoutAssets: loadedAssets
+            )
             loader.prefetch(Array(queue.dropFirst(currentIndex + 1).prefix(4)), service: library, size: CGSize(width: 700, height: 700))
-        } else { errorMessage = "This item is unavailable or still downloading from iCloud." }
+        } else {
+            displayedFrame = nil
+            errorMessage = "This item is unavailable or still downloading from iCloud."
+        }
     }
 
     private func companionAssets(after asset: CanvasMediaItem) -> [CanvasMediaItem] {

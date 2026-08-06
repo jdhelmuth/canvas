@@ -97,6 +97,33 @@ final class CanvasTests: XCTestCase {
         XCTAssertFalse(TransitionStyle.allCases.filter { !$0.isReduceMotionSafe }.isEmpty)
     }
 
+    func testRandomTransitionSelectionUsesAllowedStylesAndChangesWithSeed() {
+        let excluded: Set<TransitionStyle> = [.crossfade]
+        let allowed = Set(TransitionStyle.allCases).subtracting(excluded).subtracting([.cut])
+        let selections = Set((1...24).map { seed in
+            TransitionEngine.choose(
+                preferred: .crossfade,
+                random: true,
+                excluded: excluded,
+                reduceMotion: false,
+                seed: UInt64(seed)
+            )
+        })
+
+        XCTAssertTrue(selections.isSubset(of: allowed))
+        XCTAssertFalse(selections.contains(.cut))
+        XCTAssertGreaterThan(selections.count, 1)
+    }
+
+    func testOverlayTextStrokeDefaultsAreBackwardCompatibleAndBounded() {
+        let settings = OverlaySettings()
+        XCTAssertFalse(OverlayTextStrokePolicy.isEnabled(settings.textStrokeEnabled))
+        XCTAssertEqual(OverlayTextStrokePolicy.width(nil), 1.5, accuracy: 0.001)
+        XCTAssertEqual(OverlayTextStrokePolicy.width(-4), 0.5, accuracy: 0.001)
+        XCTAssertEqual(OverlayTextStrokePolicy.width(20), 6, accuracy: 0.001)
+        XCTAssertEqual(OverlayTextStrokePolicy.color(.orange, mediaImage: nil), .orange)
+    }
+
     func testPairLayoutRulesAcrossDeviceOrientations() {
         let portraits = [CGSize(width: 900, height: 1400), CGSize(width: 1000, height: 1500)]
         let landscapes = [CGSize(width: 1600, height: 900), CGSize(width: 1400, height: 1000)]
@@ -923,6 +950,9 @@ final class CanvasTests: XCTestCase {
             $0.overlays.clockColor = .orange
             $0.overlays.clockStyle = .analog
             $0.overlays.analogClockFace = .roman
+            $0.overlays.textStrokeEnabled = true
+            $0.overlays.textStrokeColor = .cyan
+            $0.overlays.textStrokeWidth = 4.5
             $0.overlays.captureDateStyle = .lightBadgeDarkText
             $0.framingMode = .fillZoom
         }
@@ -938,6 +968,9 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(restored.settings.overlays.clockColor, .orange)
         XCTAssertEqual(restored.settings.overlays.clockStyle, .analog)
         XCTAssertEqual(restored.settings.overlays.analogClockFace, .roman)
+        XCTAssertEqual(restored.settings.overlays.textStrokeEnabled, true)
+        XCTAssertEqual(restored.settings.overlays.textStrokeColor, .cyan)
+        XCTAssertEqual(restored.settings.overlays.textStrokeWidth ?? 0, 4.5, accuracy: 0.001)
         XCTAssertEqual(restored.settings.overlays.captureDateStyle, .lightBadgeDarkText)
         XCTAssertEqual(restored.settings.effectiveFramingMode, .fillZoom)
     }

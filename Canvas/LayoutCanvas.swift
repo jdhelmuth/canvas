@@ -70,6 +70,7 @@ struct LayoutCanvas: View {
     let showCaptureDates: Bool
     let captureDateStyle: CaptureDateBadgeStyle
     let framingMode: MediaFramingMode
+    let overlaySettings: OverlaySettings?
 
     init(
         images: [UIImage],
@@ -82,7 +83,8 @@ struct LayoutCanvas: View {
         captureDates: [Date?] = [],
         showCaptureDates: Bool = false,
         captureDateStyle: CaptureDateBadgeStyle = .darkBadgeLightText,
-        framingMode: MediaFramingMode? = nil
+        framingMode: MediaFramingMode? = nil,
+        overlaySettings: OverlaySettings? = nil
     ) {
         self.images = images
         self.style = style
@@ -95,6 +97,7 @@ struct LayoutCanvas: View {
         self.showCaptureDates = showCaptureDates
         self.captureDateStyle = captureDateStyle
         self.framingMode = framingMode ?? (fit ? .fitWithBorder : .fillZoom)
+        self.overlaySettings = overlaySettings
     }
 
     var body: some View {
@@ -117,7 +120,8 @@ struct LayoutCanvas: View {
                         style: style,
                         canvasSize: proxy.size,
                         spacing: spacing,
-                        badgeStyle: captureDateStyle
+                        badgeStyle: captureDateStyle,
+                        overlaySettings: overlaySettings
                     )
                 }
             }
@@ -208,6 +212,7 @@ struct CaptureDateOverlayLayer: View {
     let canvasSize: CGSize
     let spacing: CGFloat
     let badgeStyle: CaptureDateBadgeStyle
+    let overlaySettings: OverlaySettings?
 
     var body: some View {
         let placements = CaptureDateOverlayGeometry.tileFrames(
@@ -221,7 +226,7 @@ struct CaptureDateOverlayLayer: View {
                 if captureDates.indices.contains(placement.index), let date = captureDates[placement.index] {
                     ZStack(alignment: .bottomLeading) {
                         Color.clear
-                        CaptureDateBadge(date: date, style: badgeStyle)
+                        CaptureDateBadge(date: date, style: badgeStyle, textStrokeSettings: overlaySettings)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: max(0, placement.frame.width - 20), alignment: .leading)
                             .padding(.leading, 10)
@@ -284,19 +289,24 @@ enum CaptureDateContrastResolver {
 struct CaptureDateBadge: View {
     let date: Date
     let style: CaptureDateBadgeStyle
+    let image: UIImage?
+    let textStrokeSettings: OverlaySettings?
 
-    init(date: Date, style: CaptureDateBadgeStyle = .darkBadgeLightText, image: UIImage? = nil) {
+    init(
+        date: Date,
+        style: CaptureDateBadgeStyle = .darkBadgeLightText,
+        image: UIImage? = nil,
+        textStrokeSettings: OverlaySettings? = nil
+    ) {
         self.date = date
         self.style = style
+        self.image = image
+        self.textStrokeSettings = textStrokeSettings
     }
 
     var body: some View {
         let lightContent = style == .darkBadgeLightText
-        Text(date.formatted(date: .abbreviated, time: .omitted))
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .foregroundStyle((lightContent ? Color.white : Color.black).opacity(0.86))
+        label(lightContent: lightContent)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
@@ -307,6 +317,20 @@ struct CaptureDateBadge: View {
             // switching styles per image.
             .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
             .accessibilityLabel("Capture date \(date.formatted(date: .abbreviated, time: .omitted))")
+    }
+
+    @ViewBuilder
+    private func label(lightContent: Bool) -> some View {
+        let text = Text(date.formatted(date: .abbreviated, time: .omitted))
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .foregroundStyle((lightContent ? Color.white : Color.black).opacity(0.86))
+        if let textStrokeSettings {
+            text.overlayTextStroke(settings: textStrokeSettings, mediaImage: image, opacity: 0.86)
+        } else {
+            text
+        }
     }
 }
 

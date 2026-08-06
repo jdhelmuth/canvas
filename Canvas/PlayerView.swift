@@ -108,7 +108,8 @@ struct PlayerView: View {
                                 style: .single,
                                 canvasSize: proxy.size,
                                 spacing: 0,
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText
+                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
+                                overlaySettings: store.settings.overlays
                             )
                         }
                     }
@@ -125,7 +126,8 @@ struct PlayerView: View {
                                 style: .single,
                                 canvasSize: proxy.size,
                                 spacing: 0,
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText
+                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
+                                overlaySettings: store.settings.overlays
                             )
                         }
                     }
@@ -142,7 +144,8 @@ struct PlayerView: View {
                                 style: .single,
                                 canvasSize: proxy.size,
                                 spacing: 0,
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText
+                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
+                                overlaySettings: store.settings.overlays
                             )
                         }
                     }
@@ -161,7 +164,8 @@ struct PlayerView: View {
                             captureDates: model.layoutAssets.map(\.creationDate),
                             showCaptureDates: false,
                             captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                            framingMode: store.settings.effectiveFramingMode
+                            framingMode: store.settings.effectiveFramingMode,
+                            overlaySettings: store.settings.overlays
                         )
                         .scaleEffect(gestureZoom)
                         // Capture dates live in the final device/tile space,
@@ -173,7 +177,8 @@ struct PlayerView: View {
                                 style: fullscreenLayout,
                                 canvasSize: proxy.size,
                                 spacing: CGFloat(store.settings.spacing),
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText
+                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
+                                overlaySettings: store.settings.overlays
                             )
                         }
                     }
@@ -231,18 +236,64 @@ struct PlayerView: View {
         case .automatic:
             break
         }
-        let style = TransitionEngine.choose(preferred: store.settings.transition, random: store.settings.randomTransitions, excluded: store.settings.excludedTransitions, reduceMotion: reduceMotion, seed: UInt64(model.currentIndex + 1))
+        let style = TransitionEngine.choose(
+            preferred: store.settings.transition,
+            random: store.settings.randomTransitions,
+            excluded: store.settings.excludedTransitions,
+            reduceMotion: reduceMotion,
+            seed: model.transitionSeed
+        )
         switch style {
         case .cut: return AnyTransition.identity
-        case .slideLeft, .push: return AnyTransition.asymmetric(insertion: AnyTransition.move(edge: .trailing), removal: AnyTransition.move(edge: .leading))
-        case .slideRight: return AnyTransition.asymmetric(insertion: AnyTransition.move(edge: .leading), removal: AnyTransition.move(edge: .trailing))
-        case .slideUp: return AnyTransition.asymmetric(insertion: AnyTransition.move(edge: .bottom), removal: AnyTransition.move(edge: .top))
-        case .slideDown: return AnyTransition.asymmetric(insertion: AnyTransition.move(edge: .top), removal: AnyTransition.move(edge: .bottom))
-        case .zoomIn, .kenBurns: return AnyTransition.scale.combined(with: AnyTransition.opacity)
-        case .zoomOut: return AnyTransition.scale(scale: 1.2).combined(with: AnyTransition.opacity)
-        case .blurDissolve: return AnyTransition.opacity
-        case .scaleFade, .pageSwipe, .crossfade: return AnyTransition.opacity
+        case .crossfade: return AnyTransition.opacity
+        case .slideLeft: return directionalTransition(insertion: .trailing, removal: .leading)
+        case .slideRight: return directionalTransition(insertion: .leading, removal: .trailing)
+        case .slideUp: return directionalTransition(insertion: .bottom, removal: .top)
+        case .slideDown: return directionalTransition(insertion: .top, removal: .bottom)
+        case .push:
+            return .asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading)
+            )
+        case .zoomIn:
+            return .asymmetric(
+                insertion: visualTransition(active: .init(scale: 0.72, opacity: 0), identity: .init()),
+                removal: .opacity
+            )
+        case .zoomOut:
+            return .asymmetric(
+                insertion: visualTransition(active: .init(scale: 1.28, opacity: 0), identity: .init()),
+                removal: visualTransition(active: .init(scale: 0.82, opacity: 0), identity: .init())
+            )
+        case .kenBurns:
+            return .asymmetric(
+                insertion: visualTransition(active: .init(scale: 1.1, opacity: 0, offset: CGSize(width: -18, height: 10)), identity: .init()),
+                removal: visualTransition(active: .init(scale: 1.06, opacity: 0, offset: CGSize(width: 18, height: -10)), identity: .init())
+            )
+        case .blurDissolve:
+            return .asymmetric(
+                insertion: visualTransition(active: .init(opacity: 0, blur: 18), identity: .init()),
+                removal: visualTransition(active: .init(opacity: 0, blur: 10), identity: .init())
+            )
+        case .scaleFade:
+            return .asymmetric(
+                insertion: visualTransition(active: .init(scale: 0.84, opacity: 0), identity: .init()),
+                removal: visualTransition(active: .init(scale: 1.12, opacity: 0), identity: .init())
+            )
+        case .pageSwipe:
+            return .asymmetric(
+                insertion: visualTransition(active: .init(opacity: 0, rotation: .degrees(-76), anchor: .leading, perspective: 0.72), identity: .init()),
+                removal: visualTransition(active: .init(opacity: 0, rotation: .degrees(76), anchor: .trailing, perspective: 0.72), identity: .init())
+            )
         }
+    }
+
+    private func directionalTransition(insertion: Edge, removal: Edge) -> AnyTransition {
+        .asymmetric(insertion: .move(edge: insertion), removal: .move(edge: removal))
+    }
+
+    private func visualTransition(active: CanvasTransitionModifier, identity: CanvasTransitionModifier) -> AnyTransition {
+        .modifier(active: active, identity: identity)
     }
 
     private var controls: some View {
@@ -279,30 +330,31 @@ struct PlayerView: View {
                         ClockOverlayView(date: Date(), settings: settings, mediaImage: model.currentImage)
                             .accessibilityIdentifier("canvas.clock.overlay")
                     }
-                    if settings.showDate { Text(Date(), format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)) }
-                    if settings.showAlbum, let title = model.currentAsset?.albumTitle { Text(title).font(.system(size: settings.fontSize * 0.62)) }
-                    if settings.showWeekday { Text(Date(), format: .dateTime.weekday(.wide)).font(.system(size: settings.fontSize * 0.62)) }
-                    if settings.showLocation, let location = model.currentAsset?.appleAsset?.location { Text("\(location.coordinate.latitude, specifier: "%.3f"), \(location.coordinate.longitude, specifier: "%.3f")").font(.system(size: settings.fontSize * 0.54, design: .monospaced)) }
-                    if settings.showCaption, let filename = model.currentAsset?.filename, !filename.isEmpty { Text(filename).font(.system(size: settings.fontSize * 0.62)).lineLimit(1) }
-                    if settings.showItemCount { Text("\(model.currentIndex + 1) / \(model.queueCount)").font(.system(size: settings.fontSize * 0.62, design: .monospaced)) }
-                    if settings.showBattery { Label("\(Int(UIDevice.current.batteryLevel * 100))%", systemImage: UIDevice.current.batteryState == .charging ? "bolt.fill" : "battery.75percent").font(.system(size: settings.fontSize * 0.54)) }
+                    if settings.showDate { Text(Date(), format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
+                    if settings.showAlbum, let title = model.currentAsset?.albumTitle { Text(title).font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
+                    if settings.showWeekday { Text(Date(), format: .dateTime.weekday(.wide)).font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
+                    if settings.showLocation, let location = model.currentAsset?.appleAsset?.location { Text("\(location.coordinate.latitude, specifier: "%.3f"), \(location.coordinate.longitude, specifier: "%.3f")").font(.system(size: settings.fontSize * 0.54, design: .monospaced)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
+                    if settings.showCaption, let filename = model.currentAsset?.filename, !filename.isEmpty { Text(filename).font(.system(size: settings.fontSize * 0.62)).lineLimit(1).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
+                    if settings.showItemCount { Text("\(model.currentIndex + 1) / \(model.queueCount)").font(.system(size: settings.fontSize * 0.62, design: .monospaced)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
+                    if settings.showBattery { Label("\(Int(UIDevice.current.batteryLevel * 100))%", systemImage: UIDevice.current.batteryState == .charging ? "bolt.fill" : "battery.75percent").font(.system(size: settings.fontSize * 0.54)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
                     if settings.showWeather, let weather = store.weather.snapshot {
                         HStack(spacing: 5) {
                             Image(systemName: weather.symbolName)
-                            Text(weather.displayText)
+                            Text(weather.displayText).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
                             if store.weather.isUsingCachedSnapshot || weather.isStale {
-                                Text("Last known")
+                                Text("Last known").overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
                             }
                             if let url = store.weather.attributionURL {
-                                Link(weather.attributionText, destination: url)
+                                Link(weather.attributionText, destination: url).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
                             } else {
-                                Text(weather.attributionText)
+                                Text(weather.attributionText).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
                             }
                         }
-                        .font(.system(size: settings.fontSize * 0.54))
+                            .font(.system(size: settings.fontSize * 0.54))
                     } else if settings.showWeather {
                         Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
                             .font(.system(size: settings.fontSize * 0.54))
+                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
                     }
                 }.foregroundStyle(.white.opacity(opacity.text)).padding(14).background {
                     // Keep one neutral backing style; continuous controls in
@@ -320,7 +372,11 @@ struct PlayerView: View {
                 layoutImagesEmpty: model.layoutImages.isEmpty
             ),
                let date = model.currentAsset?.creationDate {
-                CaptureDateBadge(date: date, image: model.currentImage)
+                CaptureDateBadge(
+                    date: date,
+                    image: model.currentImage,
+                    textStrokeSettings: settings
+                )
                     .padding(12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             }
@@ -424,5 +480,27 @@ struct PlayerView: View {
         } else {
             store.power.endPlayback()
         }
+    }
+}
+
+/// Shared visual state for the non-geometric transition styles. Keeping the
+/// modifier value-type and pure lets SwiftUI interpolate every property during
+/// the same transition animation.
+private struct CanvasTransitionModifier: ViewModifier {
+    var scale: CGFloat = 1
+    var opacity: Double = 1
+    var blur: CGFloat = 0
+    var offset: CGSize = .zero
+    var rotation: Angle = .zero
+    var anchor: UnitPoint = .center
+    var perspective: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(scale, anchor: anchor)
+            .blur(radius: blur)
+            .opacity(opacity)
+            .offset(offset)
+            .rotation3DEffect(rotation, axis: (x: 0, y: 1, z: 0), anchor: anchor, perspective: perspective)
     }
 }
