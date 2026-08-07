@@ -354,14 +354,14 @@ enum PairLayoutResolver {
             return PairLayoutSelection(style: .fitBlurred, indices: [0])
         }
 
-        // ArraySlice keeps the original indices. Search the original index
-        // space so a compatible companion after an incompatible candidate is
-        // selected without an extra offset.
-        guard let partner = imageSizes.indices.dropFirst().first(where: { orientation(for: imageSizes[$0]) == target }) else {
+        // Pair only the next queue item. Searching past an incompatible item
+        // would make that intervening single photo disappear when playback
+        // advances by displayed groups.
+        guard imageSizes.indices.contains(1), orientation(for: imageSizes[1]) == target else {
             return PairLayoutSelection(style: .single, indices: [0])
         }
         let style: LayoutStyle = canvasSize.height > canvasSize.width ? .pairVertical : .pairHorizontal
-        return PairLayoutSelection(style: style, indices: [0, partner])
+        return PairLayoutSelection(style: style, indices: [0, 1])
     }
 
     static func style(imageSizes: [CGSize], canvasSize: CGSize) -> LayoutStyle {

@@ -25,27 +25,38 @@ struct QueueBuilder {
 
     /// Shuffle the complete selected-media pool while preventing a large
     /// album from crowding out smaller selected albums. Each library bucket
-    /// contributes one randomized item per round, and the bucket order is
-    /// randomized again for every round. This keeps the queue genuinely
-    /// broad without dropping any eligible media or changing group layout
-    /// semantics (groups are still resolved from adjacent queue items).
+    /// contributes randomized items in small orientation runs, and the run
+    /// order changes every round. Keeping runs short makes a same-orientation
+    /// pair available without putting the entire slideshow into one portrait
+    /// or landscape band.
     private static func shuffledAcrossLibraries(
         _ assets: [CanvasMediaItem],
         using generator: inout SeededGenerator
     ) -> [CanvasMediaItem] {
-        // Keep orientation bands together. Automatic pairing advances by
-        // adjacent queue groups; mixing portrait and landscape items between
-        // those bands would make a later compatible companion skip the item
-        // in between. Each band is still balanced across selected libraries.
         let bands = Dictionary(grouping: assets, by: orientationKey)
         var bandKeys = Array(bands.keys)
-        bandKeys.shuffle(using: &generator)
+        var shuffledBands: [String: [CanvasMediaItem]] = [:]
+        var positions: [String: Int] = [:]
+        for key in bandKeys {
+            guard let band = bands[key] else { continue }
+            shuffledBands[key] = shuffledLibraryBuckets(band, using: &generator)
+            positions[key] = 0
+        }
 
         var output: [CanvasMediaItem] = []
         output.reserveCapacity(assets.count)
-        for bandKey in bandKeys {
-            guard let band = bands[bandKey] else { continue }
-            output.append(contentsOf: shuffledLibraryBuckets(band, using: &generator))
+        while !bandKeys.isEmpty {
+            bandKeys.shuffle(using: &generator)
+            var nextKeys: [String] = []
+            nextKeys.reserveCapacity(bandKeys.count)
+            for key in bandKeys {
+                guard let band = shuffledBands[key], let start = positions[key], start < band.count else { continue }
+                let end = min(start + 2, band.count)
+                output.append(contentsOf: band[start..<end])
+                positions[key] = end
+                if end < band.count { nextKeys.append(key) }
+            }
+            bandKeys = nextKeys
         }
         return output
     }

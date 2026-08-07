@@ -110,12 +110,16 @@ final class PlaybackViewModel: ObservableObject {
         canvasSize = size
     }
 
-    /// Horizontal gestures navigate by the displayed group when a pair or
-    /// collage is actually present. Video and Live Photo surfaces remain one
-    /// media item because they are rendered as a single UIKit surface.
+    /// Horizontal gestures and timed steps navigate by displayed groups for
+    /// stills, including one-photo groups adjacent to a pair or collage.
+    /// Video and Live Photo surfaces remain one media item because they are
+    /// rendered as a single UIKit surface.
     @discardableResult
     func navigateByDisplayedGroup(direction: Int, gestureDirection: Int = 0) -> Bool {
-        guard currentAsset?.kind == .photo, layoutAssets.count > 1 else {
+        // Even a one-photo frame needs group-aware navigation: its previous
+        // queue item may be the second tile of the portrait pair immediately
+        // before it. Non-photo media remain single-surface boundaries.
+        guard currentAsset?.kind == .photo else {
             return advance(direction: direction, gestureDirection: gestureDirection)
         }
         let imageSizes = queue.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
@@ -245,27 +249,20 @@ final class PlaybackViewModel: ObservableObject {
 
     private func companionAssets(after asset: CanvasMediaItem) -> [CanvasMediaItem] {
         guard settings.layout != .single, settings.layout != .fitBlurred, settings.layout != .intelligentFill, settings.layout != .solidBackground else { return [] }
-        let desired: Int
-        switch settings.layout { case .collageThree: desired = 2; case .gridFour: desired = 3; default: desired = 1 }
-        guard desired > 0 else { return [] }
-        var candidates: [CanvasMediaItem] = []
-        for offset in 1..<queue.count where currentIndex + offset < queue.count {
-            candidates.append(queue[currentIndex + offset])
-            if candidates.count >= max(desired * 4, 8) { break }
-        }
-
-        // Automatic and smart-pair layouts should never put a portrait next
-        // to a landscape merely because it happened to be next in the queue.
-        // Keep looking until a same-orientation companion is found; if there
-        // is none, LayoutCanvas will render the current item safely as one
-        // aspect-fit tile.
-        if settings.layout == .automatic || settings.layout == .portraitPair {
-            let currentOrientation = PairLayoutResolver.orientation(for: CGSize(width: asset.pixelWidth, height: asset.pixelHeight))
-            return candidates.filter {
-                PairLayoutResolver.orientation(for: CGSize(width: $0.pixelWidth, height: $0.pixelHeight)) == currentOrientation
-            }.prefix(desired).map { $0 }
-        }
-        return Array(candidates.prefix(desired))
+        let imageSizes = queue.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
+        let singleMediaIndices = Set(queue.indices.filter { PlaybackMediaSurfacePolicy.usesSingleTile(for: queue[$0].kind) })
+        let targetSize = canvasSize.width > 0 && canvasSize.height > 0
+            ? canvasSize
+            : UIScreen.main.bounds.size
+        let group = PlaybackGroupResolver.selection(
+            imageSizes: imageSizes,
+            currentIndex: currentIndex,
+            layout: settings.layout,
+            canvasSize: targetSize,
+            singleMediaIndices: singleMediaIndices
+        )
+        guard group.indices.first == currentIndex else { return [] }
+        return group.indices.dropFirst().compactMap { queue.indices.contains($0) ? queue[$0] : nil }
     }
 
     private func startTimer() {

@@ -67,6 +67,36 @@ final class CanvasTests: XCTestCase {
         XCTAssertNotEqual(first, second)
     }
 
+    func testQueueShuffleMixesOrientationRunsWithoutDroppingMedia() {
+        let assets = (0..<12).map { index in
+            let isPortrait = index < 6
+            return CanvasMediaItem(
+                id: "apple:\(index)",
+                source: .applePhotos,
+                kind: .photo,
+                creationDate: nil,
+                filename: "photo-\(index).jpg",
+                isFavorite: false,
+                pixelWidth: isPortrait ? 900 : 1600,
+                pixelHeight: isPortrait ? 1400 : 900,
+                albumTitle: "Family",
+                appleAsset: nil,
+                localURL: nil,
+                contentHash: nil
+            )
+        }
+
+        let queue = QueueBuilder.build(assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 42)
+        let orientations = queue.map { PairLayoutResolver.orientation(for: CGSize(width: $0.pixelWidth, height: $0.pixelHeight)) }
+        var initialRun = 0
+        while initialRun < orientations.count, orientations[initialRun] == orientations.first {
+            initialRun += 1
+        }
+
+        XCTAssertEqual(Set(queue.map(\.id)), Set(assets.map(\.id)))
+        XCTAssertLessThanOrEqual(initialRun, 2)
+    }
+
     func testLinearQueueAndFavoriteOrdering() {
         let ids = ["a", "b", "c"]
         let dates: [String: Date] = ["a": Date(timeIntervalSince1970: 30), "b": Date(timeIntervalSince1970: 10), "c": Date(timeIntervalSince1970: 20)]
@@ -229,6 +259,25 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(singlePortraitOnPortrait.style, .fitBlurred)
     }
 
+    func testAutomaticPairingDoesNotSkipAnIncompatibleSinglePhoto() {
+        let portrait = CGSize(width: 900, height: 1400)
+        let landscape = CGSize(width: 1600, height: 900)
+        let canvasSize = CGSize(width: 1366, height: 1024)
+
+        XCTAssertEqual(
+            PairLayoutResolver.selection(imageSizes: [portrait, landscape, portrait], canvasSize: canvasSize).indices,
+            [0]
+        )
+        XCTAssertEqual(
+            PlaybackGroupResolver.groupStarts(
+                imageSizes: [portrait, landscape, portrait, portrait, landscape],
+                layout: .automatic,
+                canvasSize: canvasSize
+            ),
+            [0, 1, 2, 4]
+        )
+    }
+
     @MainActor
     func testWeatherOverlayGracefullyReportsUnavailableWithoutProvider() {
         let service = CanvasWeatherService()
@@ -361,6 +410,10 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(
             PlaybackGroupResolver.nextGroupIndex(imageSizes: imageSizes, currentIndex: 3, direction: 1, layout: .automatic, canvasSize: canvasSize, repeatEnabled: false),
             5
+        )
+        XCTAssertEqual(
+            PlaybackGroupResolver.nextGroupIndex(imageSizes: imageSizes, currentIndex: 2, direction: -1, layout: .automatic, canvasSize: canvasSize, repeatEnabled: false),
+            0
         )
         XCTAssertEqual(
             PlaybackGroupResolver.nextGroupIndex(imageSizes: imageSizes, currentIndex: 4, direction: -1, layout: .automatic, canvasSize: canvasSize, repeatEnabled: false),
