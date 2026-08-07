@@ -133,34 +133,20 @@ struct LayoutCanvas: View {
 
     @ViewBuilder private func content(in size: CGSize) -> some View {
         let selection = resolvedSelection(in: size)
-        switch selection.style {
-        case .pairHorizontal, .portraitPair:
-            HStack(spacing: spacing) {
-                imageView(at: selection.indices[safe: 0] ?? 0, selectedLayout: selection.style)
-                imageView(at: selection.indices[safe: 1] ?? 1, selectedLayout: selection.style)
+        let placements = CaptureDateOverlayGeometry.tileFrames(
+            imageSizes: images.map(\.canvasDisplaySize),
+            style: style,
+            canvasSize: size,
+            spacing: spacing
+        )
+        ZStack(alignment: .topLeading) {
+            ForEach(placements, id: \.index) { placement in
+                imageView(at: placement.index, selectedLayout: selection.style)
+                    .frame(width: placement.frame.width, height: placement.frame.height)
+                    .position(x: placement.frame.midX, y: placement.frame.midY)
             }
-        case .pairVertical:
-            VStack(spacing: spacing) {
-                imageView(at: selection.indices[safe: 0] ?? 0, selectedLayout: selection.style)
-                imageView(at: selection.indices[safe: 1] ?? 1, selectedLayout: selection.style)
-            }
-        case .collageThree:
-            HStack(spacing: spacing) {
-                imageView(at: selection.indices[safe: 0] ?? 0, selectedLayout: selection.style)
-                VStack(spacing: spacing) {
-                    if selection.indices.count > 1 { imageView(at: selection.indices[1], selectedLayout: selection.style) }
-                    if selection.indices.count > 2 { imageView(at: selection.indices[2], selectedLayout: selection.style) }
-                }
-            }
-        case .gridFour:
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: spacing), GridItem(.flexible(), spacing: spacing)], spacing: spacing) {
-                ForEach(selection.indices.prefix(4), id: \.self) { index in imageView(at: index, selectedLayout: selection.style) }
-            }
-        case .fitBlurred:
-            imageView(at: selection.indices.first ?? 0, selectedLayout: selection.style)
-        default:
-            imageView(at: selection.indices.first ?? 0, selectedLayout: selection.style)
         }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
     private func resolvedSelection(in size: CGSize) -> PairLayoutSelection {

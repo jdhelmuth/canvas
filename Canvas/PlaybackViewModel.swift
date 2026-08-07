@@ -8,11 +8,14 @@ final class PlaybackViewModel: ObservableObject {
     /// value. Publishing the asset first used to remove the outgoing frame
     /// while the next image was still loading, which left SwiftUI with no
     /// outgoing view to animate against.
-    struct DisplayedFrame {
+    struct DisplayedFrame: Identifiable {
+        let id = UUID()
         let asset: CanvasMediaItem
         let image: UIImage
         let layoutImages: [UIImage]
         let layoutAssets: [CanvasMediaItem]
+        let transitionSeed: UInt64
+        let gestureDirection: Int
     }
 
     @Published private(set) var isPlaying = true
@@ -22,10 +25,6 @@ final class PlaybackViewModel: ObservableObject {
     @Published private(set) var queueCount = 0
     @Published private(set) var currentIndex = 0
     @Published private(set) var elapsed = 0.0
-    /// A fresh seed is emitted for every navigation event. The view can then
-    /// resolve random transitions once per frame instead of reusing a style
-    /// tied only to the queue index (which repeated the same choice each loop).
-    @Published private(set) var transitionSeed: UInt64 = 1
     private var library: PhotoLibraryService?
     private var googlePhotos: GooglePhotosService?
     private var loader: AssetImageLoader?
@@ -64,7 +63,7 @@ final class PlaybackViewModel: ObservableObject {
         queue = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: settings.repeatEnabled, previousIDs: previousIDs, recentAvoidance: settings.recentAvoidance, shuffleSeed: Int.random(in: Int.min...Int.max))
         queueCount = queue.count
         currentIndex = min(currentIndex, max(0, queue.count - 1))
-        await loadCurrent(generation: generation)
+        await loadCurrent(generation: generation, transitionSeed: 1, gestureDirection: 0)
         guard !Task.isCancelled, loadGeneration == generation else { return }
         startTimer()
     }
@@ -115,9 +114,9 @@ final class PlaybackViewModel: ObservableObject {
     /// collage is actually present. Video and Live Photo surfaces remain one
     /// media item because they are rendered as a single UIKit surface.
     @discardableResult
-    func navigateByDisplayedGroup(direction: Int) -> Bool {
+    func navigateByDisplayedGroup(direction: Int, gestureDirection: Int = 0) -> Bool {
         guard currentAsset?.kind == .photo, layoutAssets.count > 1 else {
-            return advance(direction: direction)
+            return advance(direction: direction, gestureDirection: gestureDirection)
         }
         let imageSizes = queue.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
         let singleMediaIndices = Set(queue.indices.filter { PlaybackMediaSurfacePolicy.usesSingleTile(for: queue[$0].kind) })
@@ -139,11 +138,11 @@ final class PlaybackViewModel: ObservableObject {
             // that would expose the second tile of the current group.
             return false
         }
-        return advance(direction: direction, targetIndex: target)
+        return advance(direction: direction, targetIndex: target, gestureDirection: gestureDirection)
     }
 
     @discardableResult
-    private func advance(direction: Int, targetIndex: Int? = nil) -> Bool {
+    private func advance(direction: Int, targetIndex: Int? = nil, gestureDirection: Int = 0) -> Bool {
         guard playbackAllowed, !queue.isEmpty else { return false }
         timerTask?.cancel()
         loadTask?.cancel()
@@ -161,7 +160,7 @@ final class PlaybackViewModel: ObservableObject {
             timerTask?.cancel()
             return false
         }
-        transitionSeed = UInt64.random(in: UInt64.min...UInt64.max)
+        let transitionSeed = UInt64.random(in: UInt64.min...UInt64.max)
         currentIndex = nextIndex
         if PlaybackAdvancePolicy.shouldShuffleAfterAdvance(
             direction: direction,
@@ -180,14 +179,18 @@ final class PlaybackViewModel: ObservableObject {
         }
         loadTask = Task { [weak self] in
             guard let self else { return }
-            await self.loadCurrent(generation: generation)
+            await self.loadCurrent(
+                generation: generation,
+                transitionSeed: transitionSeed,
+                gestureDirection: gestureDirection
+            )
             guard !Task.isCancelled, self.loadGeneration == generation else { return }
             self.startTimer()
         }
         return true
     }
 
-    private func loadCurrent(generation: Int) async {
+    private func loadCurrent(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async {
         guard !Task.isCancelled, loadGeneration == generation else { return }
         guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let library, let loader else { return }
         elapsed = 0
@@ -229,7 +232,9 @@ final class PlaybackViewModel: ObservableObject {
                 asset: asset,
                 image: image,
                 layoutImages: loadedImages,
-                layoutAssets: loadedAssets
+                layoutAssets: loadedAssets,
+                transitionSeed: transitionSeed,
+                gestureDirection: gestureDirection
             )
             loader.prefetch(Array(queue.dropFirst(currentIndex + 1).prefix(4)), service: library, size: CGSize(width: 700, height: 700))
         } else {

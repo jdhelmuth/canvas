@@ -6,6 +6,7 @@ struct PlayerView: View {
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = PlaybackViewModel()
     @StateObject private var scheduleMonitor = ScheduleMonitor()
     @State private var controlsVisible = true
@@ -14,8 +15,11 @@ struct PlayerView: View {
     @State private var isLocked = false
     @State private var showDetails = false
     @State private var lastSwipeTime = Date.distantPast
-    @State private var swipeDirection = 0
-    @State private var swipeResetToken = UUID()
+    @State private var presentedFrame: PlaybackViewModel.DisplayedFrame?
+    @State private var outgoingFrame: PlaybackViewModel.DisplayedFrame?
+    @State private var activeTransitionStyle: TransitionStyle = .cut
+    @State private var transitionProgress: CGFloat = 1
+    @State private var transitionCompletionTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -51,6 +55,7 @@ struct PlayerView: View {
         }
         .onDisappear {
             hideTask?.cancel()
+            transitionCompletionTask?.cancel()
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
             store.power.endPlayback(); store.audio.stop(); store.weather.clear()
         }
@@ -58,7 +63,7 @@ struct PlayerView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
         .onChange(of: store.library.libraryRevision) { _, _ in Task { await model.reload() } }
-        .onChange(of: model.currentAsset?.id) { _, _ in scheduleSwipeReset(); scheduleHide() }
+        .onChange(of: model.currentAsset?.id) { _, _ in scheduleHide() }
         .onChange(of: model.isPlaying) { _, _ in scheduleHide() }
         .onChange(of: store.settings.overlays.showWeather) { _, _ in updateWeather() }
         .onChange(of: store.settings) { _, updated in
@@ -84,6 +89,9 @@ struct PlayerView: View {
             if allowed { scheduleHide() }
             else { hideTask?.cancel(); controlsVisible = true }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { finishFrameTransition() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in scheduleHide() }
         .simultaneousGesture(tapGesture)
         .simultaneousGesture(swipeGesture)
@@ -97,93 +105,11 @@ struct PlayerView: View {
     private var media: some View {
         GeometryReader { proxy in
             ZStack {
-                if let item = model.currentAsset, item.kind == .video, let asset = item.appleAsset {
-                    ZStack {
-                        playbackBackdrop
-                        VideoAssetView(asset: asset, isPlaying: model.isPlaying, muted: store.settings.videoMuted, volume: store.settings.videoVolume, framingMode: store.settings.effectiveFramingMode)
-                        if store.settings.overlays.showCaptureDate, let image = model.currentImage {
-                            CaptureDateOverlayLayer(
-                                imageSizes: [image.canvasDisplaySize],
-                                captureDates: [model.currentAsset?.creationDate],
-                                style: .single,
-                                canvasSize: proxy.size,
-                                spacing: 0,
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                                overlaySettings: store.settings.overlays
-                            )
-                        }
-                    }
-                    .id(item.id)
-                    .transition(transition)
-                } else if let item = model.currentAsset, item.kind == .video, let url = item.localURL {
-                    ZStack {
-                        playbackBackdrop
-                        LocalVideoView(url: url, isPlaying: model.isPlaying, muted: store.settings.videoMuted, volume: store.settings.videoVolume, framingMode: store.settings.effectiveFramingMode)
-                        if store.settings.overlays.showCaptureDate, let image = model.currentImage {
-                            CaptureDateOverlayLayer(
-                                imageSizes: [image.canvasDisplaySize],
-                                captureDates: [model.currentAsset?.creationDate],
-                                style: .single,
-                                canvasSize: proxy.size,
-                                spacing: 0,
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                                overlaySettings: store.settings.overlays
-                            )
-                        }
-                    }
-                    .id(item.id)
-                    .transition(transition)
-                } else if let item = model.currentAsset, item.kind == .livePhoto, let asset = item.appleAsset {
-                    ZStack {
-                        playbackBackdrop
-                        LivePhotoAssetView(asset: asset, isPlaying: model.isPlaying, loop: store.settings.loopLivePhotos, muted: store.settings.videoMuted, framingMode: store.settings.effectiveFramingMode)
-                        if store.settings.overlays.showCaptureDate, let image = model.currentImage {
-                            CaptureDateOverlayLayer(
-                                imageSizes: [image.canvasDisplaySize],
-                                captureDates: [model.currentAsset?.creationDate],
-                                style: .single,
-                                canvasSize: proxy.size,
-                                spacing: 0,
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                                overlaySettings: store.settings.overlays
-                            )
-                        }
-                    }
-                    .id(item.id)
-                    .transition(transition)
-                } else if !model.layoutImages.isEmpty {
-                    ZStack {
-                        LayoutCanvas(
-                            images: model.layoutImages,
-                            style: fullscreenLayout,
-                            fit: store.settings.effectiveFramingMode.preservesEntireImage,
-                            background: MediaBackdropView.neutralFallback,
-                            blurredBackground: store.settings.blurBackground,
-                            spacing: CGFloat(store.settings.spacing),
-                            cornerRadius: CGFloat(store.settings.cornerRadius),
-                            captureDates: model.layoutAssets.map(\.creationDate),
-                            showCaptureDates: false,
-                            captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                            framingMode: store.settings.effectiveFramingMode,
-                            overlaySettings: store.settings.overlays
-                        )
-                        .scaleEffect(gestureZoom)
-                        // Capture dates live in the final device/tile space,
-                        // outside the pinch/drag transform applied to media.
-                        if store.settings.overlays.showCaptureDate {
-                            CaptureDateOverlayLayer(
-                                imageSizes: model.layoutImages.map(\.canvasDisplaySize),
-                                captureDates: model.layoutAssets.map(\.creationDate),
-                                style: fullscreenLayout,
-                                canvasSize: proxy.size,
-                                spacing: CGFloat(store.settings.spacing),
-                                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                                overlaySettings: store.settings.overlays
-                            )
-                        }
-                    }
-                    .id(model.currentAsset?.id ?? "photo-loading")
-                    .transition(transition)
+                if let outgoingFrame {
+                    frameLayer(outgoingFrame, role: .outgoing, in: proxy.size)
+                }
+                if let presentedFrame {
+                    frameLayer(presentedFrame, role: .incoming, in: proxy.size)
                 } else if model.errorMessage != nil {
                     VStack(spacing: 12) { Image(systemName: "icloud.slash").font(.largeTitle); Text(model.errorMessage ?? "Unavailable").foregroundStyle(.white.opacity(0.8)) }.transition(.opacity)
                 } else {
@@ -192,8 +118,13 @@ struct PlayerView: View {
                 overlay(in: proxy.size)
             }
             .background(Color.black)
-            .animation(reduceMotion ? nil : .easeInOut(duration: store.settings.transitionDuration), value: model.currentAsset?.id)
-            .onAppear { model.updateCanvasSize(proxy.size) }
+            .onAppear {
+                model.updateCanvasSize(proxy.size)
+                present(model.displayedFrame)
+            }
+            .onChange(of: model.displayedFrame?.id) { _, _ in
+                present(model.displayedFrame)
+            }
             .onChange(of: proxy.size) { _, size in model.updateCanvasSize(size) }
         }
         // The media/backdrop surface owns the full display. Controls remain
@@ -206,10 +137,8 @@ struct PlayerView: View {
     /// share LayoutCanvas's background layer. Give them the same contextual
     /// backdrop so fit gaps or a not-yet-ready surface never reveal a fixed
     /// blue placeholder.
-    private var playbackBackdrop: some View {
-        let images = model.layoutImages.isEmpty
-            ? (model.currentImage.map { [$0] } ?? [])
-            : model.layoutImages
+    private func playbackBackdrop(for frame: PlaybackViewModel.DisplayedFrame) -> some View {
+        let images = frame.layoutImages.isEmpty ? [frame.image] : frame.layoutImages
         return MediaBackdropView(
             images: images,
             mode: MediaBackdropResolver.mode(imageCount: images.count, blurredBackground: store.settings.blurBackground),
@@ -225,75 +154,183 @@ struct PlayerView: View {
         }
     }
 
-    private var transition: AnyTransition {
-        switch SwipeTransitionState.from(direction: swipeDirection) {
-        case .forward:
-            // A left finger swipe moves the outgoing frame left and brings
-            // the next displayed group in from the right.
-            return .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading))
-        case .backward:
-            return .asymmetric(insertion: .move(edge: .leading), removal: .move(edge: .trailing))
-        case .automatic:
-            break
+    private func frameLayer(
+        _ frame: PlaybackViewModel.DisplayedFrame,
+        role: CanvasFrameTransitionRole,
+        in size: CGSize
+    ) -> some View {
+        let visualState = CanvasFrameTransitionGeometry.state(
+            style: activeTransitionStyle,
+            role: role,
+            progress: transitionProgress,
+            canvasSize: size
+        )
+        return frameSurface(
+            frame,
+            in: size,
+            gestureScale: role == .incoming ? gestureZoom : InteractivePhotoZoomPolicy.restingScale
+        )
+        // Give every frame a non-negotiable viewport before applying visual
+        // effects. A transition can move this layer, but it can never feed a
+        // partial proposal back into the pair's HStack geometry.
+        .frame(width: size.width, height: size.height)
+        .modifier(CanvasTransitionModifier(state: visualState))
+        .clipped()
+    }
+
+    @ViewBuilder
+    private func frameSurface(
+        _ frame: PlaybackViewModel.DisplayedFrame,
+        in size: CGSize,
+        gestureScale: CGFloat
+    ) -> some View {
+        let item = frame.asset
+        if item.kind == .video, let asset = item.appleAsset {
+            ZStack {
+                playbackBackdrop(for: frame)
+                VideoAssetView(
+                    asset: asset,
+                    isPlaying: model.isPlaying,
+                    muted: store.settings.videoMuted,
+                    volume: store.settings.videoVolume,
+                    framingMode: store.settings.effectiveFramingMode
+                )
+                singleSurfaceCaptureDate(for: frame, in: size)
+            }
+        } else if item.kind == .video, let url = item.localURL {
+            ZStack {
+                playbackBackdrop(for: frame)
+                LocalVideoView(
+                    url: url,
+                    isPlaying: model.isPlaying,
+                    muted: store.settings.videoMuted,
+                    volume: store.settings.videoVolume,
+                    framingMode: store.settings.effectiveFramingMode
+                )
+                singleSurfaceCaptureDate(for: frame, in: size)
+            }
+        } else if item.kind == .livePhoto, let asset = item.appleAsset {
+            ZStack {
+                playbackBackdrop(for: frame)
+                LivePhotoAssetView(
+                    asset: asset,
+                    isPlaying: model.isPlaying,
+                    loop: store.settings.loopLivePhotos,
+                    muted: store.settings.videoMuted,
+                    framingMode: store.settings.effectiveFramingMode
+                )
+                singleSurfaceCaptureDate(for: frame, in: size)
+            }
+        } else {
+            ZStack {
+                LayoutCanvas(
+                    images: frame.layoutImages,
+                    style: fullscreenLayout,
+                    fit: store.settings.effectiveFramingMode.preservesEntireImage,
+                    background: MediaBackdropView.neutralFallback,
+                    blurredBackground: store.settings.blurBackground,
+                    spacing: CGFloat(store.settings.spacing),
+                    cornerRadius: CGFloat(store.settings.cornerRadius),
+                    captureDates: frame.layoutAssets.map(\.creationDate),
+                    showCaptureDates: false,
+                    captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
+                    framingMode: store.settings.effectiveFramingMode,
+                    overlaySettings: store.settings.overlays
+                )
+                .scaleEffect(gestureScale)
+                // Capture dates live in final device/tile coordinates and are
+                // never scaled by a pinch gesture.
+                if store.settings.overlays.showCaptureDate {
+                    CaptureDateOverlayLayer(
+                        imageSizes: frame.layoutImages.map(\.canvasDisplaySize),
+                        captureDates: frame.layoutAssets.map(\.creationDate),
+                        style: fullscreenLayout,
+                        canvasSize: size,
+                        spacing: CGFloat(store.settings.spacing),
+                        badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
+                        overlaySettings: store.settings.overlays
+                    )
+                }
+            }
         }
-        let style = TransitionEngine.choose(
+    }
+
+    @ViewBuilder
+    private func singleSurfaceCaptureDate(
+        for frame: PlaybackViewModel.DisplayedFrame,
+        in size: CGSize
+    ) -> some View {
+        if store.settings.overlays.showCaptureDate {
+            CaptureDateOverlayLayer(
+                imageSizes: [frame.image.canvasDisplaySize],
+                captureDates: [frame.asset.creationDate],
+                style: .single,
+                canvasSize: size,
+                spacing: 0,
+                badgeStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
+                overlaySettings: store.settings.overlays
+            )
+        }
+    }
+
+    private func present(_ frame: PlaybackViewModel.DisplayedFrame?) {
+        guard frame?.id != presentedFrame?.id else { return }
+        transitionCompletionTask?.cancel()
+
+        guard let frame else {
+            finishFrameTransition()
+            presentedFrame = nil
+            return
+        }
+        guard let current = presentedFrame else {
+            presentedFrame = frame
+            outgoingFrame = nil
+            activeTransitionStyle = .cut
+            transitionProgress = 1
+            return
+        }
+
+        // Resolve the complete transition once and keep it stable until the
+        // compositor's completion boundary. Random settings, reduce motion,
+        // or another view update cannot mutate an animation in flight.
+        activeTransitionStyle = TransitionEngine.resolvedStyle(
             preferred: store.settings.transition,
             random: store.settings.randomTransitions,
             excluded: store.settings.excludedTransitions,
             reduceMotion: reduceMotion,
-            seed: model.transitionSeed
+            seed: frame.transitionSeed,
+            gestureDirection: frame.gestureDirection
         )
-        switch style {
-        case .cut: return AnyTransition.identity
-        case .crossfade: return AnyTransition.opacity
-        case .slideLeft: return directionalTransition(insertion: .trailing, removal: .leading)
-        case .slideRight: return directionalTransition(insertion: .leading, removal: .trailing)
-        case .slideUp: return directionalTransition(insertion: .bottom, removal: .top)
-        case .slideDown: return directionalTransition(insertion: .top, removal: .bottom)
-        case .push:
-            return .asymmetric(
-                insertion: .move(edge: .trailing).combined(with: .opacity),
-                removal: .move(edge: .leading)
-            )
-        case .zoomIn:
-            return .asymmetric(
-                insertion: visualTransition(active: .init(scale: 0.72, opacity: 0), identity: .init()),
-                removal: .opacity
-            )
-        case .zoomOut:
-            return .asymmetric(
-                insertion: visualTransition(active: .init(scale: 1.28, opacity: 0), identity: .init()),
-                removal: visualTransition(active: .init(scale: 0.82, opacity: 0), identity: .init())
-            )
-        case .kenBurns:
-            return .asymmetric(
-                insertion: visualTransition(active: .init(scale: 1.1, opacity: 0, offset: CGSize(width: -18, height: 10)), identity: .init()),
-                removal: visualTransition(active: .init(scale: 1.06, opacity: 0, offset: CGSize(width: 18, height: -10)), identity: .init())
-            )
-        case .blurDissolve:
-            return .asymmetric(
-                insertion: visualTransition(active: .init(opacity: 0, blur: 18), identity: .init()),
-                removal: visualTransition(active: .init(opacity: 0, blur: 10), identity: .init())
-            )
-        case .scaleFade:
-            return .asymmetric(
-                insertion: visualTransition(active: .init(scale: 0.84, opacity: 0), identity: .init()),
-                removal: visualTransition(active: .init(scale: 1.12, opacity: 0), identity: .init())
-            )
-        case .pageSwipe:
-            return .asymmetric(
-                insertion: visualTransition(active: .init(opacity: 0, rotation: .degrees(-76), anchor: .leading, perspective: 0.72), identity: .init()),
-                removal: visualTransition(active: .init(opacity: 0, rotation: .degrees(76), anchor: .trailing, perspective: 0.72), identity: .init())
-            )
+        outgoingFrame = current
+        presentedFrame = frame
+        transitionProgress = 0
+
+        let duration = activeTransitionStyle == .cut ? 0 : max(0, store.settings.transitionDuration)
+        guard duration > 0 else {
+            finishFrameTransition()
+            return
+        }
+
+        let frameID = frame.id
+        withAnimation(.easeInOut(duration: duration)) {
+            transitionProgress = 1
+        }
+        transitionCompletionTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(duration + 0.1))
+            guard !Task.isCancelled, presentedFrame?.id == frameID else { return }
+            finishFrameTransition()
         }
     }
 
-    private func directionalTransition(insertion: Edge, removal: Edge) -> AnyTransition {
-        .asymmetric(insertion: .move(edge: insertion), removal: .move(edge: removal))
-    }
-
-    private func visualTransition(active: CanvasTransitionModifier, identity: CanvasTransitionModifier) -> AnyTransition {
-        .modifier(active: active, identity: identity)
+    private func finishFrameTransition() {
+        transitionCompletionTask?.cancel()
+        transitionCompletionTask = nil
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            transitionProgress = 1
+            outgoingFrame = nil
+        }
     }
 
     private var controls: some View {
@@ -400,24 +437,11 @@ struct PlayerView: View {
                 let now = Date()
                 guard now.timeIntervalSince(lastSwipeTime) > 0.18 else { return }
                 lastSwipeTime = now
-                swipeDirection = direction
-                swipeResetToken = UUID()
-                let moved = model.navigateByDisplayedGroup(direction: direction)
-                if !moved { swipeDirection = 0 }
+                _ = model.navigateByDisplayedGroup(direction: direction, gestureDirection: direction)
             } else if abs(value.translation.width) < abs(value.translation.height), value.translation.height > 80 {
                 dismiss()
             }
             scheduleHide()
-        }
-    }
-    private func scheduleSwipeReset() {
-        guard swipeDirection != 0 else { return }
-        let token = swipeResetToken
-        let delay = max(0.35, store.settings.transitionDuration + 0.1)
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(delay))
-            guard swipeResetToken == token else { return }
-            swipeDirection = 0
         }
     }
     private var magnifyGesture: some Gesture {
@@ -487,20 +511,27 @@ struct PlayerView: View {
 /// modifier value-type and pure lets SwiftUI interpolate every property during
 /// the same transition animation.
 private struct CanvasTransitionModifier: ViewModifier {
-    var scale: CGFloat = 1
-    var opacity: Double = 1
-    var blur: CGFloat = 0
-    var offset: CGSize = .zero
-    var rotation: Angle = .zero
-    var anchor: UnitPoint = .center
-    var perspective: CGFloat = 0
+    let state: CanvasFrameTransitionState
+
+    private var anchor: UnitPoint {
+        switch state.anchor {
+        case .center: .center
+        case .leading: .leading
+        case .trailing: .trailing
+        }
+    }
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(scale, anchor: anchor)
-            .blur(radius: blur)
-            .opacity(opacity)
-            .offset(offset)
-            .rotation3DEffect(rotation, axis: (x: 0, y: 1, z: 0), anchor: anchor, perspective: perspective)
+            .scaleEffect(state.scale, anchor: anchor)
+            .blur(radius: state.blur)
+            .opacity(state.opacity)
+            .offset(state.offset)
+            .rotation3DEffect(
+                .degrees(state.rotationDegrees),
+                axis: (x: 0, y: 1, z: 0),
+                anchor: anchor,
+                perspective: state.perspective
+            )
     }
 }

@@ -115,6 +115,78 @@ final class CanvasTests: XCTestCase {
         XCTAssertGreaterThan(selections.count, 1)
     }
 
+    func testCompletedFrameTransitionsAlwaysRestoreIncomingIdentity() {
+        let canvasSize = CGSize(width: 1194, height: 834)
+
+        for style in TransitionStyle.allCases {
+            let state = CanvasFrameTransitionGeometry.state(
+                style: style,
+                role: .incoming,
+                progress: 1,
+                canvasSize: canvasSize
+            )
+
+            XCTAssertEqual(state.scale, 1, accuracy: 0.0001, style.title)
+            XCTAssertEqual(state.opacity, 1, accuracy: 0.0001, style.title)
+            XCTAssertEqual(state.blur, 0, accuracy: 0.0001, style.title)
+            XCTAssertEqual(state.offset.width, 0, accuracy: 0.0001, style.title)
+            XCTAssertEqual(state.offset.height, 0, accuracy: 0.0001, style.title)
+            XCTAssertEqual(state.rotationDegrees, 0, accuracy: 0.0001, style.title)
+        }
+    }
+
+    func testCrossfadeNeverTranslatesOrScalesPairedFrame() {
+        let canvasSize = CGSize(width: 1194, height: 834)
+
+        for step in 0...20 {
+            let state = CanvasFrameTransitionGeometry.state(
+                style: .crossfade,
+                role: .incoming,
+                progress: CGFloat(step) / 20,
+                canvasSize: canvasSize
+            )
+            XCTAssertEqual(state.scale, 1, accuracy: 0.0001)
+            XCTAssertEqual(state.offset, .zero)
+            XCTAssertEqual(state.rotationDegrees, 0, accuracy: 0.0001)
+        }
+    }
+
+    func testGestureDirectionIsResolvedOnceWithoutChangingTimedCrossfade() {
+        XCTAssertEqual(
+            TransitionEngine.resolvedStyle(
+                preferred: .crossfade,
+                random: false,
+                excluded: [],
+                reduceMotion: false,
+                seed: 1,
+                gestureDirection: 1
+            ),
+            .slideLeft
+        )
+        XCTAssertEqual(
+            TransitionEngine.resolvedStyle(
+                preferred: .crossfade,
+                random: false,
+                excluded: [],
+                reduceMotion: false,
+                seed: 1,
+                gestureDirection: 0
+            ),
+            .crossfade
+        )
+        XCTAssertEqual(
+            TransitionEngine.resolvedStyle(
+                preferred: .pageSwipe,
+                random: false,
+                excluded: [],
+                reduceMotion: true,
+                seed: 1,
+                gestureDirection: -1
+            ),
+            .crossfade
+        )
+    }
+
     func testOverlayTextStrokeDefaultsAreBackwardCompatibleAndBounded() {
         let settings = OverlaySettings()
         XCTAssertFalse(OverlayTextStrokePolicy.isEnabled(settings.textStrokeEnabled))
@@ -394,6 +466,11 @@ final class CanvasTests: XCTestCase {
         )
         XCTAssertEqual(pair.map(\.index), [0, 1])
         XCTAssertTrue(pair.allSatisfy { CGRect(origin: .zero, size: CGSize(width: 1366, height: 1024)).contains($0.frame) })
+        XCTAssertEqual(pair[0].frame, CGRect(x: 0, y: 0, width: 679, height: 1024))
+        XCTAssertEqual(pair[1].frame, CGRect(x: 687, y: 0, width: 679, height: 1024))
+        XCTAssertEqual(pair[0].frame.width, pair[1].frame.width)
+        XCTAssertEqual(pair[1].frame.minX - pair[0].frame.maxX, 8, accuracy: 0.001)
+        XCTAssertEqual(pair[1].frame.maxX, 1366, accuracy: 0.001)
     }
 
     func testCaptureDateBadgeStyleIsConsistentAndPersistable() {

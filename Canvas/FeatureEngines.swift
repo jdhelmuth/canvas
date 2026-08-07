@@ -766,6 +766,135 @@ struct TransitionEngine {
     static func choices(excluding excluded: Set<TransitionStyle>) -> [TransitionStyle] {
         TransitionStyle.allCases.filter { !excluded.contains($0) }
     }
+
+    /// Gesture navigation has a physical direction that takes precedence over
+    /// the timed-playback style. Resolve that direction once, when the new
+    /// frame is published, so a later view update cannot change a transition
+    /// that is already in flight.
+    static func resolvedStyle(
+        preferred: TransitionStyle,
+        random: Bool,
+        excluded: Set<TransitionStyle>,
+        reduceMotion: Bool,
+        seed: UInt64,
+        gestureDirection: Int
+    ) -> TransitionStyle {
+        guard gestureDirection == 0 else {
+            if reduceMotion { return .crossfade }
+            return gestureDirection > 0 ? .slideLeft : .slideRight
+        }
+        return choose(
+            preferred: preferred,
+            random: random,
+            excluded: excluded,
+            reduceMotion: reduceMotion,
+            seed: seed
+        )
+    }
+}
+
+enum CanvasFrameTransitionRole {
+    case incoming
+    case outgoing
+}
+
+enum CanvasFrameTransitionAnchor: Equatable {
+    case center
+    case leading
+    case trailing
+}
+
+/// A complete, explicit visual state for one frame layer. The incoming layer
+/// is guaranteed to resolve to identity at progress 1 for every style. This is
+/// deliberately independent of SwiftUI's insertion/removal lifecycle: if an
+/// animation is interrupted, PlayerView can synchronously set progress to 1
+/// and remove the outgoing layer instead of leaving a paired frame translated.
+struct CanvasFrameTransitionState: Equatable {
+    var scale: CGFloat = 1
+    var opacity: Double = 1
+    var blur: CGFloat = 0
+    var offset: CGSize = .zero
+    var rotationDegrees: Double = 0
+    var anchor: CanvasFrameTransitionAnchor = .center
+    var perspective: CGFloat = 0
+}
+
+enum CanvasFrameTransitionGeometry {
+    static func state(
+        style: TransitionStyle,
+        role: CanvasFrameTransitionRole,
+        progress rawProgress: CGFloat,
+        canvasSize: CGSize
+    ) -> CanvasFrameTransitionState {
+        let progress = min(max(rawProgress, 0), 1)
+        let remaining = 1 - progress
+        let incoming = role == .incoming
+
+        switch style {
+        case .cut:
+            return .init(opacity: incoming ? 1 : 0)
+        case .crossfade:
+            return .init(opacity: incoming ? Double(progress) : Double(remaining))
+        case .slideLeft:
+            return .init(offset: CGSize(width: incoming ? canvasSize.width * remaining : -canvasSize.width * progress, height: 0))
+        case .slideRight:
+            return .init(offset: CGSize(width: incoming ? -canvasSize.width * remaining : canvasSize.width * progress, height: 0))
+        case .slideUp:
+            return .init(offset: CGSize(width: 0, height: incoming ? canvasSize.height * remaining : -canvasSize.height * progress))
+        case .slideDown:
+            return .init(offset: CGSize(width: 0, height: incoming ? -canvasSize.height * remaining : canvasSize.height * progress))
+        case .push:
+            return .init(
+                opacity: incoming ? Double(progress) : 1,
+                offset: CGSize(width: incoming ? canvasSize.width * remaining : -canvasSize.width * progress, height: 0)
+            )
+        case .zoomIn:
+            return .init(
+                scale: incoming ? interpolate(from: 0.72, to: 1, progress: progress) : 1,
+                opacity: incoming ? Double(progress) : Double(remaining)
+            )
+        case .zoomOut:
+            return .init(
+                scale: incoming
+                    ? interpolate(from: 1.28, to: 1, progress: progress)
+                    : interpolate(from: 1, to: 0.82, progress: progress),
+                opacity: incoming ? Double(progress) : Double(remaining)
+            )
+        case .kenBurns:
+            return .init(
+                scale: incoming
+                    ? interpolate(from: 1.1, to: 1, progress: progress)
+                    : interpolate(from: 1, to: 1.06, progress: progress),
+                opacity: incoming ? Double(progress) : Double(remaining),
+                offset: incoming
+                    ? CGSize(width: -18 * remaining, height: 10 * remaining)
+                    : CGSize(width: 18 * progress, height: -10 * progress)
+            )
+        case .blurDissolve:
+            return .init(
+                opacity: incoming ? Double(progress) : Double(remaining),
+                blur: incoming ? 18 * remaining : 10 * progress
+            )
+        case .scaleFade:
+            return .init(
+                scale: incoming
+                    ? interpolate(from: 0.84, to: 1, progress: progress)
+                    : interpolate(from: 1, to: 1.12, progress: progress),
+                opacity: incoming ? Double(progress) : Double(remaining)
+            )
+        case .pageSwipe:
+            return .init(
+                opacity: incoming ? Double(progress) : Double(remaining),
+                rotationDegrees: incoming ? -76 * Double(remaining) : 76 * Double(progress),
+                anchor: incoming ? .leading : .trailing,
+                perspective: 0.72
+            )
+        }
+    }
+
+    private static func interpolate(from: CGFloat, to: CGFloat, progress: CGFloat) -> CGFloat {
+        from + (to - from) * progress
+    }
 }
 
 struct PortraitPairing {
