@@ -341,6 +341,12 @@ enum OverlayPreviewGeometry {
 /// SwiftUI's size proposal prevents different portrait sources from receiving
 /// different implicit zoom factors.
 enum MediaFramingGeometry {
+    enum HorizontalAlignment: Equatable {
+        case leading
+        case center
+        case trailing
+    }
+
     struct Plan: Equatable {
         let mode: MediaFramingMode
         let renderedFrame: CGRect
@@ -388,7 +394,8 @@ enum MediaFramingGeometry {
         viewportSize: CGSize,
         preferredMode: MediaFramingMode,
         requestedLayout: LayoutStyle,
-        selectedLayout: LayoutStyle
+        selectedLayout: LayoutStyle,
+        horizontalAlignment: HorizontalAlignment = .center
     ) -> Plan {
         let fillCrop = cropFraction(imageSize: imageSize, viewportSize: viewportSize)
         let mode: MediaFramingMode
@@ -399,13 +406,39 @@ enum MediaFramingGeometry {
         }
 
         let size = renderedSize(imageSize: imageSize, viewportSize: viewportSize, mode: mode)
+        let x: CGFloat
+        switch horizontalAlignment {
+        case .leading:
+            x = 0
+        case .center:
+            x = (viewportSize.width - size.width) / 2
+        case .trailing:
+            x = viewportSize.width - size.width
+        }
         let frame = CGRect(
-            x: (viewportSize.width - size.width) / 2,
+            x: x,
             y: (viewportSize.height - size.height) / 2,
             width: size.width,
             height: size.height
         )
         return Plan(mode: mode, renderedFrame: frame, cropFraction: fillCrop)
+    }
+}
+
+/// A horizontal portrait pair is a pair of fixed tile viewports, not a
+/// centered stack of two independently-sized images. The first tile owns the
+/// leading edge of the pair. Keeping this decision separate from source
+/// dimensions makes the rule apply equally to 3:4, 2:3, 9:16, and unusual
+/// portrait sources.
+enum MediaTileAlignmentPolicy {
+    static func horizontalAlignment(
+        tilePosition: Int,
+        layout: LayoutStyle
+    ) -> MediaFramingGeometry.HorizontalAlignment {
+        guard layout == .pairHorizontal || layout == .portraitPair else {
+            return .center
+        }
+        return tilePosition == 0 ? .leading : .center
     }
 }
 

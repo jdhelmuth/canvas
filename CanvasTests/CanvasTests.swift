@@ -559,7 +559,7 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(pair[1].frame.maxX, 1366, accuracy: 0.001)
     }
 
-    func testPortraitPairMediaPlansStayCenteredInsideTheirExplicitTileViewports() {
+    func testPortraitPairMediaPlansUseExplicitTileAlignmentInsideTheirViewports() {
         let canvas = CGSize(width: 2388, height: 1668)
         let sourceSizes = [
             CGSize(width: 3024, height: 4032),
@@ -573,22 +573,70 @@ final class CanvasTests: XCTestCase {
         )
 
         XCTAssertEqual(tiles.count, 2)
-        for (sourceSize, tile) in zip(sourceSizes, tiles) {
+        for (sourcePair, tile) in zip(sourceSizes.enumerated(), tiles) {
+            let sourceSize = sourcePair.element
+            let alignment = MediaTileAlignmentPolicy.horizontalAlignment(
+                tilePosition: sourcePair.offset,
+                layout: .pairHorizontal
+            )
             let plan = MediaFramingGeometry.plan(
                 imageSize: sourceSize,
                 viewportSize: tile.frame.size,
                 preferredMode: .fillZoom,
                 requestedLayout: .automatic,
-                selectedLayout: .pairHorizontal
+                selectedLayout: .pairHorizontal,
+                horizontalAlignment: alignment
             )
 
-            // The framing plan remains centered on its explicit tile viewport,
-            // even when Fill / zoom extends beyond the tile edges.
-            XCTAssertEqual(plan.renderedFrame.midX, tile.frame.width / 2, accuracy: 0.001)
+            // The first tile owns the leading edge. The second remains
+            // centered, preserving its existing composition while both tiles
+            // still cover their full explicit viewports.
+            if sourcePair.offset == 0 {
+                XCTAssertEqual(plan.renderedFrame.minX, 0, accuracy: 0.001)
+            } else {
+                XCTAssertEqual(plan.renderedFrame.midX, tile.frame.width / 2, accuracy: 0.001)
+            }
             XCTAssertEqual(plan.renderedFrame.midY, tile.frame.height / 2, accuracy: 0.001)
             XCTAssertGreaterThanOrEqual(plan.renderedFrame.width, tile.frame.width - 0.001)
             XCTAssertGreaterThanOrEqual(plan.renderedFrame.height, tile.frame.height - 0.001)
         }
+    }
+
+    func testPortraitPairAlignmentPolicyIsGlobalAcrossPortraitAspectRatios() {
+        let portraitSources = [
+            CGSize(width: 3024, height: 4032),
+            CGSize(width: 2000, height: 3000),
+            CGSize(width: 2268, height: 4032),
+            CGSize(width: 1440, height: 2560),
+            CGSize(width: 1170, height: 2532)
+        ]
+        let viewport = CGSize(width: 593, height: 834)
+
+        for source in portraitSources {
+            let firstTile = MediaFramingGeometry.plan(
+                imageSize: source,
+                viewportSize: viewport,
+                preferredMode: .fillZoom,
+                requestedLayout: .automatic,
+                selectedLayout: .pairHorizontal,
+                horizontalAlignment: MediaTileAlignmentPolicy.horizontalAlignment(
+                    tilePosition: 0,
+                    layout: .pairHorizontal
+                )
+            )
+            XCTAssertEqual(firstTile.renderedFrame.minX, 0, accuracy: 0.001)
+            XCTAssertGreaterThanOrEqual(firstTile.renderedFrame.maxX, viewport.width - 0.001)
+            XCTAssertGreaterThanOrEqual(firstTile.renderedFrame.maxY, viewport.height - 0.001)
+        }
+
+        XCTAssertEqual(
+            MediaTileAlignmentPolicy.horizontalAlignment(tilePosition: 1, layout: .pairHorizontal),
+            .center
+        )
+        XCTAssertEqual(
+            MediaTileAlignmentPolicy.horizontalAlignment(tilePosition: 0, layout: .pairVertical),
+            .center
+        )
     }
 
     func testCaptureDateBadgeStyleIsConsistentAndPersistable() {
@@ -795,7 +843,8 @@ final class CanvasTests: XCTestCase {
             viewportSize: viewport,
             preferredMode: .fillZoom,
             requestedLayout: .automatic,
-            selectedLayout: .pairHorizontal
+            selectedLayout: .pairHorizontal,
+            horizontalAlignment: .leading
         )
 
         XCTAssertEqual(plan.mode, .fillZoom)

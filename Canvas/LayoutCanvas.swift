@@ -140,11 +140,17 @@ struct LayoutCanvas: View {
             spacing: spacing
         )
         ZStack(alignment: .topLeading) {
-            ForEach(placements, id: \.index) { placement in
+            ForEach(Array(placements.enumerated()), id: \.element.index) { tilePosition, element in
+                let placement = element
+                let horizontalAlignment = MediaTileAlignmentPolicy.horizontalAlignment(
+                    tilePosition: tilePosition,
+                    layout: selection.style
+                )
                 imageView(
                     at: placement.index,
                     selectedLayout: selection.style,
-                    viewportSize: placement.frame.size
+                    viewportSize: placement.frame.size,
+                    horizontalAlignment: horizontalAlignment
                 )
                     .frame(width: placement.frame.width, height: placement.frame.height)
                     // The tile frame is already in canvas coordinates. Offset
@@ -165,7 +171,8 @@ struct LayoutCanvas: View {
     private func imageView(
         at index: Int,
         selectedLayout: LayoutStyle,
-        viewportSize: CGSize
+        viewportSize: CGSize,
+        horizontalAlignment: MediaFramingGeometry.HorizontalAlignment
     ) -> some View {
         if images.indices.contains(index) {
             let image = images[index]
@@ -174,8 +181,10 @@ struct LayoutCanvas: View {
                 viewportSize: viewportSize,
                 preferredMode: framingMode,
                 requestedLayout: style,
-                selectedLayout: selectedLayout
+                selectedLayout: selectedLayout,
+                horizontalAlignment: horizontalAlignment
             )
+            let alignment = horizontalAlignment.swiftUIAlignment
             Group {
                 if plan.mode == .fillZoom {
                     Image(uiImage: images[index])
@@ -191,9 +200,19 @@ struct LayoutCanvas: View {
             // Passing an oversized rendered frame through a nested SwiftUI
             // frame can be clamped back to the tile's fit size, creating a
             // one-sided inset for only the taller source in a pair.
-            .frame(width: viewportSize.width, height: viewportSize.height)
+            .frame(width: viewportSize.width, height: viewportSize.height, alignment: alignment)
             .clipped()
         } else { Color.clear }
+    }
+}
+
+private extension MediaFramingGeometry.HorizontalAlignment {
+    var swiftUIAlignment: Alignment {
+        switch self {
+        case .leading: .leading
+        case .center: .center
+        case .trailing: .trailing
+        }
     }
 }
 
