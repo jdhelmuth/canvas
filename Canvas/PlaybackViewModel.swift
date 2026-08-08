@@ -33,6 +33,7 @@ final class PlaybackViewModel: ObservableObject {
     private var timerTask: Task<Void, Never>?
     private var loadTask: Task<Void, Never>?
     private var previousIDs: [String] = []
+    private var navigationHistory = PlaybackNavigationHistory()
     private var configured = false
     private var currentMediaDuration: Double = 0
     private var playbackAllowed = true
@@ -63,8 +64,12 @@ final class PlaybackViewModel: ObservableObject {
         queue = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: settings.repeatEnabled, previousIDs: previousIDs, recentAvoidance: settings.recentAvoidance, shuffleSeed: Int.random(in: Int.min...Int.max))
         queueCount = queue.count
         currentIndex = min(currentIndex, max(0, queue.count - 1))
+        navigationHistory = PlaybackNavigationHistory()
         await loadCurrent(generation: generation, transitionSeed: 1, gestureDirection: 0)
         guard !Task.isCancelled, loadGeneration == generation else { return }
+        if displayedFrame != nil, queue.indices.contains(currentIndex) {
+            navigationHistory.reset(to: currentPosition)
+        }
         startTimer()
     }
 
@@ -99,8 +104,8 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     func togglePlaying() { isPlaying.toggle(); if isPlaying { startTimer() } else { timerTask?.cancel() } }
-    @discardableResult func next() -> Bool { advance(direction: 1) }
-    @discardableResult func previous() -> Bool { advance(direction: -1) }
+    @discardableResult func next() -> Bool { navigateByDisplayedGroup(direction: 1) }
+    @discardableResult func previous() -> Bool { navigateByDisplayedGroup(direction: -1) }
 
     /// Updates the actual fullscreen canvas used by LayoutCanvas. Keeping the
     /// size here lets a gesture resolve the same orientation-aware group that
@@ -116,6 +121,13 @@ final class PlaybackViewModel: ObservableObject {
     /// rendered as a single UIKit surface.
     @discardableResult
     func navigateByDisplayedGroup(direction: Int, gestureDirection: Int = 0) -> Bool {
+        // If the user is moving through frames that were already shown, replay
+        // the recorded route before asking the current queue for a new target.
+        // This is what keeps Back tied to playback history after a reshuffle.
+        if navigationHistory.canMove(direction: direction) {
+            return advance(direction: direction, gestureDirection: gestureDirection)
+        }
+
         // Even a one-photo frame needs group-aware navigation: its previous
         // queue item may be the second tile of the portrait pair immediately
         // before it. Non-photo media remain single-surface boundaries.
@@ -153,6 +165,20 @@ final class PlaybackViewModel: ObservableObject {
         loadGeneration &+= 1
         let generation = loadGeneration
         if let currentAsset { previousIDs.append(currentAsset.id); if previousIDs.count > 30 { previousIDs.removeFirst() } }
+
+        if let historicalPosition = navigationHistory.move(direction: direction) {
+            queue = historicalPosition.queue
+            queueCount = queue.count
+            currentIndex = historicalPosition.currentIndex
+            let transitionSeed = UInt64.random(in: UInt64.min...UInt64.max)
+            scheduleLoad(
+                generation: generation,
+                transitionSeed: transitionSeed,
+                gestureDirection: gestureDirection
+            )
+            return true
+        }
+
         let nextIndex: Int?
         if let targetIndex, queue.indices.contains(targetIndex) {
             nextIndex = targetIndex
@@ -181,6 +207,20 @@ final class PlaybackViewModel: ObservableObject {
                 shuffleSeed: Int.random(in: Int.min...Int.max)
             )
         }
+        navigationHistory.append(currentPosition)
+        scheduleLoad(
+            generation: generation,
+            transitionSeed: transitionSeed,
+            gestureDirection: gestureDirection
+        )
+        return true
+    }
+
+    private var currentPosition: PlaybackHistoryPosition {
+        PlaybackHistoryPosition(queue: queue, currentIndex: currentIndex)
+    }
+
+    private func scheduleLoad(generation: Int, transitionSeed: UInt64, gestureDirection: Int) {
         loadTask = Task { [weak self] in
             guard let self else { return }
             await self.loadCurrent(
@@ -191,7 +231,6 @@ final class PlaybackViewModel: ObservableObject {
             guard !Task.isCancelled, self.loadGeneration == generation else { return }
             self.startTimer()
         }
-        return true
     }
 
     private func loadCurrent(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async {

@@ -341,12 +341,6 @@ enum OverlayPreviewGeometry {
 /// SwiftUI's size proposal prevents different portrait sources from receiving
 /// different implicit zoom factors.
 enum MediaFramingGeometry {
-    /// Automatic layouts should feel edge-to-edge for ordinary camera photos,
-    /// but not at the cost of throwing away a large part of a square, panorama,
-    /// or unusually tall image. This limit is the fraction of the rendered
-    /// image that may sit outside its tile before Automatic switches to fit.
-    static let automaticMaximumCropFraction: CGFloat = 0.18
-
     struct Plan: Equatable {
         let mode: MediaFramingMode
         let renderedFrame: CGRect
@@ -382,11 +376,13 @@ enum MediaFramingGeometry {
         return max(0, min(1, 1 - visibleFraction))
     }
 
-    /// Resolves framing once, in the tile's final coordinate space. Automatic
-    /// layouts retain a true minimum-cover fill for ordinary aspect ratios and
-    /// switch to fit only when that fill would become an excessive zoom. A
-    /// `.fitBlurred` selection always means fit, matching the layout's name and
-    /// the resolver's documented fallback behavior.
+    /// Resolves framing once, in the tile's final coordinate space. The
+    /// framing preference is authoritative: Automatic describes how media is
+    /// grouped into tiles, not a second per-image framing preference. This is
+    /// important for pairs because silently fitting one unusually tall source
+    /// makes its foreground narrower than its companion and creates a false
+    /// gutter. A `.fitBlurred` selection always means fit, matching the
+    /// layout's name and the resolver's documented fallback behavior.
     static func plan(
         imageSize: CGSize,
         viewportSize: CGSize,
@@ -395,11 +391,8 @@ enum MediaFramingGeometry {
         selectedLayout: LayoutStyle
     ) -> Plan {
         let fillCrop = cropFraction(imageSize: imageSize, viewportSize: viewportSize)
-        let isAutomatic = requestedLayout == .automatic || requestedLayout == .portraitPair
         let mode: MediaFramingMode
         if preferredMode == .fitWithBorder || selectedLayout == .fitBlurred {
-            mode = .fitWithBorder
-        } else if isAutomatic && fillCrop > automaticMaximumCropFraction {
             mode = .fitWithBorder
         } else {
             mode = .fillZoom
@@ -551,6 +544,60 @@ enum PlaybackAdvancePolicy {
         shuffleEachLoop: Bool
     ) -> Bool {
         shuffleEachLoop && targetIndex == nil && direction > 0 && currentIndex == 0
+    }
+}
+
+/// Keeps the actual displayed route independent from the current shuffle
+/// order. A new shuffle can legitimately change the queue for future forward
+/// playback, but it must not change what Back means for frames that already
+/// appeared on screen.
+struct PlaybackHistoryPosition: Equatable {
+    let queue: [CanvasMediaItem]
+    let currentIndex: Int
+}
+
+struct PlaybackNavigationHistory {
+    static let defaultMaximumEntries = 64
+
+    private(set) var positions: [PlaybackHistoryPosition] = []
+    private(set) var cursor = -1
+    private let maximumEntries: Int
+
+    init(maximumEntries: Int = Self.defaultMaximumEntries) {
+        self.maximumEntries = max(1, maximumEntries)
+    }
+
+    func canMove(direction: Int) -> Bool {
+        guard direction != 0 else { return false }
+        let nextCursor = cursor + (direction > 0 ? 1 : -1)
+        return positions.indices.contains(nextCursor)
+    }
+
+    mutating func reset(to position: PlaybackHistoryPosition) {
+        positions = [position]
+        cursor = 0
+    }
+
+    mutating func append(_ position: PlaybackHistoryPosition) {
+        if cursor + 1 < positions.count {
+            positions.removeSubrange((cursor + 1)..<positions.count)
+        }
+        positions.append(position)
+        cursor = positions.count - 1
+
+        let overflow = positions.count - maximumEntries
+        if overflow > 0 {
+            positions.removeFirst(overflow)
+            cursor -= overflow
+        }
+    }
+
+    mutating func move(direction: Int) -> PlaybackHistoryPosition? {
+        guard direction != 0 else { return nil }
+        let nextCursor = cursor + (direction > 0 ? 1 : -1)
+        guard positions.indices.contains(nextCursor) else { return nil }
+        cursor = nextCursor
+        return positions[cursor]
     }
 }
 

@@ -222,7 +222,7 @@ struct PlayerView: View {
                 singleSurfaceCaptureDate(for: frame, in: size)
             }
         } else {
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 LayoutCanvas(
                     images: frame.layoutImages,
                     style: fullscreenLayout,
@@ -237,6 +237,7 @@ struct PlayerView: View {
                     framingMode: store.settings.effectiveFramingMode,
                     overlaySettings: store.settings.overlays
                 )
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
                 .scaleEffect(gestureScale)
                 // Capture dates live in final device/tile coordinates and are
                 // never scaled by a pinch gesture.

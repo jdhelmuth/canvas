@@ -141,9 +141,17 @@ struct LayoutCanvas: View {
         )
         ZStack(alignment: .topLeading) {
             ForEach(placements, id: \.index) { placement in
-                imageView(at: placement.index, selectedLayout: selection.style)
+                imageView(
+                    at: placement.index,
+                    selectedLayout: selection.style,
+                    viewportSize: placement.frame.size
+                )
                     .frame(width: placement.frame.width, height: placement.frame.height)
-                    .position(x: placement.frame.midX, y: placement.frame.midY)
+                    // The tile frame is already in canvas coordinates. Offset
+                    // the complete tile from the top-leading origin instead
+                    // of using position(), which creates a second center-based
+                    // coordinate system for the nested media view.
+                    .offset(x: placement.frame.minX, y: placement.frame.minY)
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -153,25 +161,37 @@ struct LayoutCanvas: View {
         LayoutCanvasSelectionResolver.selection(style: style, imageSizes: images.map(\.canvasDisplaySize), canvasSize: size)
     }
 
-    @ViewBuilder private func imageView(at index: Int, selectedLayout: LayoutStyle) -> some View {
+    @ViewBuilder
+    private func imageView(
+        at index: Int,
+        selectedLayout: LayoutStyle,
+        viewportSize: CGSize
+    ) -> some View {
         if images.indices.contains(index) {
-            GeometryReader { proxy in
-                let image = images[index]
-                let plan = MediaFramingGeometry.plan(
-                    imageSize: image.canvasDisplaySize,
-                    viewportSize: proxy.size,
-                    preferredMode: framingMode,
-                    requestedLayout: style,
-                    selectedLayout: selectedLayout
-                )
-                Image(uiImage: images[index])
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: plan.renderedFrame.width, height: plan.renderedFrame.height)
-                    .position(x: plan.renderedFrame.midX, y: plan.renderedFrame.midY)
-                    .clipped()
+            let image = images[index]
+            let plan = MediaFramingGeometry.plan(
+                imageSize: image.canvasDisplaySize,
+                viewportSize: viewportSize,
+                preferredMode: framingMode,
+                requestedLayout: style,
+                selectedLayout: selectedLayout
+            )
+            Group {
+                if plan.mode == .fillZoom {
+                    Image(uiImage: images[index])
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(uiImage: images[index])
+                        .resizable()
+                        .scaledToFit()
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Resolve the mode directly against the final tile proposal.
+            // Passing an oversized rendered frame through a nested SwiftUI
+            // frame can be clamped back to the tile's fit size, creating a
+            // one-sided inset for only the taller source in a pair.
+            .frame(width: viewportSize.width, height: viewportSize.height)
             .clipped()
         } else { Color.clear }
     }

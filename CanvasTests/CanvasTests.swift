@@ -381,6 +381,39 @@ final class CanvasTests: XCTestCase {
         )
     }
 
+    func testBackwardPlaybackHistoryReplaysThePriorRouteAcrossAReshuffle() {
+        let assets = (0..<4).map { index in
+            CanvasMediaItem(
+                id: "asset-\(index)",
+                source: .applePhotos,
+                kind: .photo,
+                creationDate: nil,
+                filename: "photo-\(index).jpg",
+                isFavorite: false,
+                pixelWidth: 900,
+                pixelHeight: 1400,
+                albumTitle: "Family",
+                appleAsset: nil,
+                localURL: nil,
+                contentHash: nil
+            )
+        }
+        let firstQueue = [assets[0], assets[1], assets[2], assets[3]]
+        let reshuffledQueue = [assets[2], assets[3], assets[0], assets[1]]
+        var history = PlaybackNavigationHistory()
+        history.reset(to: PlaybackHistoryPosition(queue: firstQueue, currentIndex: 0))
+        history.append(PlaybackHistoryPosition(queue: firstQueue, currentIndex: 2))
+        history.append(PlaybackHistoryPosition(queue: reshuffledQueue, currentIndex: 0))
+
+        let previousAfterReshuffle = history.move(direction: -1)
+        XCTAssertEqual(previousAfterReshuffle?.queue.map(\.id), ["asset-0", "asset-1", "asset-2", "asset-3"])
+        XCTAssertEqual(previousAfterReshuffle?.currentIndex, 2)
+
+        let firstFrame = history.move(direction: -1)
+        XCTAssertEqual(firstFrame?.queue.map(\.id), ["asset-0", "asset-1", "asset-2", "asset-3"])
+        XCTAssertEqual(firstFrame?.currentIndex, 0)
+    }
+
     func testDisplayedGroupSwipeUsesAdjacentGroupsForHeterogeneousOrientations() {
         let imageSizes = [
             CGSize(width: 900, height: 1400),
@@ -526,6 +559,38 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(pair[1].frame.maxX, 1366, accuracy: 0.001)
     }
 
+    func testPortraitPairMediaPlansStayCenteredInsideTheirExplicitTileViewports() {
+        let canvas = CGSize(width: 2388, height: 1668)
+        let sourceSizes = [
+            CGSize(width: 3024, height: 4032),
+            CGSize(width: 2880, height: 3840)
+        ]
+        let tiles = CaptureDateOverlayGeometry.tileFrames(
+            imageSizes: sourceSizes,
+            style: .automatic,
+            canvasSize: canvas,
+            spacing: 8
+        )
+
+        XCTAssertEqual(tiles.count, 2)
+        for (sourceSize, tile) in zip(sourceSizes, tiles) {
+            let plan = MediaFramingGeometry.plan(
+                imageSize: sourceSize,
+                viewportSize: tile.frame.size,
+                preferredMode: .fillZoom,
+                requestedLayout: .automatic,
+                selectedLayout: .pairHorizontal
+            )
+
+            // The framing plan remains centered on its explicit tile viewport,
+            // even when Fill / zoom extends beyond the tile edges.
+            XCTAssertEqual(plan.renderedFrame.midX, tile.frame.width / 2, accuracy: 0.001)
+            XCTAssertEqual(plan.renderedFrame.midY, tile.frame.height / 2, accuracy: 0.001)
+            XCTAssertGreaterThanOrEqual(plan.renderedFrame.width, tile.frame.width - 0.001)
+            XCTAssertGreaterThanOrEqual(plan.renderedFrame.height, tile.frame.height - 0.001)
+        }
+    }
+
     func testCaptureDateBadgeStyleIsConsistentAndPersistable() {
         XCTAssertEqual(CaptureDateBadgeStyle.darkBadgeLightText.title, "Dark badge / light text")
         XCTAssertEqual(CaptureDateBadgeStyle.lightBadgeDarkText.title, "Light badge / dark text")
@@ -621,40 +686,122 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(InteractivePhotoZoomPolicy.scale(for: 10), 4)
     }
 
-    func testAutomaticFramingAvoidsExcessiveCropAndStaysCenteredAcrossAspectRatios() {
-        let elevenInchLandscape = CGSize(width: 1194, height: 834)
-        let elevenInchPortraitTile = CGSize(width: 593, height: 834)
-        let elevenInchLandscapeTileAfterRotation = CGSize(width: 834, height: 593)
-        let thirteenInchLandscape = CGSize(width: 1366, height: 1024)
-        let cases: [(name: String, image: CGSize, viewport: CGSize, selectedLayout: LayoutStyle, expected: MediaFramingMode)] = [
-            ("portrait on 11-inch landscape iPad", CGSize(width: 3024, height: 4032), elevenInchPortraitTile, .pairHorizontal, .fillZoom),
-            ("landscape on rotated 11-inch iPad", CGSize(width: 4032, height: 3024), elevenInchLandscapeTileAfterRotation, .pairVertical, .fillZoom),
-            ("landscape on 13-inch iPad", CGSize(width: 4032, height: 3024), thirteenInchLandscape, .single, .fillZoom),
-            ("square", CGSize(width: 3000, height: 3000), elevenInchLandscape, .single, .fitWithBorder),
-            ("panorama", CGSize(width: 8000, height: 1200), elevenInchLandscape, .single, .fitWithBorder),
-            ("extreme portrait", CGSize(width: 1200, height: 8000), elevenInchPortraitTile, .pairHorizontal, .fitWithBorder)
+    func testAutomaticPortraitPairUsesOneExplicitFramingModeAcrossAspectRatios() {
+        let canvas = CGSize(width: 1194, height: 834)
+        let tiles = CaptureDateOverlayGeometry.tileFrames(
+            imageSizes: [
+                CGSize(width: 3024, height: 4032),
+                CGSize(width: 1440, height: 2560)
+            ],
+            style: .automatic,
+            canvasSize: canvas,
+            spacing: 8
+        )
+        let sources = [
+            CGSize(width: 3024, height: 4032),
+            CGSize(width: 1440, height: 2560)
         ]
 
-        for value in cases {
+        XCTAssertEqual(tiles.count, 2)
+        XCTAssertGreaterThan(
+            MediaFramingGeometry.cropFraction(imageSize: sources[1], viewportSize: tiles[1].frame.size),
+            0.18
+        )
+
+        for (source, tile) in zip(sources, tiles) {
             let plan = MediaFramingGeometry.plan(
-                imageSize: value.image,
-                viewportSize: value.viewport,
+                imageSize: source,
+                viewportSize: tile.frame.size,
                 preferredMode: .fillZoom,
                 requestedLayout: .automatic,
-                selectedLayout: value.selectedLayout
+                selectedLayout: .pairHorizontal
             )
-            XCTAssertEqual(plan.mode, value.expected, value.name)
-            XCTAssertEqual(plan.renderedFrame.midX, value.viewport.width / 2, accuracy: 0.0001, value.name)
-            XCTAssertEqual(plan.renderedFrame.midY, value.viewport.height / 2, accuracy: 0.0001, value.name)
-            if plan.mode == .fillZoom {
-                XCTAssertLessThanOrEqual(plan.cropFraction, MediaFramingGeometry.automaticMaximumCropFraction, value.name)
-                XCTAssertGreaterThanOrEqual(plan.renderedFrame.width, value.viewport.width - 0.0001, value.name)
-                XCTAssertGreaterThanOrEqual(plan.renderedFrame.height, value.viewport.height - 0.0001, value.name)
-            } else {
-                XCTAssertLessThanOrEqual(plan.renderedFrame.width, value.viewport.width + 0.0001, value.name)
-                XCTAssertLessThanOrEqual(plan.renderedFrame.height, value.viewport.height + 0.0001, value.name)
+            XCTAssertEqual(plan.mode, .fillZoom)
+            XCTAssertEqual(plan.renderedFrame.midX, tile.frame.width / 2, accuracy: 0.0001)
+            XCTAssertEqual(plan.renderedFrame.midY, tile.frame.height / 2, accuracy: 0.0001)
+            XCTAssertGreaterThanOrEqual(plan.renderedFrame.width, tile.frame.width - 0.0001)
+            XCTAssertGreaterThanOrEqual(plan.renderedFrame.height, tile.frame.height - 0.0001)
+        }
+    }
+
+    func testPortraitPairFramingIsGlobalAcrossAspectRatiosAndOrientations() {
+        let portraitSources = [
+            CGSize(width: 3024, height: 4032), // 3:4 camera photo
+            CGSize(width: 2000, height: 3000), // 2:3 camera photo
+            CGSize(width: 2268, height: 4032), // 9:16 camera photo
+            CGSize(width: 1440, height: 2560), // 9:16 alternate source
+            CGSize(width: 1170, height: 2532)  // extra-tall phone capture
+        ]
+        let pairCanvases: [(canvas: CGSize, style: LayoutStyle, selected: LayoutStyle)] = [
+            (CGSize(width: 1194, height: 834), .automatic, .pairHorizontal),
+            // Automatic intentionally rejects portrait media on a portrait
+            // canvas; use the explicit vertical-pair layout to exercise the
+            // same tile renderer with two portrait sources in that geometry.
+            (CGSize(width: 834, height: 1194), .pairVertical, .pairVertical)
+        ]
+
+        for pair in pairCanvases {
+            let tiles = CaptureDateOverlayGeometry.tileFrames(
+                imageSizes: [portraitSources[0], portraitSources[1]],
+                style: pair.style,
+                canvasSize: pair.canvas,
+                spacing: 8
+            )
+            XCTAssertEqual(tiles.count, 2)
+
+            for source in portraitSources {
+                for tile in tiles {
+                    let fillPlan = MediaFramingGeometry.plan(
+                        imageSize: source,
+                        viewportSize: tile.frame.size,
+                        preferredMode: .fillZoom,
+                        requestedLayout: pair.style,
+                        selectedLayout: pair.selected
+                    )
+
+                    XCTAssertEqual(fillPlan.mode, .fillZoom)
+                    XCTAssertEqual(fillPlan.renderedFrame.midX, tile.frame.width / 2, accuracy: 0.0001)
+                    XCTAssertEqual(fillPlan.renderedFrame.midY, tile.frame.height / 2, accuracy: 0.0001)
+                    XCTAssertLessThanOrEqual(fillPlan.renderedFrame.minX, 0.0001)
+                    XCTAssertGreaterThanOrEqual(fillPlan.renderedFrame.maxX, tile.frame.width - 0.0001)
+                    XCTAssertLessThanOrEqual(fillPlan.renderedFrame.minY, 0.0001)
+                    XCTAssertGreaterThanOrEqual(fillPlan.renderedFrame.maxY, tile.frame.height - 0.0001)
+
+                    let fitPlan = MediaFramingGeometry.plan(
+                        imageSize: source,
+                        viewportSize: tile.frame.size,
+                        preferredMode: .fitWithBorder,
+                        requestedLayout: pair.style,
+                        selectedLayout: pair.selected
+                    )
+
+                    XCTAssertEqual(fitPlan.mode, .fitWithBorder)
+                    XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.minX, -0.0001)
+                    XCTAssertLessThanOrEqual(fitPlan.renderedFrame.maxX, tile.frame.width + 0.0001)
+                    XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.minY, -0.0001)
+                    XCTAssertLessThanOrEqual(fitPlan.renderedFrame.maxY, tile.frame.height + 0.0001)
+                }
             }
         }
+    }
+
+    func testTallPortraitFillPlanHasNoLeadingInsetWhenPlacedFromTopLeadingOrigin() {
+        // This is the exact geometry reported by the physical iPad probe for
+        // the recurring 2268x4032 source. A fill plan must touch both tile
+        // sides when its origin is applied explicitly by LayoutCanvas.
+        let viewport = CGSize(width: 593, height: 834)
+        let plan = MediaFramingGeometry.plan(
+            imageSize: CGSize(width: 2268, height: 4032),
+            viewportSize: viewport,
+            preferredMode: .fillZoom,
+            requestedLayout: .automatic,
+            selectedLayout: .pairHorizontal
+        )
+
+        XCTAssertEqual(plan.mode, .fillZoom)
+        XCTAssertEqual(plan.renderedFrame.minX, 0, accuracy: 0.001)
+        XCTAssertEqual(plan.renderedFrame.maxX, viewport.width, accuracy: 0.001)
+        XCTAssertLessThan(plan.renderedFrame.minY, 0)
     }
 
     func testFitBlurredSelectionAlwaysPreservesWholeImage() {
