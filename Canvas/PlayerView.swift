@@ -36,6 +36,7 @@ struct PlayerView: View {
             if controlsVisible && !isLocked { controls }
             if isLocked { lockBadge }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // The slideshow is a photo surface, not a safe-area content panel.
         // Apply this at the container boundary so the GeometryReader that
         // determines each tile's viewport receives the entire display.
@@ -130,6 +131,7 @@ struct PlayerView: View {
         // The media/backdrop surface owns the full display. Controls remain
         // in the parent safe-area layout, so a home-indicator inset cannot
         // leave a black strip below the photo while chrome stays reachable.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ignoresSafeArea()
     }
 

@@ -184,35 +184,28 @@ struct LayoutCanvas: View {
                 selectedLayout: selectedLayout,
                 horizontalAlignment: horizontalAlignment
             )
-            let alignment = horizontalAlignment.swiftUIAlignment
-            Group {
-                if plan.mode == .fillZoom {
-                    Image(uiImage: images[index])
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Image(uiImage: images[index])
-                        .resizable()
-                        .scaledToFit()
-                }
+            // Render the image at the exact geometry computed above. Relying
+            // on scaledToFill/scaledToFit plus a frame lets SwiftUI center an
+            // oversized child again, which is how the first portrait can
+            // acquire a leading gutter despite having a full tile viewport.
+            // The explicit top-leading stack makes the bitmap's origin and
+            // crop deterministic for every source aspect ratio.
+            ZStack(alignment: .topLeading) {
+                Image(uiImage: images[index])
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(
+                        width: plan.renderedFrame.width,
+                        height: plan.renderedFrame.height
+                    )
+                    .offset(
+                        x: plan.renderedFrame.minX,
+                        y: plan.renderedFrame.minY
+                    )
             }
-            // Resolve the mode directly against the final tile proposal.
-            // Passing an oversized rendered frame through a nested SwiftUI
-            // frame can be clamped back to the tile's fit size, creating a
-            // one-sided inset for only the taller source in a pair.
-            .frame(width: viewportSize.width, height: viewportSize.height, alignment: alignment)
+            .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
             .clipped()
         } else { Color.clear }
-    }
-}
-
-private extension MediaFramingGeometry.HorizontalAlignment {
-    var swiftUIAlignment: Alignment {
-        switch self {
-        case .leading: .leading
-        case .center: .center
-        case .trailing: .trailing
-        }
     }
 }
 

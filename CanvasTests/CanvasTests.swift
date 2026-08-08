@@ -639,6 +639,26 @@ final class CanvasTests: XCTestCase {
         )
     }
 
+    func testHorizontalPortraitPairForcesFullBleedWhenSavedPreferenceIsFit() {
+        // This is the failure shape from the iPad report: a narrow 9:16
+        // portrait beside a wider 3:4 portrait. Pair tiles must fill both
+        // halves even when an older device still has Fit with border saved.
+        let viewport = CGSize(width: 1190, height: 1668)
+        let plan = MediaFramingGeometry.plan(
+            imageSize: CGSize(width: 1440, height: 2560),
+            viewportSize: viewport,
+            preferredMode: .fitWithBorder,
+            requestedLayout: .automatic,
+            selectedLayout: .pairHorizontal,
+            horizontalAlignment: .leading
+        )
+
+        XCTAssertEqual(plan.mode, .fillZoom)
+        XCTAssertEqual(plan.renderedFrame.minX, 0, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(plan.renderedFrame.maxX, viewport.width - 0.001)
+        XCTAssertGreaterThanOrEqual(plan.renderedFrame.maxY, viewport.height - 0.001)
+    }
+
     func testCaptureDateBadgeStyleIsConsistentAndPersistable() {
         XCTAssertEqual(CaptureDateBadgeStyle.darkBadgeLightText.title, "Dark badge / light text")
         XCTAssertEqual(CaptureDateBadgeStyle.lightBadgeDarkText.title, "Light badge / dark text")
@@ -823,11 +843,21 @@ final class CanvasTests: XCTestCase {
                         selectedLayout: pair.selected
                     )
 
-                    XCTAssertEqual(fitPlan.mode, .fitWithBorder)
-                    XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.minX, -0.0001)
-                    XCTAssertLessThanOrEqual(fitPlan.renderedFrame.maxX, tile.frame.width + 0.0001)
-                    XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.minY, -0.0001)
-                    XCTAssertLessThanOrEqual(fitPlan.renderedFrame.maxY, tile.frame.height + 0.0001)
+                    if pair.selected == .pairHorizontal {
+                        // Horizontal portrait pairs are intentionally full
+                        // bleed even when the saved preference is Fit.
+                        XCTAssertEqual(fitPlan.mode, .fillZoom)
+                        XCTAssertLessThanOrEqual(fitPlan.renderedFrame.minX, 0.0001)
+                        XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.maxX, tile.frame.width - 0.0001)
+                        XCTAssertLessThanOrEqual(fitPlan.renderedFrame.minY, 0.0001)
+                        XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.maxY, tile.frame.height - 0.0001)
+                    } else {
+                        XCTAssertEqual(fitPlan.mode, .fitWithBorder)
+                        XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.minX, -0.0001)
+                        XCTAssertLessThanOrEqual(fitPlan.renderedFrame.maxX, tile.frame.width + 0.0001)
+                        XCTAssertGreaterThanOrEqual(fitPlan.renderedFrame.minY, -0.0001)
+                        XCTAssertLessThanOrEqual(fitPlan.renderedFrame.maxY, tile.frame.height + 0.0001)
+                    }
                 }
             }
         }

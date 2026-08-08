@@ -383,12 +383,13 @@ enum MediaFramingGeometry {
     }
 
     /// Resolves framing once, in the tile's final coordinate space. The
-    /// framing preference is authoritative: Automatic describes how media is
-    /// grouped into tiles, not a second per-image framing preference. This is
-    /// important for pairs because silently fitting one unusually tall source
-    /// makes its foreground narrower than its companion and creates a false
-    /// gutter. A `.fitBlurred` selection always means fit, matching the
-    /// layout's name and the resolver's documented fallback behavior.
+    /// Automatic describes how media is grouped into tiles, not a second
+    /// per-image framing preference. Horizontal portrait pairs have an
+    /// explicit full-bleed invariant: even if the saved global preference is
+    /// Fit with border, each half-screen tile must be covered. Otherwise a
+    /// narrow portrait beside a wider portrait creates the exact false gutter
+    /// this renderer is meant to prevent. A `.fitBlurred` selection remains a
+    /// deliberate single-image fit fallback.
     static func plan(
         imageSize: CGSize,
         viewportSize: CGSize,
@@ -399,7 +400,8 @@ enum MediaFramingGeometry {
     ) -> Plan {
         let fillCrop = cropFraction(imageSize: imageSize, viewportSize: viewportSize)
         let mode: MediaFramingMode
-        if preferredMode == .fitWithBorder || selectedLayout == .fitBlurred {
+        let isFullBleedPortraitPair = selectedLayout == .pairHorizontal || selectedLayout == .portraitPair
+        if selectedLayout == .fitBlurred || (!isFullBleedPortraitPair && preferredMode == .fitWithBorder) {
             mode = .fitWithBorder
         } else {
             mode = .fillZoom
