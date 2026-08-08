@@ -175,7 +175,7 @@ struct PlayerView: View {
         // Give every frame a non-negotiable viewport before applying visual
         // effects. A transition can move this layer, but it can never feed a
         // partial proposal back into the pair's HStack geometry.
-        .frame(width: size.width, height: size.height)
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
         .modifier(CanvasTransitionModifier(state: visualState))
         .clipped()
     }
@@ -255,6 +255,7 @@ struct PlayerView: View {
                     )
                 }
             }
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
         }
     }
 

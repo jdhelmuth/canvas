@@ -388,8 +388,9 @@ enum MediaFramingGeometry {
     /// explicit full-bleed invariant: even if the saved global preference is
     /// Fit with border, each half-screen tile must be covered. Otherwise a
     /// narrow portrait beside a wider portrait creates the exact false gutter
-    /// this renderer is meant to prevent. A `.fitBlurred` selection remains a
-    /// deliberate single-image fit fallback.
+    /// this renderer is meant to prevent. `.fitBlurred` is a grouping/backdrop
+    /// fallback for an incompatible solo image; it must not silently override
+    /// the user's foreground framing preference.
     static func plan(
         imageSize: CGSize,
         viewportSize: CGSize,
@@ -401,7 +402,7 @@ enum MediaFramingGeometry {
         let fillCrop = cropFraction(imageSize: imageSize, viewportSize: viewportSize)
         let mode: MediaFramingMode
         let isFullBleedPortraitPair = selectedLayout == .pairHorizontal || selectedLayout == .portraitPair
-        if selectedLayout == .fitBlurred || (!isFullBleedPortraitPair && preferredMode == .fitWithBorder) {
+        if !isFullBleedPortraitPair && preferredMode == .fitWithBorder {
             mode = .fitWithBorder
         } else {
             mode = .fillZoom
@@ -670,9 +671,24 @@ enum PlaybackGroupResolver {
         switch layout {
         case .single, .fitBlurred, .intelligentFill, .solidBackground:
             return PlaybackGroupSelection(indices: [currentIndex])
-        case .pairHorizontal, .pairVertical:
-            let partner = currentIndex + 1 < imageSizes.count && !singleMediaIndices.contains(currentIndex + 1) ? [currentIndex + 1] : []
-            return PlaybackGroupSelection(indices: [currentIndex] + partner)
+        case .pairHorizontal, .pairVertical, .automatic, .portraitPair:
+            // Pairing is orientation-aware at the playback boundary too.
+            // The renderer cannot repair a mixed group after the queue has
+            // already loaded both assets, and Back/Next would otherwise skip
+            // or replay the landscape that was incorrectly used as a tile.
+            let boundary = imageSizes.indices.first(where: { $0 > currentIndex && singleMediaIndices.contains($0) }) ?? imageSizes.count
+            let suffix = Array(imageSizes[currentIndex..<boundary])
+            let requestedLayout: LayoutStyle? = layout == .pairHorizontal || layout == .pairVertical ? layout : nil
+            let local = PairLayoutResolver.selection(
+                imageSizes: suffix,
+                canvasSize: canvasSize,
+                requestedLayout: requestedLayout
+            )
+            let mapped = local.indices.compactMap { offset -> Int? in
+                let index = currentIndex + offset
+                return imageSizes.indices.contains(index) ? index : nil
+            }
+            return PlaybackGroupSelection(indices: mapped.isEmpty ? [currentIndex] : mapped)
         case .collageThree:
             var indices: [Int] = []
             for index in currentIndex..<min(imageSizes.count, currentIndex + 3) {
@@ -687,15 +703,6 @@ enum PlaybackGroupResolver {
                 indices.append(index)
             }
             return PlaybackGroupSelection(indices: indices.isEmpty ? [currentIndex] : indices)
-        case .automatic, .portraitPair:
-            let boundary = imageSizes.indices.first(where: { $0 > currentIndex && singleMediaIndices.contains($0) }) ?? imageSizes.count
-            let suffix = Array(imageSizes[currentIndex..<boundary])
-            let local = PairLayoutResolver.selection(imageSizes: suffix, canvasSize: canvasSize)
-            let mapped = local.indices.compactMap { offset -> Int? in
-                let index = currentIndex + offset
-                return imageSizes.indices.contains(index) ? index : nil
-            }
-            return PlaybackGroupSelection(indices: mapped.isEmpty ? [currentIndex] : mapped)
         }
     }
 

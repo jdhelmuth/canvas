@@ -259,6 +259,70 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(singlePortraitOnPortrait.style, .fitBlurred)
     }
 
+    func testExplicitPairLayoutsKeepLandscapePhotosSoloOnLandscapeIPad() {
+        let landscapeCanvas = CGSize(width: 1366, height: 1024)
+        let portraitCanvas = CGSize(width: 1024, height: 1366)
+        let portrait = CGSize(width: 900, height: 1400)
+        let landscape = CGSize(width: 1600, height: 900)
+
+        // A landscape iPad pairs portraits horizontally, but a landscape
+        // source is always its own full-screen group.
+        XCTAssertEqual(
+            PairLayoutResolver.selection(
+                imageSizes: [portrait, portrait],
+                canvasSize: landscapeCanvas,
+                requestedLayout: .pairHorizontal
+            ),
+            PairLayoutSelection(style: .pairHorizontal, indices: [0, 1])
+        )
+        XCTAssertEqual(
+            PairLayoutResolver.selection(
+                imageSizes: [landscape, landscape],
+                canvasSize: landscapeCanvas,
+                requestedLayout: .pairHorizontal
+            ),
+            PairLayoutSelection(style: .fitBlurred, indices: [0])
+        )
+        XCTAssertEqual(
+            PairLayoutResolver.selection(
+                imageSizes: [portrait, landscape],
+                canvasSize: landscapeCanvas,
+                requestedLayout: .pairHorizontal
+            ),
+            PairLayoutSelection(style: .single, indices: [0])
+        )
+
+        // On a portrait iPad, landscape photos are the compatible vertical
+        // pair orientation requested by the product behavior.
+        XCTAssertEqual(
+            PairLayoutResolver.selection(
+                imageSizes: [landscape, landscape],
+                canvasSize: portraitCanvas,
+                requestedLayout: .pairVertical
+            ),
+            PairLayoutSelection(style: .pairVertical, indices: [0, 1])
+        )
+
+        let mixedQueue = [portrait, landscape, portrait, portrait, landscape]
+        XCTAssertEqual(
+            PlaybackGroupResolver.groupStarts(
+                imageSizes: mixedQueue,
+                layout: .pairHorizontal,
+                canvasSize: landscapeCanvas
+            ),
+            [0, 1, 2, 4]
+        )
+        XCTAssertEqual(
+            CaptureDateOverlayGeometry.tileFrames(
+                imageSizes: [landscape, landscape],
+                style: .pairHorizontal,
+                canvasSize: landscapeCanvas,
+                spacing: 8
+            ).count,
+            1
+        )
+    }
+
     func testAutomaticPairingDoesNotSkipAnIncompatibleSinglePhoto() {
         let portrait = CGSize(width: 900, height: 1400)
         let landscape = CGSize(width: 1600, height: 900)
@@ -800,24 +864,29 @@ final class CanvasTests: XCTestCase {
             CGSize(width: 1440, height: 2560), // 9:16 alternate source
             CGSize(width: 1170, height: 2532)  // extra-tall phone capture
         ]
-        let pairCanvases: [(canvas: CGSize, style: LayoutStyle, selected: LayoutStyle)] = [
-            (CGSize(width: 1194, height: 834), .automatic, .pairHorizontal),
-            // Automatic intentionally rejects portrait media on a portrait
-            // canvas; use the explicit vertical-pair layout to exercise the
-            // same tile renderer with two portrait sources in that geometry.
-            (CGSize(width: 834, height: 1194), .pairVertical, .pairVertical)
+        let landscapeSources = [
+            CGSize(width: 4032, height: 3024), // 4:3 camera photo
+            CGSize(width: 3000, height: 2000), // 3:2 camera photo
+            CGSize(width: 2560, height: 1440), // 16:9 alternate source
+            CGSize(width: 2532, height: 1170)  // extra-wide phone capture
+        ]
+        let pairCanvases: [(canvas: CGSize, style: LayoutStyle, selected: LayoutStyle, sources: [CGSize])] = [
+            (CGSize(width: 1194, height: 834), .automatic, .pairHorizontal, portraitSources),
+            // A portrait iPad uses landscape sources for its compatible
+            // vertical pair; portrait sources remain solo there.
+            (CGSize(width: 834, height: 1194), .pairVertical, .pairVertical, landscapeSources)
         ]
 
         for pair in pairCanvases {
             let tiles = CaptureDateOverlayGeometry.tileFrames(
-                imageSizes: [portraitSources[0], portraitSources[1]],
+                imageSizes: [pair.sources[0], pair.sources[1]],
                 style: pair.style,
                 canvasSize: pair.canvas,
                 spacing: 8
             )
             XCTAssertEqual(tiles.count, 2)
 
-            for source in portraitSources {
+            for source in pair.sources {
                 for tile in tiles {
                     let fillPlan = MediaFramingGeometry.plan(
                         imageSize: source,
@@ -883,15 +952,28 @@ final class CanvasTests: XCTestCase {
         XCTAssertLessThan(plan.renderedFrame.minY, 0)
     }
 
-    func testFitBlurredSelectionAlwaysPreservesWholeImage() {
-        let plan = MediaFramingGeometry.plan(
+    func testFitBlurredFallbackRespectsForegroundFramingPreference() {
+        let fillPlan = MediaFramingGeometry.plan(
             imageSize: CGSize(width: 4032, height: 3024),
             viewportSize: CGSize(width: 1366, height: 1024),
             preferredMode: .fillZoom,
             requestedLayout: .automatic,
             selectedLayout: .fitBlurred
         )
-        XCTAssertEqual(plan.mode, .fitWithBorder)
+        XCTAssertEqual(fillPlan.mode, .fillZoom)
+        XCTAssertGreaterThanOrEqual(fillPlan.renderedFrame.width, 1366)
+        XCTAssertGreaterThanOrEqual(fillPlan.renderedFrame.height, 1024)
+
+        let fitPlan = MediaFramingGeometry.plan(
+            imageSize: CGSize(width: 4032, height: 3024),
+            viewportSize: CGSize(width: 1366, height: 1024),
+            preferredMode: .fitWithBorder,
+            requestedLayout: .automatic,
+            selectedLayout: .fitBlurred
+        )
+        XCTAssertEqual(fitPlan.mode, .fitWithBorder)
+        XCTAssertLessThanOrEqual(fitPlan.renderedFrame.width, 1366)
+        XCTAssertLessThanOrEqual(fitPlan.renderedFrame.height, 1024)
     }
 
     func testFramingUsesUIImageDisplayOrientation() {

@@ -111,8 +111,17 @@ struct LayoutCanvas: View {
                     // reveal a fixed blue/background treatment.
                     fallback: MediaBackdropView.neutralFallback
                 )
+                .frame(
+                    width: proxy.size.width,
+                    height: proxy.size.height,
+                    alignment: .topLeading
+                )
                 content(in: proxy.size)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // A pair is positioned in absolute canvas coordinates.
+                    // Its content view can report a smaller ideal size than
+                    // the display, so the default center alignment would
+                    // translate both tiles together and clip the right one.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 if showCaptureDates {
                     CaptureDateOverlayLayer(
                         imageSizes: images.map(\.canvasDisplaySize),
@@ -153,10 +162,6 @@ struct LayoutCanvas: View {
                     horizontalAlignment: horizontalAlignment
                 )
                     .frame(width: placement.frame.width, height: placement.frame.height)
-                    // The tile frame is already in canvas coordinates. Offset
-                    // the complete tile from the top-leading origin instead
-                    // of using position(), which creates a second center-based
-                    // coordinate system for the nested media view.
                     .offset(x: placement.frame.minX, y: placement.frame.minY)
             }
         }
@@ -184,16 +189,17 @@ struct LayoutCanvas: View {
                 selectedLayout: selectedLayout,
                 horizontalAlignment: horizontalAlignment
             )
-            // Render the image at the exact geometry computed above. Relying
-            // on scaledToFill/scaledToFit plus a frame lets SwiftUI center an
-            // oversized child again, which is how the first portrait can
-            // acquire a leading gutter despite having a full tile viewport.
+            // Render the image at the exact geometry computed above. The plan
+            // already preserves the source aspect ratio, so applying another
+            // aspect-ratio modifier here is both redundant and dangerous:
+            // SwiftUI can fit the bitmap back into the tile viewport, which
+            // recreates the leading gutter even when the plan says Fill.
             // The explicit top-leading stack makes the bitmap's origin and
             // crop deterministic for every source aspect ratio.
             ZStack(alignment: .topLeading) {
                 Image(uiImage: images[index])
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFill()
                     .frame(
                         width: plan.renderedFrame.width,
                         height: plan.renderedFrame.height
@@ -212,8 +218,13 @@ struct LayoutCanvas: View {
 enum LayoutCanvasSelectionResolver {
     static func selection(style: LayoutStyle, imageSizes: [CGSize], canvasSize: CGSize) -> PairLayoutSelection {
         switch style {
-        case .automatic, .portraitPair:
-            return PairLayoutResolver.selection(imageSizes: imageSizes, canvasSize: canvasSize)
+        case .automatic, .portraitPair, .pairHorizontal, .pairVertical:
+            let requestedLayout: LayoutStyle? = style == .pairHorizontal || style == .pairVertical ? style : nil
+            return PairLayoutResolver.selection(
+                imageSizes: imageSizes,
+                canvasSize: canvasSize,
+                requestedLayout: requestedLayout
+            )
         default:
             return PairLayoutSelection(style: style, indices: Array(imageSizes.indices))
         }
@@ -377,11 +388,24 @@ enum PairLayoutResolver {
     /// when it has the same orientation as the current item and that
     /// orientation is the one appropriate for the device. A lone
     /// incompatible item is rendered aspect-fit instead of being stretched or
-    /// cropped into a misleading pair.
-    static func selection(imageSizes: [CGSize], canvasSize: CGSize) -> PairLayoutSelection {
+    /// cropped into a misleading pair. Explicit pair styles are still
+    /// orientation-aware: a horizontal iPad may pair portraits, while a
+    /// portrait iPad may pair landscapes vertically.
+    static func selection(
+        imageSizes: [CGSize],
+        canvasSize: CGSize,
+        requestedLayout: LayoutStyle? = nil
+    ) -> PairLayoutSelection {
         guard let first = imageSizes.first else { return PairLayoutSelection(style: .single, indices: []) }
         let target = targetOrientation(canvasSize: canvasSize)
         let firstOrientation = orientation(for: first)
+        let expectedStyle: LayoutStyle = canvasSize.height > canvasSize.width ? .pairVertical : .pairHorizontal
+        if let requestedLayout,
+           requestedLayout != .automatic,
+           requestedLayout != .portraitPair,
+           requestedLayout != expectedStyle {
+            return PairLayoutSelection(style: .fitBlurred, indices: [0])
+        }
         guard firstOrientation == target else {
             return PairLayoutSelection(style: .fitBlurred, indices: [0])
         }
@@ -392,8 +416,7 @@ enum PairLayoutResolver {
         guard imageSizes.indices.contains(1), orientation(for: imageSizes[1]) == target else {
             return PairLayoutSelection(style: .single, indices: [0])
         }
-        let style: LayoutStyle = canvasSize.height > canvasSize.width ? .pairVertical : .pairHorizontal
-        return PairLayoutSelection(style: style, indices: [0, 1])
+        return PairLayoutSelection(style: expectedStyle, indices: [0, 1])
     }
 
     static func style(imageSizes: [CGSize], canvasSize: CGSize) -> LayoutStyle {
