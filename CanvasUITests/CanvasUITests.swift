@@ -21,15 +21,23 @@ final class CanvasUITests: XCTestCase {
         app.buttons["settings"].tap()
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
         app.staticTexts["Clock & Overlays"].tap()
-        app.swipeUp()
 
+        let strokeGroup = app.staticTexts["Stroke"]
+        for _ in 0..<5 where !strokeGroup.exists { app.swipeUp() }
+        XCTAssertTrue(strokeGroup.waitForExistence(timeout: 3))
+        strokeGroup.tap()
+
+        let clockStrokeToggle = app.switches["clock-stroke-toggle"]
         let strokeToggle = app.switches["text-stroke-toggle"]
+        for _ in 0..<5 where !clockStrokeToggle.exists || !strokeToggle.exists { app.swipeUp() }
+        XCTAssertTrue(clockStrokeToggle.waitForExistence(timeout: 3))
         XCTAssertTrue(strokeToggle.waitForExistence(timeout: 3))
         let strokeControl = strokeToggle.descendants(matching: .switch).firstMatch
         XCTAssertTrue(strokeControl.exists)
         strokeControl.tap()
-        for _ in 0..<3 { app.swipeUp() }
-        XCTAssertTrue(app.sliders["Stroke thickness-slider"].waitForExistence(timeout: 3))
+        let strokeSlider = app.sliders["Stroke thickness-slider"]
+        for _ in 0..<5 where !strokeSlider.exists { app.swipeUp() }
+        XCTAssertTrue(strokeSlider.waitForExistence(timeout: 3))
     }
 
     func testEmptyHomeStateIsCenteredAndActionable() {
@@ -110,6 +118,19 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Manage albums"].waitForExistence(timeout: 5))
         app.buttons["Manage albums"].tap()
         XCTAssertTrue(app.navigationBars["Choose albums"].waitForExistence(timeout: 3))
+        let emptyAlbumToggle = app.switches["Show albums with 0 photos"]
+        XCTAssertTrue(emptyAlbumToggle.waitForExistence(timeout: 3))
+        let emptyAlbumControl = emptyAlbumToggle.descendants(matching: .switch).firstMatch
+        XCTAssertTrue(emptyAlbumControl.exists)
+        XCTAssertEqual(emptyAlbumToggle.value as? String, "0")
+        emptyAlbumControl.tap()
+        let enabledExpectation = expectation(for: NSPredicate(format: "value == %@", "1"), evaluatedWith: emptyAlbumToggle)
+        wait(for: [enabledExpectation], timeout: 2)
+        XCTAssertEqual(emptyAlbumToggle.value as? String, "1")
+        emptyAlbumControl.tap()
+        let disabledExpectation = expectation(for: NSPredicate(format: "value == %@", "0"), evaluatedWith: emptyAlbumToggle)
+        wait(for: [disabledExpectation], timeout: 2)
+        XCTAssertEqual(emptyAlbumToggle.value as? String, "0")
         app.buttons["Add or refresh a Google album"].tap()
         XCTAssertTrue(app.navigationBars["Google Photos"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Open Google Photos"].waitForExistence(timeout: 3))

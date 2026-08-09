@@ -355,47 +355,16 @@ struct PlayerView: View {
         }.foregroundStyle(.white).transition(.opacity)
     }
 
-    private func overlay(in size: CGSize) -> some View {
+    private func overlay(in _: CGSize) -> some View {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
-        let clockPlan = ClockOverlayPlacementPolicy.plan(
-            showTime: settings.showTime,
-            color: settings.clockColor,
-            visibleTileCount: model.layoutImages.count
-        )
-        let showStandardOverlay = clockPlan.sharedClockCount > 0 || settings.showDate || settings.showWeekday || settings.showAlbum || settings.showLocation || settings.showCaption || settings.showItemCount || settings.showBattery || settings.showWeather
+        let items = overlayItems(for: settings)
+        let date = Date()
         return ZStack {
-            if showStandardOverlay {
+            if !items.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
-                    if clockPlan.sharedClockCount == 1 {
-                        ClockOverlayView(date: Date(), settings: settings, mediaImage: model.currentImage)
-                            .accessibilityIdentifier("canvas.clock.overlay")
-                    }
-                    if settings.showDate { Text(Date(), format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
-                    if settings.showAlbum, let title = model.currentAsset?.albumTitle { Text(title).font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
-                    if settings.showWeekday { Text(Date(), format: .dateTime.weekday(.wide)).font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
-                    if settings.showLocation, let location = model.currentAsset?.appleAsset?.location { Text("\(location.coordinate.latitude, specifier: "%.3f"), \(location.coordinate.longitude, specifier: "%.3f")").font(.system(size: settings.fontSize * 0.54, design: .monospaced)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
-                    if settings.showCaption, let filename = model.currentAsset?.filename, !filename.isEmpty { Text(filename).font(.system(size: settings.fontSize * 0.62)).lineLimit(1).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
-                    if settings.showItemCount { Text("\(model.currentIndex + 1) / \(model.queueCount)").font(.system(size: settings.fontSize * 0.62, design: .monospaced)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
-                    if settings.showBattery { Label("\(Int(UIDevice.current.batteryLevel * 100))%", systemImage: UIDevice.current.batteryState == .charging ? "bolt.fill" : "battery.75percent").font(.system(size: settings.fontSize * 0.54)).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text) }
-                    if settings.showWeather, let weather = store.weather.snapshot {
-                        HStack(spacing: 5) {
-                            Image(systemName: weather.symbolName)
-                            Text(weather.displayText).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
-                            if store.weather.isUsingCachedSnapshot || weather.isStale {
-                                Text("Last known").overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
-                            }
-                            if let url = store.weather.attributionURL {
-                                Link(weather.attributionText, destination: url).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
-                            } else {
-                                Text(weather.attributionText).overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
-                            }
-                        }
-                            .font(.system(size: settings.fontSize * 0.54))
-                    } else if settings.showWeather {
-                        Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
-                            .font(.system(size: settings.fontSize * 0.54))
-                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: opacity.text)
+                    ForEach(items) { item in
+                        overlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                     }
                 }.foregroundStyle(.white.opacity(opacity.text)).padding(14).background {
                     // Keep one neutral backing style; continuous controls in
@@ -420,6 +389,99 @@ struct PlayerView: View {
                 )
                     .padding(12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+        }
+    }
+
+    private func overlayItems(for settings: OverlaySettings) -> [OverlayStackItem] {
+        OverlayStackOrder.items(
+            position: settings.position,
+            showTime: settings.showTime,
+            showDate: settings.showDate,
+            showAlbum: settings.showAlbum && model.currentAsset?.albumTitle != nil,
+            showWeekday: settings.showWeekday,
+            showLocation: settings.showLocation && model.currentAsset?.appleAsset?.location != nil,
+            showCaption: settings.showCaption && !(model.currentAsset?.filename ?? "").isEmpty,
+            showItemCount: settings.showItemCount,
+            showBattery: settings.showBattery,
+            showWeather: settings.showWeather
+        )
+    }
+
+    @ViewBuilder
+    private func overlayItem(
+        _ item: OverlayStackItem,
+        date: Date,
+        settings: OverlaySettings,
+        textOpacity: Double
+    ) -> some View {
+        switch item {
+        case .clock:
+            ClockOverlayView(date: date, settings: settings, mediaImage: model.currentImage)
+                .accessibilityIdentifier("canvas.clock.overlay")
+        case .date:
+            Text(settings.effectiveDateFormat.string(from: date))
+                .font(.system(size: settings.fontSize * 0.64, weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+        case .album:
+            if let title = model.currentAsset?.albumTitle {
+                Text(title)
+                    .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
+                    .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+            }
+        case .weekday:
+            Text(date, format: .dateTime.weekday(.wide))
+                .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
+                .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+        case .location:
+            if let location = model.currentAsset?.appleAsset?.location {
+                Text("\(location.coordinate.latitude, specifier: "%.3f"), \(location.coordinate.longitude, specifier: "%.3f")")
+                    .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight, design: .monospaced))
+                    .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+            }
+        case .caption:
+            if let filename = model.currentAsset?.filename, !filename.isEmpty {
+                Text(filename)
+                    .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
+                    .lineLimit(1)
+                    .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+            }
+        case .itemCount:
+            Text("\(model.currentIndex + 1) / \(model.queueCount)")
+                .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight, design: .monospaced))
+                .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+        case .battery:
+            Label(
+                "\(Int(UIDevice.current.batteryLevel * 100))%",
+                systemImage: UIDevice.current.batteryState == .charging ? "bolt.fill" : "battery.75percent"
+            )
+            .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
+            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+        case .weather:
+            if let weather = store.weather.snapshot {
+                HStack(spacing: 5) {
+                    Image(systemName: weather.symbolName)
+                    Text(weather.displayText)
+                        .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+                    if store.weather.isUsingCachedSnapshot || weather.isStale {
+                        Text("Last known")
+                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+                    }
+                    if let url = store.weather.attributionURL {
+                        Link(weather.attributionText, destination: url)
+                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+                    } else {
+                        Text(weather.attributionText)
+                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+                    }
+                }
+                .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
+                .accessibilityIdentifier("canvas.weather.overlay")
+            } else {
+                Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
+                    .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
+                    .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+                    .accessibilityIdentifier("canvas.weather.overlay")
             }
         }
     }

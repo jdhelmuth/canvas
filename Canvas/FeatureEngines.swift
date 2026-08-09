@@ -213,6 +213,14 @@ enum AppleAlbumCategory: String, CaseIterable, Identifiable {
     }
 }
 
+/// Controls whether the album picker includes collections that currently have
+/// no PhotoKit or downloaded Google media items.
+enum AlbumVisibilityPolicy {
+    static func visible(_ albums: [AlbumReference], showEmptyAlbums: Bool) -> [AlbumReference] {
+        showEmptyAlbums ? albums : albums.filter { $0.estimatedCount > 0 }
+    }
+}
+
 /// Persists category identifiers rather than enum positions so adding a new
 /// category in a later build does not discard an existing user's order. Unknown
 /// identifiers are retained in the stored array and known categories missing
@@ -292,6 +300,63 @@ enum ClockOverlayPlacementPolicy {
             perTileClockCounts: Array(repeating: 0, count: max(0, visibleTileCount)),
             adaptiveColorUsesRepresentativeImage: showTime && color == .adaptive
         )
+    }
+}
+
+enum ClockOverlayStackPolicy {
+    static func placesClockAtBottom(for position: OverlayPosition) -> Bool {
+        position == .bottomLeading || position == .bottomTrailing
+    }
+}
+
+enum OverlayStackItem: String, CaseIterable, Hashable, Identifiable {
+    case clock
+    case date
+    case album
+    case weekday
+    case location
+    case caption
+    case itemCount
+    case battery
+    case weather
+
+    var id: String { rawValue }
+}
+
+/// Keeps the live player and settings preview in the same order. In a bottom
+/// stack, the date and battery form a deliberate chain directly above the
+/// clock; optional supporting labels sit above that chain.
+enum OverlayStackOrder {
+    static func items(
+        position: OverlayPosition,
+        showTime: Bool,
+        showDate: Bool,
+        showAlbum: Bool,
+        showWeekday: Bool,
+        showLocation: Bool,
+        showCaption: Bool,
+        showItemCount: Bool,
+        showBattery: Bool,
+        showWeather: Bool
+    ) -> [OverlayStackItem] {
+        var enabled = Set<OverlayStackItem>()
+        if showTime { enabled.insert(.clock) }
+        if showDate { enabled.insert(.date) }
+        if showAlbum { enabled.insert(.album) }
+        if showWeekday { enabled.insert(.weekday) }
+        if showLocation { enabled.insert(.location) }
+        if showCaption { enabled.insert(.caption) }
+        if showItemCount { enabled.insert(.itemCount) }
+        if showBattery { enabled.insert(.battery) }
+        if showWeather { enabled.insert(.weather) }
+
+        let order: [OverlayStackItem]
+        if ClockOverlayStackPolicy.placesClockAtBottom(for: position) {
+            order = [.weather, .itemCount, .caption, .location, .weekday, .album, .battery, .date, .clock]
+        } else {
+            order = [.clock, .date, .album, .weekday, .location, .caption, .itemCount, .battery, .weather]
+        }
+        return order.filter { enabled.contains($0) }
     }
 }
 
@@ -788,6 +853,43 @@ enum CaptureDateOverlayGeometry {
             width: width,
             height: height
         )
+    }
+
+    enum HorizontalAnchor: Equatable {
+        case leading
+        case trailing
+    }
+
+    /// Moves landscape badges away from a bottom-leading clock and keeps the
+    /// two portrait dates visually balanced around the centerline. Other
+    /// layouts retain the normal bottom-leading badge placement.
+    static func horizontalAnchor(
+        tilePosition: Int,
+        tileIndex: Int,
+        tileCount: Int,
+        resolvedStyle: LayoutStyle,
+        imageSizes: [CGSize],
+        position: OverlayPosition?
+    ) -> HorizontalAnchor {
+        if position == .bottomLeading,
+           imageSizes.indices.contains(tileIndex),
+           imageSizes[tileIndex].width > imageSizes[tileIndex].height {
+            return .trailing
+        }
+
+        guard tileCount == 2,
+              resolvedStyle == .portraitPair ||
+                (resolvedStyle == .pairHorizontal && imageSizes.count >= 2 && imageSizes.prefix(2).allSatisfy { $0.height > $0.width })
+        else { return .leading }
+
+        switch position {
+        case .bottomLeading where tilePosition == 0:
+            return .trailing
+        case .bottomTrailing where tilePosition == 1:
+            return .leading
+        default:
+            return .leading
+        }
     }
 
     /// Returns the final on-screen tile frames used by LayoutCanvas. Keeping

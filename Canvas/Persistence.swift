@@ -35,6 +35,14 @@ final class SettingsStore: ObservableObject {
                 defaults.set(3, forKey: schemaKey)
                 migrated = true
             }
+            if decoded.overlays.migrateLegacySharedStroke() {
+                migrated = true
+            }
+            for index in decoded.presets.indices {
+                if decoded.presets[index].settings.overlays.migrateLegacySharedStroke() {
+                    migrated = true
+                }
+            }
             // Schema 4 briefly forced every existing device to Fit. Restore
             // Fill / zoom only for devices affected by that migration; other
             // explicit framing choices remain untouched.

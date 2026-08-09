@@ -11,6 +11,28 @@ struct SettingsView: View {
     @State private var showPresetPrompt = false
     @State private var presetNameError: String?
     @State private var showAudioImporter = false
+    @State private var expandedOverlayGroups: Set<OverlaySettingsGroup> = [.visibility]
+
+    private enum OverlaySettingsGroup: String, Hashable {
+        case visibility
+        case placement
+        case supportingText
+        case clock
+        case stroke
+        case weather
+
+        var title: String {
+            switch self {
+            case .visibility: "Visibility"
+            case .placement: "Placement & Background"
+            case .supportingText: "Supporting Text"
+            case .clock: "Clock"
+            case .stroke: "Stroke"
+            case .weather: "Weather & Behavior"
+            }
+        }
+
+    }
 
     var body: some View {
         NavigationStack {
@@ -155,85 +177,175 @@ struct SettingsView: View {
     }
     private var overlaysSection: some View {
         Section("Overlays") {
-            Toggle("Time", isOn: binding(\.overlays.showTime)); Toggle("Date", isOn: binding(\.overlays.showDate)); Toggle("Weekday", isOn: binding(\.overlays.showWeekday))
-            Toggle("Capture date", isOn: binding(\.overlays.showCaptureDate)); Toggle("Album", isOn: binding(\.overlays.showAlbum)); Toggle("Item count", isOn: binding(\.overlays.showItemCount)); Toggle("Battery", isOn: binding(\.overlays.showBattery))
-            Toggle("Location", isOn: binding(\.overlays.showLocation)); Toggle("Filename caption", isOn: binding(\.overlays.showCaption))
-            Picker("Capture date badge", selection: optionalOverlayBinding(\.captureDateStyle, default: .darkBadgeLightText)) {
-                ForEach(CaptureDateBadgeStyle.allCases) { Text($0.title).tag($0) }
+            DisclosureGroup(isExpanded: overlayGroupBinding(.visibility)) {
+                Toggle("Time", isOn: binding(\.overlays.showTime))
+                Toggle("Date", isOn: binding(\.overlays.showDate))
+                Toggle("Weekday", isOn: binding(\.overlays.showWeekday))
+                Toggle("Capture date", isOn: binding(\.overlays.showCaptureDate))
+                Toggle("Album", isOn: binding(\.overlays.showAlbum))
+                Toggle("Item count", isOn: binding(\.overlays.showItemCount))
+                Toggle("Battery", isOn: binding(\.overlays.showBattery))
+                Toggle("Location", isOn: binding(\.overlays.showLocation))
+                Toggle("Filename caption", isOn: binding(\.overlays.showCaption))
+            } label: {
+                Text(OverlaySettingsGroup.visibility.title)
             }
-            .accessibilityHint("Use one consistent badge and text treatment for every capture date.")
-            Picker("Position", selection: binding(\.overlays.position)) { ForEach(OverlayPosition.allCases) { Text($0.rawValue.capitalized).tag($0) } }
-            InlineSliderRow(
-                title: "Overlay opacity (background)",
-                value: binding(\.overlays.opacity),
-                range: 0...1,
-                step: 0.01,
-                valueText: { "\(Int(($0 * 100).rounded()))%" }
-            )
-            InlineSliderRow(
-                title: "Glass effect",
-                value: optionalOverlayBinding(\.backgroundTransparency, default: OverlayBackgroundPolicy.defaultTransparency),
-                range: 0...1,
-                step: 0.01,
-                valueText: { "\(Int(($0 * 100).rounded()))%" }
-            )
-            InlineSliderRow(
-                title: "Text size",
-                value: binding(\.overlays.fontSize),
-                range: 12...48,
-                valueText: { "\(Int($0.rounded())) pt" }
-            )
-            Picker("Clock weight", selection: optionalOverlayBinding(\.clockWeight, default: .semibold)) { ForEach(ClockWeight.allCases) { Text($0.title).tag($0) } }
-            Picker("Clock width", selection: optionalOverlayBinding(\.clockWidth, default: .standard)) { ForEach(ClockWidth.allCases) { Text($0.title).tag($0) } }
-            Picker("Clock style", selection: optionalOverlayBinding(\.clockStyle, default: .digital)) {
-                ForEach(ClockStyle.allCases) { Text($0.title).tag($0) }
-            }
-            .accessibilityHint("Choose a digital or analog clock face")
-            if (store.settings.overlays.clockStyle ?? .digital) == .analog {
-                Picker("Analog clock face", selection: optionalOverlayBinding(\.analogClockFace, default: .arabic)) {
-                    ForEach(AnalogClockFace.allCases) { Text($0.title).tag($0) }
+
+            DisclosureGroup(isExpanded: overlayGroupBinding(.placement)) {
+                Picker("Capture date badge", selection: optionalOverlayBinding(\.captureDateStyle, default: .darkBadgeLightText)) {
+                    ForEach(CaptureDateBadgeStyle.allCases) { Text($0.title).tag($0) }
                 }
-                .accessibilityHint("Choose Arabic numerals, Roman numerals, or dash markers")
-            }
-            InlineSliderRow(
-                title: "Clock size",
-                value: optionalOverlayBinding(\.clockSize, default: 72),
-                range: 28...180,
-                valueText: { "\(Int($0.rounded())) pt" }
-            )
-            InlineSliderRow(
-                title: "Clock opacity",
-                value: optionalOverlayBinding(\.clockOpacity, default: 0.95),
-                range: 0.2...1,
-                step: 0.01,
-                valueText: { "\(Int(($0 * 100).rounded()))%" }
-            )
-            Picker("Clock font", selection: optionalOverlayBinding(\.clockFont, default: .system)) {
-                ForEach(ClockFont.allCases) { Text($0.title).tag($0) }
-            }
-            Picker("Clock color", selection: optionalOverlayBinding(\.clockColor, default: .white)) {
-                ForEach(ClockColor.allCases) { Text($0.title).tag($0) }
-            }
-            Toggle("Text stroke", isOn: optionalOverlayBinding(\.textStrokeEnabled, default: false))
-                .accessibilityIdentifier("text-stroke-toggle")
-            if store.settings.overlays.textStrokeEnabled ?? false {
-                Picker("Stroke color", selection: optionalOverlayBinding(\.textStrokeColor, default: .black)) {
-                    ForEach(ClockColor.allCases) { Text($0.title).tag($0) }
+                .accessibilityHint("Use one consistent badge and text treatment for every capture date.")
+                Picker("Date format", selection: optionalOverlayBinding(\.dateFormat, default: .long)) {
+                    ForEach(OverlayDateFormat.allCases) { Text($0.title).tag($0) }
+                }
+                .accessibilityHint("Choose how the current date appears in the overlay.")
+                Picker("Position", selection: binding(\.overlays.position)) {
+                    ForEach(OverlayPosition.allCases) { Text($0.rawValue.capitalized).tag($0) }
                 }
                 InlineSliderRow(
-                    title: "Stroke thickness",
-                    value: optionalOverlayBinding(\.textStrokeWidth, default: OverlayTextStrokePolicy.defaultWidth),
-                    range: OverlayTextStrokePolicy.minimumWidth...OverlayTextStrokePolicy.maximumWidth,
-                    step: 0.5,
-                    valueText: { String(format: "%.1f pt", $0) }
+                    title: "Overlay opacity (background)",
+                    value: binding(\.overlays.opacity),
+                    range: 0...1,
+                    step: 0.01,
+                    valueText: { "\(Int(($0 * 100).rounded()))%" }
                 )
+                InlineSliderRow(
+                    title: "Glass effect",
+                    value: optionalOverlayBinding(\.backgroundTransparency, default: OverlayBackgroundPolicy.defaultTransparency),
+                    range: 0...1,
+                    step: 0.01,
+                    valueText: { "\(Int(($0 * 100).rounded()))%" }
+                )
+            } label: {
+                Text(OverlaySettingsGroup.placement.title)
             }
-            Toggle("Always visible", isOn: binding(\.overlays.alwaysVisible))
-            Toggle("Current weather (opt-in)", isOn: binding(\.overlays.showWeather))
-            if store.settings.overlays.showWeather {
-                weatherStatusRow
+
+            DisclosureGroup(isExpanded: overlayGroupBinding(.supportingText)) {
+                InlineSliderRow(
+                    title: "Text size",
+                    value: binding(\.overlays.fontSize),
+                    range: 12...48,
+                    valueText: { "\(Int($0.rounded())) pt" }
+                )
+                Picker("Text weight", selection: optionalOverlayBinding(\.textWeight, default: .regular)) {
+                    ForEach(ClockWeight.allCases) { Text($0.title).tag($0) }
+                }
+            } label: {
+                Text(OverlaySettingsGroup.supportingText.title)
+            }
+
+            DisclosureGroup(isExpanded: overlayGroupBinding(.clock)) {
+                Picker("Clock weight", selection: optionalOverlayBinding(\.clockWeight, default: .semibold)) {
+                    ForEach(ClockWeight.allCases) { Text($0.title).tag($0) }
+                }
+                Picker("Clock width", selection: optionalOverlayBinding(\.clockWidth, default: .standard)) {
+                    ForEach(ClockWidth.allCases) { Text($0.title).tag($0) }
+                }
+                Picker("Clock style", selection: optionalOverlayBinding(\.clockStyle, default: .digital)) {
+                    ForEach(ClockStyle.allCases) { Text($0.title).tag($0) }
+                }
+                .accessibilityHint("Choose a digital or analog clock face")
+                if (store.settings.overlays.clockStyle ?? .digital) == .analog {
+                    Picker("Analog clock face", selection: optionalOverlayBinding(\.analogClockFace, default: .arabic)) {
+                        ForEach(AnalogClockFace.allCases) { Text($0.title).tag($0) }
+                    }
+                    .accessibilityHint("Choose Arabic numerals, Roman numerals, or dash markers")
+                }
+                InlineSliderRow(
+                    title: "Clock size",
+                    value: optionalOverlayBinding(\.clockSize, default: 72),
+                    range: 28...180,
+                    valueText: { "\(Int($0.rounded())) pt" }
+                )
+                InlineSliderRow(
+                    title: "Clock opacity",
+                    value: optionalOverlayBinding(\.clockOpacity, default: 0.95),
+                    range: 0.2...1,
+                    step: 0.01,
+                    valueText: { "\(Int(($0 * 100).rounded()))%" }
+                )
+                Picker("Clock font", selection: optionalOverlayBinding(\.clockFont, default: .system)) {
+                    ForEach(ClockFont.allCases) { Text($0.title).tag($0) }
+                }
+                Picker("Clock color", selection: optionalOverlayBinding(\.clockColor, default: .white)) {
+                    ForEach(ClockColor.allCases) { Text($0.title).tag($0) }
+                }
+            } label: {
+                Text(OverlaySettingsGroup.clock.title)
+            }
+
+            DisclosureGroup(isExpanded: overlayGroupBinding(.stroke)) {
+                Toggle(
+                    "Clock stroke",
+                    isOn: optionalOverlayBinding(
+                        \.clockStrokeEnabled,
+                        default: store.settings.overlays.effectiveClockStrokeEnabled
+                    )
+                )
+                .accessibilityIdentifier("clock-stroke-toggle")
+                if store.settings.overlays.effectiveClockStrokeEnabled {
+                    Picker(
+                        "Clock stroke color",
+                        selection: optionalOverlayBinding(
+                            \.clockStrokeColor,
+                            default: store.settings.overlays.effectiveClockStrokeColor
+                        )
+                    ) {
+                        ForEach(ClockColor.allCases) { Text($0.title).tag($0) }
+                    }
+                    InlineSliderRow(
+                        title: "Clock stroke thickness",
+                        value: optionalOverlayBinding(
+                            \.clockStrokeWidth,
+                            default: store.settings.overlays.effectiveClockStrokeWidth
+                        ),
+                        range: OverlayTextStrokePolicy.minimumWidth...OverlayTextStrokePolicy.maximumWidth,
+                        step: 0.5,
+                        valueText: { String(format: "%.1f pt", $0) }
+                    )
+                }
+                Toggle("Text stroke", isOn: optionalOverlayBinding(\.textStrokeEnabled, default: false))
+                    .accessibilityIdentifier("text-stroke-toggle")
+                if store.settings.overlays.textStrokeEnabled ?? false {
+                    Picker("Stroke color", selection: optionalOverlayBinding(\.textStrokeColor, default: .black)) {
+                        ForEach(ClockColor.allCases) { Text($0.title).tag($0) }
+                    }
+                    InlineSliderRow(
+                        title: "Stroke thickness",
+                        value: optionalOverlayBinding(\.textStrokeWidth, default: OverlayTextStrokePolicy.defaultWidth),
+                        range: OverlayTextStrokePolicy.minimumWidth...OverlayTextStrokePolicy.maximumWidth,
+                        step: 0.5,
+                        valueText: { String(format: "%.1f pt", $0) }
+                    )
+                }
+            } label: {
+                Text(OverlaySettingsGroup.stroke.title)
+            }
+
+            DisclosureGroup(isExpanded: overlayGroupBinding(.weather)) {
+                Toggle("Current weather (opt-in)", isOn: binding(\.overlays.showWeather))
+                if store.settings.overlays.showWeather {
+                    weatherStatusRow
+                }
+                Toggle("Always visible", isOn: binding(\.overlays.alwaysVisible))
+            } label: {
+                Text(OverlaySettingsGroup.weather.title)
             }
         }
+    }
+
+    private func overlayGroupBinding(_ group: OverlaySettingsGroup) -> Binding<Bool> {
+        Binding(
+            get: { expandedOverlayGroups.contains(group) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedOverlayGroups.insert(group)
+                } else {
+                    expandedOverlayGroups.remove(group)
+                }
+            }
+        )
     }
 
     private var weatherStatusRow: some View {
@@ -560,41 +672,25 @@ private struct ClockOverlayPreview: View {
     }
 
     @ViewBuilder
-    private func previewOverlay(date: Date, size: CGSize) -> some View {
+    private func previewOverlay(date: Date, size _: CGSize) -> some View {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
-        let clockPlan = ClockOverlayPlacementPolicy.plan(
+        let items = OverlayStackOrder.items(
+            position: settings.position,
             showTime: settings.showTime,
-            color: settings.clockColor,
-            visibleTileCount: previewImages.count
+            showDate: settings.showDate,
+            showAlbum: settings.showAlbum,
+            showWeekday: settings.showWeekday,
+            showLocation: false,
+            showCaption: false,
+            showItemCount: settings.showItemCount,
+            showBattery: settings.showBattery,
+            showWeather: settings.showWeather
         )
-        let showStandardOverlay = clockPlan.sharedClockCount > 0 || settings.showDate || settings.showWeekday || settings.showAlbum || settings.showLocation || settings.showCaption || settings.showItemCount || settings.showBattery || settings.showWeather
-        if showStandardOverlay {
+        if !items.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
-                if clockPlan.sharedClockCount == 1 {
-                    ClockOverlayView(date: date, settings: settings, mediaImage: previewImages.first)
-                        .accessibilityIdentifier("canvas.clock.overlay")
-                }
-                if settings.showDate { Text(date, format: .dateTime.month(.wide).day().year()).font(.system(size: settings.fontSize * 0.64, design: .rounded)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
-                if settings.showWeekday { Text(date, format: .dateTime.weekday(.wide)).font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
-                if settings.showAlbum { Text("Selected album").font(.system(size: settings.fontSize * 0.62)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
-                if settings.showItemCount { Text("1 / 12").font(.system(size: settings.fontSize * 0.62, design: .monospaced)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
-                if settings.showBattery { Label("91%", systemImage: "battery.75percent").font(.system(size: settings.fontSize * 0.54)).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text) }
-                if settings.showWeather {
-                    if let weather = store.weather.snapshot {
-                        HStack(spacing: 5) {
-                            Image(systemName: weather.symbolName)
-                            Text(weather.displayText).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text)
-                            Text(weather.attributionText).overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text)
-                        }
-                        .font(.system(size: settings.fontSize * 0.54))
-                    }
-                    if store.weather.status != .live {
-                        Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
-                            .font(.system(size: settings.fontSize * 0.48))
-                            .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: opacity.text)
-                            .lineLimit(2)
-                    }
+                ForEach(items) { item in
+                    previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                 }
             }
             .foregroundStyle(.white.opacity(opacity.text))
@@ -625,6 +721,59 @@ private struct ClockOverlayPreview: View {
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.8))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private func previewOverlayItem(
+        _ item: OverlayStackItem,
+        date: Date,
+        settings: OverlaySettings,
+        textOpacity: Double
+    ) -> some View {
+        switch item {
+        case .clock:
+            ClockOverlayView(date: date, settings: settings, mediaImage: previewImages.first)
+                .accessibilityIdentifier("canvas.clock.overlay")
+        case .date:
+            Text(settings.effectiveDateFormat.string(from: date))
+                .font(.system(size: settings.fontSize * 0.64, weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+        case .weekday:
+            Text(date, format: .dateTime.weekday(.wide))
+                .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
+                .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+        case .album:
+            Text("Selected album")
+                .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
+                .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+        case .itemCount:
+            Text("1 / 12")
+                .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight, design: .monospaced))
+                .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+        case .battery:
+            Label("91%", systemImage: "battery.75percent")
+                .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
+                .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+        case .weather:
+            if let weather = store.weather.snapshot {
+                HStack(spacing: 5) {
+                    Image(systemName: weather.symbolName)
+                    Text(weather.displayText)
+                        .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+                    Text(weather.attributionText)
+                        .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+                }
+                .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
+            }
+            if store.weather.status != .live {
+                Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
+                    .font(.system(size: settings.fontSize * 0.48, weight: settings.effectiveTextWeight.fontWeight))
+                    .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+                    .lineLimit(2)
+            }
+        case .location, .caption:
+            EmptyView()
         }
     }
 

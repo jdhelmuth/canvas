@@ -438,6 +438,9 @@ struct CanvasFilters: Codable, Equatable {
 
 struct CanvasSettings: Codable, Equatable {
     var selectedAlbums: [AlbumReference] = []
+    /// Optional so settings written before the album-picker visibility control
+    /// continue to decode. Missing values use the default: hide empty albums.
+    var showEmptyAlbums: Bool? = false
     var queueMode: QueueMode = .shuffle
     var repeatEnabled = true
     var shuffleEachLoop = false
@@ -488,6 +491,8 @@ struct CanvasSettings: Codable, Equatable {
     var effectiveFramingMode: MediaFramingMode {
         framingMode ?? (fitMode ? .fitWithBorder : .fillZoom)
     }
+
+    var effectiveShowEmptyAlbums: Bool { showEmptyAlbums ?? false }
 }
 
 struct OverlaySettings: Codable, Equatable {
@@ -513,6 +518,14 @@ struct OverlaySettings: Codable, Equatable {
     /// independent of the backing opacity and clock/text opacity.
     var backgroundTransparency: Double?
     var fontSize: Double = 22
+    /// Optional so existing settings retain the current long-form date while
+    /// newer builds can offer the common date styles without rewriting saved
+    /// settings.
+    var dateFormat: OverlayDateFormat? = .long
+    /// Supporting overlay labels (date, battery, album, and so on) have a
+    /// separate weight from the clock. The optional field preserves older
+    /// settings that did not have a supporting-text weight.
+    var textWeight: ClockWeight? = .regular
     // Optional for backward-compatible decoding of existing saved settings.
     var clockSize: Double?
     var clockWeight: ClockWeight?
@@ -527,10 +540,43 @@ struct OverlaySettings: Codable, Equatable {
     var textStrokeEnabled: Bool?
     var textStrokeColor: ClockColor?
     var textStrokeWidth: Double?
+    /// Clock stroke settings are now independent from supporting overlay text.
+    /// They fall back to the older shared text-stroke values until a user
+    /// explicitly chooses a clock-specific value.
+    var clockStrokeEnabled: Bool? = false
+    var clockStrokeColor: ClockColor? = .black
+    var clockStrokeWidth: Double? = 1.5
     /// Kept for decoding older presets. The UI now uses one neutral backing
     /// style and exposes continuous opacity/transparency controls instead of
     /// confusing material presets.
     var material: OverlayMaterial = .ultraThin
+
+    var effectiveDateFormat: OverlayDateFormat { dateFormat ?? .long }
+    var effectiveTextWeight: ClockWeight { textWeight ?? .regular }
+    var effectiveClockStrokeEnabled: Bool { clockStrokeEnabled ?? textStrokeEnabled ?? false }
+    var effectiveClockStrokeColor: ClockColor { clockStrokeColor ?? textStrokeColor ?? .black }
+    var effectiveClockStrokeWidth: Double { clockStrokeWidth ?? textStrokeWidth ?? 1.5 }
+
+    /// Converts settings written before clock and supporting-text strokes were
+    /// separated. The old shared stroke remains visually unchanged once, then
+    /// later edits stay independent.
+    @discardableResult
+    mutating func migrateLegacySharedStroke() -> Bool {
+        var changed = false
+        if clockStrokeEnabled == nil {
+            clockStrokeEnabled = textStrokeEnabled ?? false
+            changed = true
+        }
+        if clockStrokeColor == nil {
+            clockStrokeColor = textStrokeColor ?? .black
+            changed = true
+        }
+        if clockStrokeWidth == nil {
+            clockStrokeWidth = textStrokeWidth ?? 1.5
+            changed = true
+        }
+        return changed
+    }
 }
 
 enum CaptureDateBadgeStyle: String, Codable, CaseIterable, Identifiable {
@@ -543,6 +589,52 @@ enum CaptureDateBadgeStyle: String, Codable, CaseIterable, Identifiable {
         case .darkBadgeLightText: "Dark badge / light text"
         case .lightBadgeDarkText: "Light badge / dark text"
         }
+    }
+}
+
+enum OverlayDateFormat: String, Codable, CaseIterable, Identifiable {
+    case short
+    case medium
+    case long
+    case full
+    case numbersOnly
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .short: "Short"
+        case .medium: "Medium"
+        case .long: "Long"
+        case .full: "Full"
+        case .numbersOnly: "Numbers only"
+        }
+    }
+
+    /// Uses the user's locale for the four standard styles. The numbers-only
+    /// option keeps the locale's ordering and separators while omitting all
+    /// month names and weekday text.
+    func string(from date: Date, locale: Locale = .current, calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeStyle = .none
+
+        switch self {
+        case .short:
+            formatter.dateStyle = .short
+        case .medium:
+            formatter.dateStyle = .medium
+        case .long:
+            formatter.dateStyle = .long
+        case .full:
+            formatter.dateStyle = .full
+        case .numbersOnly:
+            formatter.dateStyle = .none
+            formatter.setLocalizedDateFormatFromTemplate("yMd")
+        }
+
+        return formatter.string(from: date)
     }
 }
 

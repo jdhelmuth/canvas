@@ -78,9 +78,9 @@ struct ClockOverlayView: View {
         return configured.isAdaptive ? AdaptiveClockColorResolver.color(for: mediaImage) : configured
     }
     private var color: Color { resolvedClockColor.color }
-    private var strokeEnabled: Bool { OverlayTextStrokePolicy.isEnabled(settings.textStrokeEnabled) }
-    private var strokeColor: Color { OverlayTextStrokePolicy.color(settings.textStrokeColor, mediaImage: mediaImage).color }
-    private var strokeWidth: CGFloat { OverlayTextStrokePolicy.width(settings.textStrokeWidth) }
+    private var strokeEnabled: Bool { OverlayTextStrokePolicy.isEnabled(settings.clockStrokeEnabled ?? settings.textStrokeEnabled) }
+    private var strokeColor: Color { OverlayTextStrokePolicy.color(settings.clockStrokeColor ?? settings.textStrokeColor, mediaImage: mediaImage).color }
+    private var strokeWidth: CGFloat { OverlayTextStrokePolicy.width(settings.clockStrokeWidth ?? settings.textStrokeWidth) }
     private var legibilityShadow: Color {
         resolvedClockColor == .black ? .white.opacity(0.34) : .black.opacity(0.34)
     }

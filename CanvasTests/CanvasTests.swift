@@ -226,6 +226,37 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(OverlayTextStrokePolicy.color(.orange, mediaImage: nil), .orange)
     }
 
+    func testSupportingTextStyleIsIndependentFromClockStyleWithLegacyStrokeFallback() {
+        var settings = OverlaySettings()
+        XCTAssertEqual(settings.effectiveTextWeight, .regular)
+        XCTAssertFalse(settings.effectiveClockStrokeEnabled)
+
+        settings.textWeight = .bold
+        settings.clockWeight = .regular
+        settings.textStrokeEnabled = true
+        settings.textStrokeColor = .cyan
+        settings.textStrokeWidth = 4
+
+        // Simulate a pre-separation persisted value. It inherits the old
+        // shared stroke until the settings store migrates it.
+        settings.clockStrokeEnabled = nil
+        settings.clockStrokeColor = nil
+        settings.clockStrokeWidth = nil
+
+        XCTAssertEqual(settings.effectiveTextWeight, .bold)
+        XCTAssertEqual(settings.clockWeight, .regular)
+        XCTAssertTrue(settings.effectiveClockStrokeEnabled)
+        XCTAssertEqual(settings.effectiveClockStrokeColor, .cyan)
+        XCTAssertEqual(settings.effectiveClockStrokeWidth, 4, accuracy: 0.001)
+
+        settings.clockStrokeEnabled = false
+        settings.clockStrokeColor = .orange
+        settings.clockStrokeWidth = 1
+        XCTAssertFalse(settings.effectiveClockStrokeEnabled)
+        XCTAssertEqual(settings.effectiveClockStrokeColor, .orange)
+        XCTAssertEqual(settings.effectiveClockStrokeWidth, 1, accuracy: 0.001)
+    }
+
     func testPairLayoutRulesAcrossDeviceOrientations() {
         let portraits = [CGSize(width: 900, height: 1400), CGSize(width: 1000, height: 1500)]
         let landscapes = [CGSize(width: 1600, height: 900), CGSize(width: 1400, height: 1000)]
@@ -596,6 +627,113 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(frame.minX, 10, accuracy: 0.001)
         XCTAssertEqual(frame.maxY, tile.height - 10, accuracy: 0.001)
         XCTAssertTrue(CGRect(origin: .zero, size: tile).contains(frame))
+    }
+
+    func testPortraitPairCaptureDatesMoveToInnerEdgesAroundCenterline() {
+        let portraits = [
+            CGSize(width: 900, height: 1400),
+            CGSize(width: 1000, height: 1500)
+        ]
+
+        XCTAssertEqual(
+            CaptureDateOverlayGeometry.horizontalAnchor(
+                tilePosition: 0,
+                tileIndex: 0,
+                tileCount: 2,
+                resolvedStyle: .portraitPair,
+                imageSizes: portraits,
+                position: .bottomLeading
+            ),
+            .trailing
+        )
+        XCTAssertEqual(
+            CaptureDateOverlayGeometry.horizontalAnchor(
+                tilePosition: 1,
+                tileIndex: 1,
+                tileCount: 2,
+                resolvedStyle: .portraitPair,
+                imageSizes: portraits,
+                position: .bottomLeading
+            ),
+            .leading
+        )
+        XCTAssertEqual(
+            CaptureDateOverlayGeometry.horizontalAnchor(
+                tilePosition: 1,
+                tileIndex: 1,
+                tileCount: 2,
+                resolvedStyle: .portraitPair,
+                imageSizes: portraits,
+                position: .bottomTrailing
+            ),
+            .leading
+        )
+    }
+
+    func testLandscapeCaptureDatesMoveToBottomTrailingForBottomLeadingClock() {
+        let landscapes = [CGSize(width: 1600, height: 900)]
+
+        XCTAssertEqual(
+            CaptureDateOverlayGeometry.horizontalAnchor(
+                tilePosition: 0,
+                tileIndex: 0,
+                tileCount: 1,
+                resolvedStyle: .single,
+                imageSizes: landscapes,
+                position: .bottomLeading
+            ),
+            .trailing
+        )
+        XCTAssertEqual(
+            CaptureDateOverlayGeometry.horizontalAnchor(
+                tilePosition: 0,
+                tileIndex: 0,
+                tileCount: 1,
+                resolvedStyle: .single,
+                imageSizes: landscapes,
+                position: .bottomTrailing
+            ),
+            .leading
+        )
+    }
+
+    func testClockIsBottomRowOnlyForBottomOverlayPositions() {
+        XCTAssertTrue(ClockOverlayStackPolicy.placesClockAtBottom(for: .bottomLeading))
+        XCTAssertTrue(ClockOverlayStackPolicy.placesClockAtBottom(for: .bottomTrailing))
+        XCTAssertFalse(ClockOverlayStackPolicy.placesClockAtBottom(for: .topLeading))
+        XCTAssertFalse(ClockOverlayStackPolicy.placesClockAtBottom(for: .center))
+    }
+
+    func testBottomOverlayOrderKeepsBatteryDateAndClockTogether() {
+        let order = OverlayStackOrder.items(
+            position: .bottomTrailing,
+            showTime: true,
+            showDate: true,
+            showAlbum: true,
+            showWeekday: true,
+            showLocation: true,
+            showCaption: true,
+            showItemCount: true,
+            showBattery: true,
+            showWeather: true
+        )
+
+        XCTAssertEqual(Array(order.suffix(3)), [.battery, .date, .clock])
+        XCTAssertEqual(
+            OverlayStackOrder.items(
+                position: .topLeading,
+                showTime: true,
+                showDate: true,
+                showAlbum: false,
+                showWeekday: false,
+                showLocation: false,
+                showCaption: false,
+                showItemCount: false,
+                showBattery: true,
+                showWeather: false
+            ),
+            [.clock, .date, .battery]
+        )
     }
 
     func testCaptureDateTileFramesStayInsideFinalSingleAndPairedCanvas() {
@@ -1033,6 +1171,22 @@ final class CanvasTests: XCTestCase {
         )
     }
 
+    func testOverlayDateFormatsCoverCommonStylesAndNumbersOnly() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = calendar.date(from: DateComponents(year: 2024, month: 1, day: 2, hour: 12))!
+        let locale = Locale(identifier: "en_US_POSIX")
+
+        XCTAssertEqual(OverlayDateFormat.short.string(from: date, locale: locale, calendar: calendar), "1/2/24")
+        XCTAssertEqual(OverlayDateFormat.medium.string(from: date, locale: locale, calendar: calendar), "Jan 2, 2024")
+        XCTAssertEqual(OverlayDateFormat.long.string(from: date, locale: locale, calendar: calendar), "January 2, 2024")
+        XCTAssertEqual(OverlayDateFormat.full.string(from: date, locale: locale, calendar: calendar), "Tuesday, January 2, 2024")
+
+        let numbersOnly = OverlayDateFormat.numbersOnly.string(from: date, locale: locale, calendar: calendar)
+        XCTAssertTrue(numbersOnly.contains("2024"))
+        XCTAssertNil(numbersOnly.range(of: "[A-Za-z]", options: .regularExpression))
+    }
+
     func testOverlayBackgroundControlsAllowZeroOpacityAndIndependentTransparency() {
         XCTAssertEqual(OverlayBackgroundPolicy.effectiveOpacity(opacity: 0, transparency: 0), 0, accuracy: 0.0001)
         XCTAssertEqual(OverlayBackgroundPolicy.effectiveOpacity(opacity: 1, transparency: 0), 1, accuracy: 0.0001)
@@ -1098,6 +1252,21 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(
             AppleAlbumCategoryOrdering.categories(from: ["other", "smart", "user", "shared"]),
             [.other, .smart, .user, .shared]
+        )
+    }
+
+    func testAlbumVisibilityHidesEmptyAlbumsByDefaultAndCanShowThem() {
+        let empty = AlbumReference(id: "empty", title: "Empty", subtype: 0, estimatedCount: 0, isSmart: false, isShared: false)
+        let populated = AlbumReference(id: "populated", title: "Populated", subtype: 0, estimatedCount: 4, isSmart: false, isShared: false)
+
+        XCTAssertFalse(CanvasSettings().effectiveShowEmptyAlbums)
+        XCTAssertEqual(
+            AlbumVisibilityPolicy.visible([empty, populated], showEmptyAlbums: false).map(\.id),
+            [populated.id]
+        )
+        XCTAssertEqual(
+            AlbumVisibilityPolicy.visible([empty, populated], showEmptyAlbums: true).map(\.id),
+            [empty.id, populated.id]
         )
     }
 
@@ -1388,9 +1557,14 @@ final class CanvasTests: XCTestCase {
             $0.overlays.clockColor = .orange
             $0.overlays.clockStyle = .analog
             $0.overlays.analogClockFace = .roman
+            $0.overlays.dateFormat = .numbersOnly
+            $0.overlays.textWeight = .bold
             $0.overlays.textStrokeEnabled = true
             $0.overlays.textStrokeColor = .cyan
             $0.overlays.textStrokeWidth = 4.5
+            $0.overlays.clockStrokeEnabled = false
+            $0.overlays.clockStrokeColor = .orange
+            $0.overlays.clockStrokeWidth = 2
             $0.overlays.captureDateStyle = .lightBadgeDarkText
             $0.framingMode = .fillZoom
         }
@@ -1406,9 +1580,14 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(restored.settings.overlays.clockColor, .orange)
         XCTAssertEqual(restored.settings.overlays.clockStyle, .analog)
         XCTAssertEqual(restored.settings.overlays.analogClockFace, .roman)
+        XCTAssertEqual(restored.settings.overlays.dateFormat, .numbersOnly)
+        XCTAssertEqual(restored.settings.overlays.textWeight, .bold)
         XCTAssertEqual(restored.settings.overlays.textStrokeEnabled, true)
         XCTAssertEqual(restored.settings.overlays.textStrokeColor, .cyan)
         XCTAssertEqual(restored.settings.overlays.textStrokeWidth ?? 0, 4.5, accuracy: 0.001)
+        XCTAssertEqual(restored.settings.overlays.clockStrokeEnabled, false)
+        XCTAssertEqual(restored.settings.overlays.clockStrokeColor, .orange)
+        XCTAssertEqual(restored.settings.overlays.clockStrokeWidth ?? 0, 2, accuracy: 0.001)
         XCTAssertEqual(restored.settings.overlays.captureDateStyle, .lightBadgeDarkText)
         XCTAssertEqual(restored.settings.effectiveFramingMode, .fillZoom)
     }
@@ -1421,14 +1600,24 @@ final class CanvasTests: XCTestCase {
         var legacy = CanvasSettings()
         legacy.backgroundHex = "#0B1020"
         legacy.fitMode = true
+        legacy.overlays.textStrokeEnabled = true
+        legacy.overlays.textStrokeColor = .cyan
+        legacy.overlays.textStrokeWidth = 4
+        legacy.overlays.clockStrokeEnabled = nil
+        legacy.overlays.clockStrokeColor = nil
+        legacy.overlays.clockStrokeWidth = nil
         defaults.set(try JSONEncoder().encode(legacy), forKey: "canvas.settings.v1")
 
         let migrated = SettingsStore(defaults: defaults)
         XCTAssertFalse(migrated.settings.fitMode)
         XCTAssertEqual(migrated.settings.backgroundHex, "#151513")
+        XCTAssertEqual(migrated.settings.overlays.clockStrokeEnabled, true)
+        XCTAssertEqual(migrated.settings.overlays.clockStrokeColor, .cyan)
+        XCTAssertEqual(migrated.settings.overlays.clockStrokeWidth ?? 0, 4, accuracy: 0.001)
         let relaunched = SettingsStore(defaults: defaults)
         XCTAssertFalse(relaunched.settings.fitMode)
         XCTAssertEqual(relaunched.settings.backgroundHex, "#151513")
+        XCTAssertEqual(relaunched.settings.overlays.clockStrokeEnabled, true)
     }
 
     @MainActor

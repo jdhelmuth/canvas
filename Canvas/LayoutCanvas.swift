@@ -250,15 +250,33 @@ struct CaptureDateOverlayLayer: View {
             canvasSize: canvasSize,
             spacing: spacing
         )
+        let resolvedSelection = LayoutCanvasSelectionResolver.selection(
+            style: style,
+            imageSizes: imageSizes,
+            canvasSize: canvasSize
+        )
         ZStack(alignment: .topLeading) {
-            ForEach(placements, id: \.index) { placement in
+            ForEach(Array(placements.enumerated()), id: \.element.index) { tilePosition, element in
+                let placement = element
                 if captureDates.indices.contains(placement.index), let date = captureDates[placement.index] {
-                    ZStack(alignment: .bottomLeading) {
+                    let horizontalAnchor = CaptureDateOverlayGeometry.horizontalAnchor(
+                        tilePosition: tilePosition,
+                        tileIndex: placement.index,
+                        tileCount: placements.count,
+                        resolvedStyle: resolvedSelection.style,
+                        imageSizes: imageSizes,
+                        position: overlaySettings?.position
+                    )
+                    let isTrailing = horizontalAnchor == .trailing
+                    ZStack(alignment: isTrailing ? .bottomTrailing : .bottomLeading) {
                         Color.clear
                         CaptureDateBadge(date: date, style: badgeStyle, textStrokeSettings: overlaySettings)
                             .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: max(0, placement.frame.width - 20), alignment: .leading)
-                            .padding(.leading, 10)
+                            .frame(
+                                maxWidth: max(0, placement.frame.width - 20),
+                                alignment: isTrailing ? .trailing : .leading
+                            )
+                            .padding(isTrailing ? .trailing : .leading, 10)
                             .padding(.bottom, 10)
                     }
                     .frame(width: placement.frame.width, height: placement.frame.height)
@@ -351,7 +369,11 @@ struct CaptureDateBadge: View {
     @ViewBuilder
     private func label(lightContent: Bool) -> some View {
         let text = Text(date.formatted(date: .abbreviated, time: .omitted))
-            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .font(.system(
+                size: 11,
+                weight: textStrokeSettings?.effectiveTextWeight.fontWeight ?? .medium,
+                design: .rounded
+            ))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .foregroundStyle((lightContent ? Color.white : Color.black).opacity(0.86))

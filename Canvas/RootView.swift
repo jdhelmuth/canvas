@@ -623,6 +623,7 @@ struct AlbumPickerView: View {
     @State private var search = ""
     @State private var showGoogleImport = false
     @State private var knownGoogleAlbumIDs: Set<String> = []
+    @State private var showEmptyAlbums = false
 
     private func appleAlbums(in category: AppleAlbumCategory) -> [AlbumReference] {
         filtered(AppleAlbumCategory.albums(from: store.library.albums, in: category))
@@ -635,6 +636,15 @@ struct AlbumPickerView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("Album visibility") {
+                    Toggle("Show albums with 0 photos", isOn: $showEmptyAlbums)
+                        .onChange(of: showEmptyAlbums) { _, value in
+                            store.settingsStore.update { $0.showEmptyAlbums = value }
+                        }
+                    Text("When off, empty albums are hidden from Apple Photos and Google Photos. Existing selections are kept.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(appleCategoryOrder) { category in
                     albumCategorySection(category)
                 }
@@ -662,7 +672,12 @@ struct AlbumPickerView: View {
                 ToolbarItem(placement: .navigationBarLeading) { EditButton().accessibilityLabel("Reorder album sections") }
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { commit() }.fontWeight(.semibold) }
             }
-            .onAppear { selection = Set(store.settings.selectedAlbums.map(\.id)); knownGoogleAlbumIDs = Set(store.googlePhotos.albumReferences.map(\.id)); store.library.refreshAlbums() }
+            .onAppear {
+                selection = Set(store.settings.selectedAlbums.map(\.id))
+                showEmptyAlbums = store.settings.effectiveShowEmptyAlbums
+                knownGoogleAlbumIDs = Set(store.googlePhotos.albumReferences.map(\.id))
+                store.library.refreshAlbums()
+            }
             .onChange(of: store.googlePhotos.albums) { _, _ in
                 let current = Set(store.googlePhotos.albumReferences.map(\.id))
                 selection.subtract(knownGoogleAlbumIDs.subtracting(current))
@@ -687,7 +702,8 @@ struct AlbumPickerView: View {
         store.settingsStore.update { $0.albumCategoryOrder = order }
     }
     private func filtered(_ albums: [AlbumReference]) -> [AlbumReference] {
-        albums.filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }
+        AlbumVisibilityPolicy.visible(albums, showEmptyAlbums: showEmptyAlbums)
+            .filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
