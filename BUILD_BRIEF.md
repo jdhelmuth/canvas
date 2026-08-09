@@ -2,7 +2,7 @@
 
 Build a production-quality native iPad digital photo-frame app named **Canvas**. Use Swift, SwiftUI, and the latest stable Apple frameworks supported by the installed Xcode. Target iPad first, structure for a later iPhone target, prefer native APIs, and avoid third-party dependencies unless they offer a major benefit.
 
-The current public release is named **Canvas Slideshow**. It intentionally excludes the WeatherKit capability and does not request device location; the weather requirement below is a future-provider option, not a current release claim.
+The current product is named **Canvas Slideshow**. Its opt-in weather overlay uses WeatherKit and the iPad's current location; the signed App ID must have the WeatherKit capability enabled before a device build can return live conditions.
 
 The source project uses the product name Canvas Slideshow and bundle identifier `com.johnhelmuth.canvas`.
 

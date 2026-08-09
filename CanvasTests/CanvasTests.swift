@@ -374,16 +374,21 @@ final class CanvasTests: XCTestCase {
     }
 
     @MainActor
-    func testWeatherOverlayGracefullyReportsUnavailableWithoutProvider() {
-        let service = CanvasWeatherService()
+    func testWeatherOverlayWaitsForLocationPermissionBeforeRequestingWeather() {
+        let service = CanvasWeatherService(autoRequestLocation: false)
         service.update(showWeather: true)
-        XCTAssertEqual(service.status, .entitlementMissing)
+        XCTAssertEqual(service.status, .needsLocationPermission)
         XCTAssertFalse(service.isLoading)
-        XCTAssertNil(service.snapshot)
-        XCTAssertTrue(service.errorMessage?.contains("not included") == true)
+        XCTAssertTrue(service.errorMessage?.contains("location") == true)
 
         service.update(showWeather: false)
         XCTAssertEqual(service.status, .disabled)
+    }
+
+    func testWeatherAuthorizationFailureExplainsTheSeparateAppServiceRequirement() {
+        XCTAssertEqual(WeatherOverlayStatus.authorizationUnavailable.title, "WeatherKit authorization unavailable")
+        XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("authorization service"))
+        XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("account-sync issue"))
     }
 
     func testSwipeNavigationAndPlaybackIndexMoveExactlyOneItem() {

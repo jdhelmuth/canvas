@@ -68,6 +68,7 @@
 		5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIComponents.swift; sourceTree = "<group>"; };
 		6411992ADAE9E9596FC3EE76 /* Canvas.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Canvas.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8045FCF88B615769B397B576 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		81A6F2BE6B6D4D1D9D3E0F21 /* Canvas.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Canvas.entitlements; sourceTree = "<group>"; };
 		84E2895031A481ABFE0EB164 /* PlaybackViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackViewModel.swift; sourceTree = "<group>"; };
 		887B3465A4360F74E0FDB3C4 /* AudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioService.swift; sourceTree = "<group>"; };
 		912AC961545646EAF400FA11 /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
@@ -101,6 +102,7 @@
 			children = (
 				887B3465A4360F74E0FDB3C4 /* AudioService.swift */,
 				3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */,
+				81A6F2BE6B6D4D1D9D3E0F21 /* Canvas.entitlements */,
 				5DC3B68247338973D156775B /* FeatureEngines.swift */,
 				DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */,
 				8045FCF88B615769B397B576 /* Info.plist */,
@@ -409,6 +411,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show current local weather when you turn on the weather overlay.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas does not need to add or change photos.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to your photos so it can display the albums you choose as a private digital frame.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -437,6 +440,7 @@
 				CURRENT_PROJECT_VERSION = 20;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -462,6 +466,7 @@
 				CURRENT_PROJECT_VERSION = 20;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
+				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -527,6 +532,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show current local weather when you turn on the weather overlay.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas does not need to add or change photos.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to your photos so it can display the albums you choose as a private digital frame.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

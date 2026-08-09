@@ -16,8 +16,10 @@ the Apple Photos features.
   tokens in the iPad Keychain and downloads only the media you select for local
   playback. Google Photos is optional; Apple Photos remains usable without it.
 - Canvas may display location metadata already present in an authorized photo.
-  The public release does not request device location and does not include a
-  weather provider.
+  When you opt into current weather, Canvas requests When In Use location
+  permission and sends the current coordinates to Apple's WeatherKit to obtain
+  local conditions. Canvas stores only the last weather snapshot locally so it
+  can label it as last known when the network or service is unavailable.
 
 Canvas does not operate a server for your media, and does not include
 analytics, advertising, tracking, or data brokerage.

@@ -85,6 +85,11 @@ struct SettingsView: View {
             Form { overlaysSection }
         }
         .background(Color(uiColor: .systemGroupedBackground))
+        .onAppear {
+            if store.settings.overlays.showWeather {
+                store.weather.update(showWeather: true)
+            }
+        }
     }
 
     private var albumsFiltersSection: some View {
@@ -354,6 +359,7 @@ struct SettingsView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(store.weather.status == .live ? .green : .secondary)
                 .accessibilityLabel("Weather status: \(store.weather.status.title)")
+                .accessibilityIdentifier("canvas.weather.status")
             Text(store.weather.status.message)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -380,7 +386,7 @@ struct SettingsView: View {
                     UIApplication.shared.open(url)
                 }
                 .buttonStyle(.bordered)
-            case .networkUnavailable, .serviceUnavailable, .entitlementMissing, .locationUnavailable:
+            case .networkUnavailable, .serviceUnavailable, .authorizationUnavailable, .entitlementMissing, .locationUnavailable:
                 Button("Retry weather") { store.weather.update(showWeather: true) }
                     .buttonStyle(.bordered)
             case .disabled, .requestingLocation, .locating, .fetching, .live:

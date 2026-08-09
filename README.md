@@ -43,14 +43,14 @@ The unit suite covers deterministic shuffle and linear queues, favorites/date or
 - PhotoKit may return an iCloud loading error or an asset that was deleted while queued. Canvas reports the item and continues rather than crashing.
 - A physical-device build requires the user's Apple Developer signing team and a trusted, connected iPad. The simulator cannot reproduce the user's real Photos library, Live Photos, or iCloud media.
 - iPadOS may suspend a foregrounded/backgrounded process and does not guarantee wake, unlock, or schedule execution while the app is not running. Schedules therefore evaluate while Canvas is active and explicitly explain this limitation.
-- Weather overlays are not included in the public release. Canvas does not request device location or make a WeatherKit request.
+- Weather overlays use WeatherKit with a one-time When In Use location permission. Canvas keeps the last successful snapshot locally and reports clear states for denied location, offline access, missing WeatherKit entitlement, and service failures. The `com.johnhelmuth.canvas` App ID must have WeatherKit enabled before a signed device build can return live conditions.
 - Apple Music playback is not enabled. Local imported audio works without a subscription; MusicKit requires a separate entitlement, user authorization, and policy review.
 - PhotoKit does not provide a universally reliable duplicate-photo identity across libraries. Canvas avoids duplicate asset identifiers when combining albums and leaves content-level duplicate detection out unless Apple exposes a stable match.
 - Opening Photos is best-effort via the Photos URL scheme; the exact asset handoff is controlled by iPadOS.
 
 ## Privacy strings
 
-The generated Info.plist includes only the Photos read/add descriptions required by the current product. Canvas does not request device location, and there are no analytics, advertisements, uploads, or tracking SDKs.
+The generated Info.plist includes Photos read/add and When In Use location descriptions. Location is used only when the user opts into current weather; there are no analytics, advertisements, uploads, or tracking SDKs.
 
 ## Completion checklist
 
@@ -65,7 +65,7 @@ The generated Info.plist includes only the Photos read/add descriptions required
 | Cut/crossfade/slide/push/zoom/Ken Burns/blur/scale/page-style selection | Complete; blur and page-style use native SwiftUI fallbacks |
 | Single/pair/collage/grid/automatic layouts | Complete |
 | Live Photos and muted video playback | Complete |
-| Time/date/capture/weekday/album/location/count/battery overlays | Complete; weather is intentionally unavailable in the public release |
+| Time/date/capture/weekday/album/location/count/battery/weather overlays | Complete; weather requires the WeatherKit capability and user location permission |
 | Named weekday schedules and foreground enforcement | Complete; iPadOS background wake limits apply |
 | Keep-awake, charging and battery settings | Complete; brightness restoration is native-session scoped |
 | Favorite, exclude, details, swipe, zoom, lock, keyboard/pointer-ready controls | Complete; Photos handoff is best-effort |

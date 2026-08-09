@@ -136,4 +136,39 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Open Google Photos"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "no Google OAuth client")).firstMatch.exists)
     }
+
+    func testPhysicalWeatherOverlayUsesLiveWeatherKit() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["CANVAS_PHYSICAL_WEATHER_TEST"] == "1",
+            "Runs only on a connected physical iPad with location and network access."
+        )
+
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-home"]
+        app.launch()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
+        app.staticTexts["Clock & Overlays"].tap()
+
+        let weatherToggle = app.switches["Current weather (opt-in)"]
+        for _ in 0..<4 where !weatherToggle.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(weatherToggle.waitForExistence(timeout: 5))
+        let wasEnabled = (weatherToggle.value as? String) == "1"
+        if !wasEnabled {
+            weatherToggle.tap()
+            let allowWhileUsing = app.buttons["Allow While Using App"]
+            if allowWhileUsing.waitForExistence(timeout: 5) { allowWhileUsing.tap() }
+            let allowOnce = app.buttons["Allow Once"]
+            if allowOnce.waitForExistence(timeout: 1) { allowOnce.tap() }
+        }
+
+        let status = app.staticTexts["canvas.weather.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 25))
+        XCTAssertEqual(status.label, "Weather status: Weather live")
+
+        if !wasEnabled { weatherToggle.tap() }
+    }
 }
