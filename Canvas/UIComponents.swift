@@ -236,26 +236,69 @@ struct CanvasBackground: View {
     }
 }
 
-/// A friendly condition mark shared by the live frame and Settings preview.
-/// WeatherKit supplies the SF Symbol name and multicolor treatment, while the
-/// layered native material keeps it legible over changing photos.
+/// A cinematic condition mark shared by the live frame and Settings preview.
+/// WeatherKit supplies the SF Symbol name; the soft atmospheric bloom and
+/// layered multicolor symbol give it depth without trapping the artwork in a
+/// button-like circle.
 struct WeatherConditionGlyph: View {
     let symbolName: String
     var diameter: CGFloat = 24
 
+    private var glowPalette: (primary: Color, secondary: Color) {
+        let name = symbolName.lowercased()
+        if name.contains("bolt") || name.contains("thunder") {
+            return (.yellow, .purple)
+        }
+        if name.contains("snow") || name.contains("sleet") {
+            return (.cyan, .white)
+        }
+        if name.contains("rain") || name.contains("drizzle") {
+            return (.blue, .cyan)
+        }
+        if name.contains("sun") || name.contains("clear") {
+            return (.orange, .yellow)
+        }
+        if name.contains("cloud") {
+            return (.cyan, .indigo)
+        }
+        if name.contains("fog") || name.contains("haze") {
+            return (.mint, .cyan)
+        }
+        return (.cyan, .blue)
+    }
+
     var body: some View {
         ZStack {
             Circle()
-                .fill(.thinMaterial)
-            Circle()
-                .fill(Color.cyan.opacity(0.14))
+                .fill(
+                    RadialGradient(
+                        colors: [
+                            glowPalette.primary.opacity(0.42),
+                            glowPalette.secondary.opacity(0.16),
+                            .clear
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: diameter * 0.78
+                    )
+                )
+                .frame(width: diameter * 1.42, height: diameter * 1.42)
+                .blur(radius: diameter * 0.12)
+
             Image(systemName: symbolName)
                 .symbolRenderingMode(.multicolor)
-                .font(.system(size: diameter * 0.54, weight: .semibold))
-                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                .font(.system(size: diameter * 0.72, weight: .regular))
+                .opacity(0.44)
+                .blur(radius: diameter * 0.045)
+                .scaleEffect(1.06)
+
+            Image(systemName: symbolName)
+                .symbolRenderingMode(.multicolor)
+                .font(.system(size: diameter * 0.72, weight: .regular))
+                .shadow(color: glowPalette.primary.opacity(0.42), radius: diameter * 0.12, y: diameter * 0.04)
+                .shadow(color: .black.opacity(0.26), radius: diameter * 0.06, y: diameter * 0.045)
         }
-        .frame(width: diameter, height: diameter)
-        .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.7))
+        .frame(width: diameter * 1.28, height: diameter * 1.28)
         .accessibilityHidden(true)
     }
 }
@@ -302,9 +345,10 @@ struct WeatherOverlayWidget: View {
                        let temperature = snapshot.nextHourTemperature,
                        let condition = snapshot.nextHourCondition {
                         HStack(spacing: 7) {
-                            Image(systemName: snapshot.nextHourSymbolName ?? "clock")
-                                .symbolRenderingMode(.multicolor)
-                                .frame(width: 20)
+                            WeatherConditionGlyph(
+                                symbolName: snapshot.nextHourSymbolName ?? "clock",
+                                diameter: 22
+                            )
                             Text("Next hour")
                                 .fontWeight(.semibold)
                             Text("\(temperature) · \(condition)")
@@ -332,23 +376,10 @@ struct WeatherOverlayWidget: View {
                     .frame(height: 18)
                 }
                 .frame(width: widgetWidth(for: snapshot), alignment: .leading)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 9)
-                .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white.opacity(0.075))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.white.opacity(0.16), lineWidth: 0.7)
-                        }
-                }
                 .accessibilityElement(children: .contain)
             } else {
                 Label(status.title, systemImage: status.systemImage)
                     .font(.system(size: max(12, settings.fontSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 9)
-                    .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .accessibilityLabel("Weather, \(status.title)")
             }
         }

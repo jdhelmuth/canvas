@@ -390,7 +390,7 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             if let snapshot = store.weather.snapshot {
                 HStack(spacing: 8) {
-                    WeatherConditionGlyph(symbolName: snapshot.symbolName, diameter: 24)
+                    WeatherConditionGlyph(symbolName: snapshot.symbolName, diameter: 30)
                     Text(snapshot.displayText)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
