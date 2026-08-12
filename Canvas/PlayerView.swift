@@ -25,7 +25,9 @@ struct PlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if !powerAllowsPlayback {
+            if isWeatherFramePreview {
+                weatherFramePreview
+            } else if !powerAllowsPlayback {
                 VStack(spacing: 14) { Image(systemName: "bolt.fill").font(.largeTitle); Text("Canvas is waiting for power") .font(.headline); Text("Charging-only mode or the low-battery limit is enabled in Power & Display.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
             } else if !store.settings.schedules.isEmpty && !scheduleMonitor.isPlaybackAllowed {
                 if store.settings.schedules.contains(where: \.blackSleepScreen) {
@@ -46,6 +48,7 @@ struct PlayerView: View {
         .persistentSystemOverlays(.hidden)
         .task {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            if isWeatherFramePreview { controlsVisible = false }
             isLocked = store.settings.lockControls
             scheduleMonitor.start(rules: store.settings.schedules)
             updateNightDimmingSchedule()
@@ -112,6 +115,24 @@ struct PlayerView: View {
         .sheet(isPresented: $showDetails) { detailsSheet }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Canvas slideshow")
+    }
+
+    private var isWeatherFramePreview: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+#else
+        false
+#endif
+    }
+
+    private var weatherFramePreview: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color(red: 0.075, green: 0.09, blue: 0.11)
+                overlay(in: proxy.size)
+            }
+        }
+        .ignoresSafeArea()
     }
 
     private var media: some View {
@@ -370,12 +391,22 @@ struct PlayerView: View {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
         let items = overlayItems(for: settings)
+        let pairsClockAndWeather = WeatherClockLayoutPolicy.pairsClockAndWeather(
+            showTime: settings.showTime,
+            showWeather: settings.showWeather
+        )
         let date = Date()
         return ZStack {
             if !items.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
                     ForEach(items) { item in
-                        overlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
+                        if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
+                            if item == .clock, pairsClockAndWeather {
+                                clockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text)
+                            } else {
+                                overlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
+                            }
+                        }
                     }
                 }.foregroundStyle(.white.opacity(opacity.text)).padding(14).background {
                     // Keep one neutral backing style; continuous controls in
@@ -402,6 +433,23 @@ struct PlayerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             }
         }
+    }
+
+    private func clockAndWeatherRow(
+        date: Date,
+        settings: OverlaySettings,
+        textOpacity: Double
+    ) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            ClockOverlayView(date: date, settings: settings, mediaImage: model.currentImage)
+                .accessibilityIdentifier("canvas.clock.overlay")
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.white.opacity(0.22))
+                .frame(width: 1, height: min(max(CGFloat(settings.clockSize ?? 72) * 0.78, 54), 132))
+                .accessibilityHidden(true)
+            weatherWidget(settings: settings, textOpacity: textOpacity)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private func overlayItems(for settings: OverlaySettings) -> [OverlayStackItem] {
@@ -469,33 +517,21 @@ struct PlayerView: View {
             .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
             .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
         case .weather:
-            if let weather = store.weather.snapshot {
-                HStack(spacing: 5) {
-                    WeatherConditionGlyph(
-                        symbolName: weather.symbolName,
-                        diameter: max(18, settings.fontSize * 0.68)
-                    )
-                    Text(weather.conditionsText)
-                        .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
-                    if store.weather.isUsingCachedSnapshot || weather.isStale {
-                        Text("Last known")
-                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
-                    }
-                    WeatherLegalLink(
-                        destination: store.weather.attributionURL,
-                        markURL: store.weather.attributionMarkURL
-                    )
-                }
-                .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
-                .lineLimit(1)
-                .accessibilityIdentifier("canvas.weather.overlay")
-            } else {
-                Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
-                    .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
-                    .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
-                    .accessibilityIdentifier("canvas.weather.overlay")
-            }
+            weatherWidget(settings: settings, textOpacity: textOpacity)
         }
+    }
+
+    private func weatherWidget(settings: OverlaySettings, textOpacity: Double) -> some View {
+        WeatherOverlayWidget(
+            snapshot: store.weather.snapshot,
+            status: store.weather.status,
+            isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
+            settings: settings,
+            mediaImage: model.currentImage,
+            textOpacity: textOpacity,
+            attributionURL: store.weather.attributionURL,
+            attributionMarkURL: store.weather.attributionMarkURL
+        )
     }
     private func alignment(for position: OverlayPosition) -> Alignment { switch position { case .topLeading: .topLeading; case .topTrailing: .topTrailing; case .bottomLeading: .bottomLeading; case .bottomTrailing: .bottomTrailing; case .center: .center } }
     private func updateWeather() {

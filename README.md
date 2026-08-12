@@ -43,14 +43,14 @@ The unit suite covers deterministic shuffle and linear queues, favorites/date or
 - PhotoKit may return an iCloud loading error or an asset that was deleted while queued. Canvas reports the item and continues rather than crashing.
 - A physical-device build requires the user's Apple Developer signing team and a trusted, connected iPad. The simulator cannot reproduce the user's real Photos library, Live Photos, or iCloud media.
 - iPadOS may suspend a foregrounded/backgrounded process and does not guarantee wake, unlock, or schedule execution while the app is not running. Schedules therefore evaluate while Canvas is active and explicitly explain this limitation. Canvas's separate automatic night mode applies an in-app low-light treatment to an open frame from 10 PM to 7 AM by default, returns to normal automatically, and never changes system brightness.
-- Weather overlays use WeatherKit with a one-time When In Use location permission. Canvas keeps the last successful snapshot locally and reports clear states for denied location, offline access, missing WeatherKit entitlement, and service failures. The `com.johnhelmuth.canvas` App ID must have WeatherKit enabled in both its **App Capabilities** and **App Services** tabs before a signed device build can return live conditions. After changing either setting, refresh signing/provisioning and install a newly signed build.
+- Weather overlays use WeatherKit with a one-time When In Use location permission for current conditions, feels-like temperature, humidity, wind, UV, precipitation chance, today's high/low, sunrise/sunset, and a next-hour outlook. Optional AQI uses Open-Meteo/CAMS with coordinates rounded to approximately one-kilometer precision because WeatherKit does not expose AQI. Canvas keeps the last successful snapshot locally and reports clear states for denied location, offline access, missing WeatherKit entitlement, and service failures. The `com.johnhelmuth.canvas` App ID must have WeatherKit enabled in both its **App Capabilities** and **App Services** tabs before a signed device build can return live conditions. After changing either setting, refresh signing/provisioning and install a newly signed build.
 - Apple Music playback is not enabled. Local imported audio works without a subscription; MusicKit requires a separate entitlement, user authorization, and policy review.
 - PhotoKit does not provide a universally reliable duplicate-photo identity across libraries. Canvas avoids duplicate asset identifiers when combining albums and leaves content-level duplicate detection out unless Apple exposes a stable match.
 - Opening Photos is best-effort via the Photos URL scheme; the exact asset handoff is controlled by iPadOS.
 
 ## Privacy strings
 
-The generated Info.plist includes Photos read/add and When In Use location descriptions. Location is used only when the user opts into current weather; there are no analytics, advertisements, uploads, or tracking SDKs.
+The generated Info.plist includes Photos read/add and When In Use location descriptions. Location is used only when the user opts into weather and AQI; there are no analytics, advertisements, uploads, or tracking SDKs.
 
 ## Completion checklist
 

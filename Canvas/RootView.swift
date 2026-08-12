@@ -7,8 +7,18 @@ struct RootView: View {
 
     var body: some View {
         Group {
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame") {
+                PlayerView()
+            } else if store.settings.hasCompletedOnboarding {
+                LibraryHomeView()
+            } else {
+                OnboardingView()
+            }
+#else
             if store.settings.hasCompletedOnboarding { LibraryHomeView() }
             else { OnboardingView() }
+#endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()

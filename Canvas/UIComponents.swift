@@ -236,21 +236,235 @@ struct CanvasBackground: View {
     }
 }
 
-/// A compact, friendly condition mark shared by the live frame and Settings
-/// preview. SF Symbols supplies the familiar sun/cloud colors; the soft sky
-/// circle keeps monochrome-only conditions visually colored as well.
+/// A friendly condition mark shared by the live frame and Settings preview.
+/// WeatherKit supplies the SF Symbol name and multicolor treatment, while the
+/// layered native material keeps it legible over changing photos.
 struct WeatherConditionGlyph: View {
     let symbolName: String
     var diameter: CGFloat = 24
 
     var body: some View {
-        Image(systemName: symbolName)
-            .symbolRenderingMode(.multicolor)
-            .font(.system(size: diameter * 0.58, weight: .semibold))
-            .frame(width: diameter, height: diameter)
-            .background(Color.cyan.opacity(0.18), in: Circle())
-            .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.5))
-            .accessibilityHidden(true)
+        ZStack {
+            Circle()
+                .fill(.thinMaterial)
+            Circle()
+                .fill(Color.cyan.opacity(0.14))
+            Image(systemName: symbolName)
+                .symbolRenderingMode(.multicolor)
+                .font(.system(size: diameter * 0.54, weight: .semibold))
+                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+        }
+        .frame(width: diameter, height: diameter)
+        .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.7))
+        .accessibilityHidden(true)
+    }
+}
+
+struct WeatherOverlayWidget: View {
+    let snapshot: CanvasWeatherSnapshot?
+    let status: WeatherOverlayStatus
+    let isUsingCachedSnapshot: Bool
+    let settings: OverlaySettings
+    let mediaImage: UIImage?
+    let textOpacity: Double
+    let attributionURL: URL?
+    let attributionMarkURL: URL?
+
+    private struct Metric: Identifiable {
+        let id: String
+        let icon: String
+        let text: String
+        let accessibilityText: String
+        var tint: Color = .white.opacity(0.82)
+    }
+
+    var body: some View {
+        Group {
+            if let snapshot {
+                VStack(alignment: .leading, spacing: 8) {
+                    if settings.effectiveWeatherShowConditions {
+                        conditions(snapshot)
+                    }
+
+                    if !metrics(for: snapshot).isEmpty {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 92, maximum: 168), spacing: 6)],
+                            alignment: .leading,
+                            spacing: 6
+                        ) {
+                            ForEach(metrics(for: snapshot)) { metric in
+                                metricChip(metric)
+                            }
+                        }
+                    }
+
+                    if settings.effectiveWeatherShowNextHour,
+                       let temperature = snapshot.nextHourTemperature,
+                       let condition = snapshot.nextHourCondition {
+                        HStack(spacing: 7) {
+                            Image(systemName: snapshot.nextHourSymbolName ?? "clock")
+                                .symbolRenderingMode(.multicolor)
+                                .frame(width: 20)
+                            Text("Next hour")
+                                .fontWeight(.semibold)
+                            Text("\(temperature) · \(condition)")
+                                .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                                .lineLimit(1)
+                        }
+                        .font(.system(size: max(12, settings.fontSize * 0.48), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Next hour, \(temperature), \(condition)")
+                    }
+
+                    HStack(spacing: 2) {
+                        if isUsingCachedSnapshot || snapshot.isStale {
+                            Label("Last known", systemImage: "clock.arrow.circlepath")
+                                .font(.system(size: max(10, settings.fontSize * 0.42), weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(textOpacity * 0.7))
+                                .accessibilityLabel("Last known weather")
+                        }
+                        Spacer(minLength: 0)
+                        WeatherLegalLink(destination: attributionURL, markURL: attributionMarkURL)
+                        if settings.effectiveWeatherShowAirQuality, snapshot.airQualityIndex != nil {
+                            AirQualityLegalLink()
+                        }
+                    }
+                    .frame(height: 18)
+                }
+                .frame(width: widgetWidth(for: snapshot), alignment: .leading)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 9)
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.075))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(Color.white.opacity(0.16), lineWidth: 0.7)
+                        }
+                }
+                .accessibilityElement(children: .contain)
+            } else {
+                Label(status.title, systemImage: status.systemImage)
+                    .font(.system(size: max(12, settings.fontSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 9)
+                    .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityLabel("Weather, \(status.title)")
+            }
+        }
+        .foregroundStyle(.white.opacity(textOpacity))
+        .accessibilityIdentifier("canvas.weather.overlay")
+    }
+
+    private func conditions(_ snapshot: CanvasWeatherSnapshot) -> some View {
+        HStack(spacing: 10) {
+            WeatherConditionGlyph(
+                symbolName: snapshot.symbolName,
+                diameter: min(max(38, settings.fontSize * 1.85), 62)
+            )
+            VStack(alignment: .leading, spacing: 0) {
+                Text(snapshot.temperature)
+                    .font(.system(size: min(max(24, settings.fontSize * 1.28), 58), weight: .medium, design: .rounded))
+                    .fontWidth(.condensed)
+                    .overlayTextStroke(settings: settings, mediaImage: mediaImage, opacity: textOpacity)
+                Text(snapshot.condition)
+                    .font(.system(size: max(12, settings.fontSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                    .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(snapshot.temperature), \(snapshot.condition)")
+    }
+
+    private func metrics(for snapshot: CanvasWeatherSnapshot) -> [Metric] {
+        var result: [Metric] = []
+        if settings.effectiveWeatherShowAirQuality, let value = snapshot.airQualityIndex {
+            let category = CanvasAirQualityCategory.category(for: value)
+            result.append(Metric(
+                id: "air-quality",
+                icon: "aqi.medium",
+                text: "AQI \(value)",
+                accessibilityText: "Air quality index \(value), \(category.title)",
+                tint: category.tint
+            ))
+        }
+        if settings.effectiveWeatherShowFeelsLike, let value = snapshot.apparentTemperature {
+            result.append(Metric(id: "feels-like", icon: "thermometer.medium", text: "Feels \(value)", accessibilityText: "Feels like \(value)"))
+        }
+        if settings.effectiveWeatherShowHumidity, let value = snapshot.humidityPercent {
+            result.append(Metric(id: "humidity", icon: "humidity.fill", text: "\(value)%", accessibilityText: "Humidity \(value) percent", tint: .cyan))
+        }
+        if settings.effectiveWeatherShowWind, let value = snapshot.wind {
+            result.append(Metric(id: "wind", icon: "wind", text: value, accessibilityText: "Wind \(value)"))
+        }
+        if settings.effectiveWeatherShowUVIndex, let value = snapshot.uvIndex {
+            result.append(Metric(id: "uv", icon: "sun.max.fill", text: "UV \(value)", accessibilityText: "UV index \(value)", tint: .yellow))
+        }
+        if settings.effectiveWeatherShowPrecipitationChance, let value = snapshot.precipitationChancePercent {
+            result.append(Metric(id: "precipitation", icon: "umbrella.fill", text: "\(value)%", accessibilityText: "Precipitation chance \(value) percent", tint: .blue))
+        }
+        if settings.effectiveWeatherShowDailyHighLow,
+           let high = snapshot.highTemperature,
+           let low = snapshot.lowTemperature {
+            result.append(Metric(id: "high-low", icon: "arrow.up.arrow.down", text: "H \(high)  L \(low)", accessibilityText: "High \(high), low \(low)"))
+        }
+        if settings.effectiveWeatherShowSunriseSunset,
+           let sunrise = snapshot.sunrise,
+           let sunset = snapshot.sunset {
+            result.append(Metric(
+                id: "sun",
+                icon: "sunrise.fill",
+                text: "\(compactTime(sunrise)) · \(compactTime(sunset))",
+                accessibilityText: "Sunrise \(sunrise), sunset \(sunset)",
+                tint: .orange
+            ))
+        }
+        return result
+    }
+
+    private func compactTime(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: " AM", with: "")
+            .replacingOccurrences(of: " PM", with: "")
+    }
+
+    private func metricChip(_ metric: Metric) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: metric.icon)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(metric.tint)
+            Text(metric.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+        .font(.system(size: max(11, settings.fontSize * 0.47), weight: .semibold, design: .rounded))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.09), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(metric.accessibilityText)
+    }
+
+    private func widgetWidth(for snapshot: CanvasWeatherSnapshot) -> CGFloat {
+        let hasExpandedDetails = metrics(for: snapshot).count > 1 || settings.effectiveWeatherShowNextHour
+        let base = hasExpandedDetails ? 350.0 : 258.0
+        let scale = min(max(settings.fontSize / 22, 0.9), 1.25)
+        return base * scale
+    }
+}
+
+private extension CanvasAirQualityCategory {
+    var tint: Color {
+        switch self {
+        case .good: .green
+        case .moderate: .yellow
+        case .unhealthySensitive: .orange
+        case .unhealthy: .red
+        case .veryUnhealthy: .purple
+        case .hazardous: .pink
+        }
     }
 }
 
@@ -279,6 +493,37 @@ struct WeatherLegalLink: View {
                 .contentShape(Rectangle())
             }
             .accessibilityLabel("Weather attribution and data sources")
+        }
+    }
+}
+
+struct AirQualityLegalLink: View {
+    static let destination = URL(string: "https://open-meteo.com/en/docs/air-quality-api")!
+
+    var body: some View {
+        Link(destination: Self.destination) {
+            Image(systemName: "aqi.medium")
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 15, height: 15)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Air quality attribution and data sources")
+    }
+}
+
+struct WeatherDataAttributionView: View {
+    let weatherDestination: URL?
+    let weatherMarkURL: URL?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            WeatherLegalLink(destination: weatherDestination, markURL: weatherMarkURL)
+            Link(destination: AirQualityLegalLink.destination) {
+                Label("AQI: Open-Meteo · CAMS", systemImage: "aqi.medium")
+                    .font(.caption)
+            }
+            .accessibilityLabel("Air quality data from Open-Meteo and the Copernicus Atmosphere Monitoring Service")
         }
     }
 }

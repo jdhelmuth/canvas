@@ -360,6 +360,50 @@ enum OverlayStackOrder {
     }
 }
 
+/// The clock remains the anchor of the overlay stack. When both clock and
+/// weather are enabled, weather moves into a single visual row to the clock's
+/// right instead of becoming another line above or below it.
+enum WeatherClockLayoutPolicy {
+    static func pairsClockAndWeather(showTime: Bool, showWeather: Bool) -> Bool {
+        showTime && showWeather
+    }
+
+    static func shouldRenderStandalone(_ item: OverlayStackItem, paired: Bool) -> Bool {
+        !(paired && item == .weather)
+    }
+}
+
+enum CanvasAirQualityCategory: String, CaseIterable, Sendable {
+    case good
+    case moderate
+    case unhealthySensitive
+    case unhealthy
+    case veryUnhealthy
+    case hazardous
+
+    static func category(for index: Int) -> Self {
+        switch index {
+        case ...50: .good
+        case ...100: .moderate
+        case ...150: .unhealthySensitive
+        case ...200: .unhealthy
+        case ...300: .veryUnhealthy
+        default: .hazardous
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .good: "Good"
+        case .moderate: "Moderate"
+        case .unhealthySensitive: "Sensitive groups"
+        case .unhealthy: "Unhealthy"
+        case .veryUnhealthy: "Very unhealthy"
+        case .hazardous: "Hazardous"
+        }
+    }
+}
+
 /// Guards the UIKit-backed Live Photo bridge against restarting playback on
 /// every SwiftUI update and against late results from a previous asset.
 enum LivePhotoPlaybackPolicy {

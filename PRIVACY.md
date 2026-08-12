@@ -1,6 +1,6 @@
 # Canvas privacy policy
 
-Last updated: August 2, 2026
+Last updated: August 11, 2026
 
 Canvas is a private iPad photo frame. No account or login is required to use
 the Apple Photos features.
@@ -18,8 +18,12 @@ the Apple Photos features.
 - Canvas may display location metadata already present in an authorized photo.
   When you opt into current weather, Canvas requests When In Use location
   permission and sends the current coordinates to Apple's WeatherKit to obtain
-  local conditions. Canvas stores only the last weather snapshot locally so it
-  can label it as last known when the network or service is unavailable.
+  local conditions. For AQI, Canvas rounds the coordinates to two decimal
+  places (approximately one-kilometer precision) and sends that approximate
+  location to Open-Meteo, whose air-quality forecast is based on Copernicus
+  Atmosphere Monitoring Service (CAMS) data. Canvas stores only the last
+  combined weather snapshot locally so it can label it as last known when the
+  network or service is unavailable.
 
 Canvas does not operate a server for your media, and does not include
 analytics, advertising, tracking, or data brokerage.
@@ -33,10 +37,12 @@ stored tokens; it does not remove anything from Apple Photos or Google Photos.
 
 ## Third parties
 
-Apple system frameworks provide Photos, media playback, Keychain, and local
-storage. Google receives information necessary for the optional Google Photos
-Picker and OAuth flow when you choose that feature. Canvas does not send your
-media to any Canvas-operated service.
+Apple system frameworks provide Photos, media playback, Keychain, local
+storage, and WeatherKit. Google receives information necessary for the
+optional Google Photos Picker and OAuth flow when you choose that feature.
+Open-Meteo receives the approximate coordinates needed for optional AQI data;
+its free API may retain technical logs, including those coordinates, for up to
+90 days. Canvas does not send your media to any Canvas-operated service.
 
 ## Contact
 
