@@ -28,7 +28,7 @@ struct SettingsView: View {
             case .supportingText: "Supporting Text"
             case .clock: "Clock"
             case .stroke: "Stroke"
-            case .weather: "Weather & Behavior"
+            case .weather: "Weather & Visibility"
             }
         }
 
@@ -332,6 +332,31 @@ struct SettingsView: View {
                 Toggle("Current weather (opt-in)", isOn: binding(\.overlays.showWeather))
                 if store.settings.overlays.showWeather {
                     weatherStatusRow
+                    Text("The minimal layout shows current conditions and AQI. Add only the details you want to see at a glance.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Toggle(
+                        "Condition & temperature",
+                        isOn: optionalOverlayBinding(\.weatherShowConditions, default: true)
+                    )
+                    .accessibilityIdentifier("weather-condition-toggle")
+                    Toggle(
+                        "Air quality index",
+                        isOn: optionalOverlayBinding(\.weatherShowAirQuality, default: true)
+                    )
+                    .accessibilityIdentifier("weather-air-quality-toggle")
+                    Toggle("Feels like", isOn: optionalOverlayBinding(\.weatherShowFeelsLike, default: false))
+                    Toggle("Humidity", isOn: optionalOverlayBinding(\.weatherShowHumidity, default: false))
+                    Toggle("Wind", isOn: optionalOverlayBinding(\.weatherShowWind, default: false))
+                    Toggle("UV index", isOn: optionalOverlayBinding(\.weatherShowUVIndex, default: false))
+                    Toggle("Precipitation chance", isOn: optionalOverlayBinding(\.weatherShowPrecipitationChance, default: false))
+                    Toggle("Today's high & low", isOn: optionalOverlayBinding(\.weatherShowDailyHighLow, default: false))
+                    Toggle("Sunrise & sunset", isOn: optionalOverlayBinding(\.weatherShowSunriseSunset, default: false))
+                    Toggle("Next-hour outlook", isOn: optionalOverlayBinding(\.weatherShowNextHour, default: false))
+                    WeatherDataAttributionView(
+                        weatherDestination: store.weather.attributionURL,
+                        weatherMarkURL: store.weather.attributionMarkURL
+                    )
                 }
                 Toggle("Always visible", isOn: binding(\.overlays.alwaysVisible))
             } label: {
@@ -488,7 +513,14 @@ struct SettingsView: View {
             .accessibilityIdentifier("save-current-setup")
         }
     }
-    private var privacySection: some View { Section("Storage & Privacy") { Label("Private by default", systemImage: "lock.shield.fill"); Text("Canvas stores preferences and exclusions locally. Apple photos remain in Apple Photos. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. Canvas has no uploads, analytics, ads, or tracking.").font(.footnote).foregroundStyle(.secondary) } }
+    private var privacySection: some View {
+        Section("Storage & Privacy") {
+            Label("Private by default", systemImage: "lock.shield.fill")
+            Text("Canvas stores preferences and exclusions locally. Apple photos remain in Apple Photos. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. If you enable weather, Canvas sends location to Apple Weather and an approximately one-kilometer location to Open-Meteo for AQI. Canvas has no analytics, ads, or tracking.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
 
     private var presetSaveSheet: some View {
         NavigationStack {
@@ -741,10 +773,20 @@ private struct ClockOverlayPreview: View {
             showBattery: settings.showBattery,
             showWeather: settings.showWeather
         )
+        let pairsClockAndWeather = WeatherClockLayoutPolicy.pairsClockAndWeather(
+            showTime: settings.showTime,
+            showWeather: settings.showWeather
+        )
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(items) { item in
-                    previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
+                    if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
+                        if item == .clock, pairsClockAndWeather {
+                            previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text)
+                        } else {
+                            previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
+                        }
+                    }
                 }
             }
             .foregroundStyle(.white.opacity(opacity.text))
@@ -776,6 +818,23 @@ private struct ClockOverlayPreview: View {
                 .foregroundStyle(.white.opacity(0.8))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private func previewClockAndWeatherRow(
+        date: Date,
+        settings: OverlaySettings,
+        textOpacity: Double
+    ) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            ClockOverlayView(date: date, settings: settings, mediaImage: previewImages.first)
+                .accessibilityIdentifier("canvas.clock.overlay")
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.white.opacity(0.22))
+                .frame(width: 1, height: min(max(CGFloat(settings.clockSize ?? 72) * 0.78, 54), 132))
+                .accessibilityHidden(true)
+            previewWeatherWidget(settings: settings, textOpacity: textOpacity)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -810,31 +869,23 @@ private struct ClockOverlayPreview: View {
                 .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
                 .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
         case .weather:
-            if let weather = store.weather.snapshot {
-                HStack(spacing: 5) {
-                    WeatherConditionGlyph(
-                        symbolName: weather.symbolName,
-                        diameter: max(18, settings.fontSize * 0.68)
-                    )
-                    Text(weather.displayText)
-                        .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
-                    WeatherLegalLink(
-                        destination: store.weather.attributionURL,
-                        markURL: store.weather.attributionMarkURL
-                    )
-                }
-                .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
-                .lineLimit(1)
-            }
-            if store.weather.status != .live {
-                Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
-                    .font(.system(size: settings.fontSize * 0.48, weight: settings.effectiveTextWeight.fontWeight))
-                    .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
-                    .lineLimit(2)
-            }
+            previewWeatherWidget(settings: settings, textOpacity: textOpacity)
         case .location, .caption:
             EmptyView()
         }
+    }
+
+    private func previewWeatherWidget(settings: OverlaySettings, textOpacity: Double) -> some View {
+        WeatherOverlayWidget(
+            snapshot: store.weather.snapshot,
+            status: store.weather.status,
+            isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
+            settings: settings,
+            mediaImage: previewImages.first,
+            textOpacity: textOpacity,
+            attributionURL: store.weather.attributionURL,
+            attributionMarkURL: store.weather.attributionMarkURL
+        )
     }
 
     private func alignment(for position: OverlayPosition) -> Alignment {

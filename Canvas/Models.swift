@@ -519,6 +519,20 @@ struct OverlaySettings: Codable, Equatable {
     var showItemCount = false
     var showBattery = false
     var showWeather = false
+    /// Weather detail choices are optional so settings and presets written by
+    /// earlier builds decode without losing any of their existing overlay
+    /// configuration. The compact default intentionally shows only the two
+    /// most glanceable pieces of information.
+    var weatherShowConditions: Bool? = true
+    var weatherShowAirQuality: Bool? = true
+    var weatherShowFeelsLike: Bool? = false
+    var weatherShowHumidity: Bool? = false
+    var weatherShowWind: Bool? = false
+    var weatherShowUVIndex: Bool? = false
+    var weatherShowPrecipitationChance: Bool? = false
+    var weatherShowDailyHighLow: Bool? = false
+    var weatherShowSunriseSunset: Bool? = false
+    var weatherShowNextHour: Bool? = false
     var alwaysVisible = false
     var position: OverlayPosition = .bottomLeading
     var opacity: Double = 0.9
@@ -565,6 +579,16 @@ struct OverlaySettings: Codable, Equatable {
     var effectiveClockStrokeEnabled: Bool { clockStrokeEnabled ?? textStrokeEnabled ?? false }
     var effectiveClockStrokeColor: ClockColor { clockStrokeColor ?? textStrokeColor ?? .black }
     var effectiveClockStrokeWidth: Double { clockStrokeWidth ?? textStrokeWidth ?? 1.5 }
+    var effectiveWeatherShowConditions: Bool { weatherShowConditions ?? true }
+    var effectiveWeatherShowAirQuality: Bool { weatherShowAirQuality ?? true }
+    var effectiveWeatherShowFeelsLike: Bool { weatherShowFeelsLike ?? false }
+    var effectiveWeatherShowHumidity: Bool { weatherShowHumidity ?? false }
+    var effectiveWeatherShowWind: Bool { weatherShowWind ?? false }
+    var effectiveWeatherShowUVIndex: Bool { weatherShowUVIndex ?? false }
+    var effectiveWeatherShowPrecipitationChance: Bool { weatherShowPrecipitationChance ?? false }
+    var effectiveWeatherShowDailyHighLow: Bool { weatherShowDailyHighLow ?? false }
+    var effectiveWeatherShowSunriseSunset: Bool { weatherShowSunriseSunset ?? false }
+    var effectiveWeatherShowNextHour: Bool { weatherShowNextHour ?? false }
 
     /// Converts settings written before clock and supporting-text strokes were
     /// separated. The old shared stroke remains visually unchanged once, then

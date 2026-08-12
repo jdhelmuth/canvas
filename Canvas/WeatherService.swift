@@ -9,12 +9,56 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
     let symbolName: String
     let condition: String
     let temperature: String
+    let apparentTemperature: String?
+    let humidityPercent: Int?
+    let wind: String?
+    let uvIndex: Int?
+    let precipitationChancePercent: Int?
+    let highTemperature: String?
+    let lowTemperature: String?
+    let sunrise: String?
+    let sunset: String?
+    let nextHourSymbolName: String?
+    let nextHourTemperature: String?
+    let nextHourCondition: String?
+    let airQualityIndex: Int?
     let updatedAt: Date
 
-    init(symbolName: String, condition: String, temperature: String, updatedAt: Date = .now) {
+    init(
+        symbolName: String,
+        condition: String,
+        temperature: String,
+        apparentTemperature: String? = nil,
+        humidityPercent: Int? = nil,
+        wind: String? = nil,
+        uvIndex: Int? = nil,
+        precipitationChancePercent: Int? = nil,
+        highTemperature: String? = nil,
+        lowTemperature: String? = nil,
+        sunrise: String? = nil,
+        sunset: String? = nil,
+        nextHourSymbolName: String? = nil,
+        nextHourTemperature: String? = nil,
+        nextHourCondition: String? = nil,
+        airQualityIndex: Int? = nil,
+        updatedAt: Date = .now
+    ) {
         self.symbolName = symbolName
         self.condition = condition
         self.temperature = temperature
+        self.apparentTemperature = apparentTemperature
+        self.humidityPercent = humidityPercent
+        self.wind = wind
+        self.uvIndex = uvIndex
+        self.precipitationChancePercent = precipitationChancePercent
+        self.highTemperature = highTemperature
+        self.lowTemperature = lowTemperature
+        self.sunrise = sunrise
+        self.sunset = sunset
+        self.nextHourSymbolName = nextHourSymbolName
+        self.nextHourTemperature = nextHourTemperature
+        self.nextHourCondition = nextHourCondition
+        self.airQualityIndex = airQualityIndex
         self.updatedAt = updatedAt
     }
 
@@ -27,6 +71,47 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         let suffix = isStale ? " · Last known" : ""
         return "\(conditionsText)\(suffix)"
     }
+
+    func addingAirQualityIndex(_ value: Int?) -> Self {
+        Self(
+            symbolName: symbolName,
+            condition: condition,
+            temperature: temperature,
+            apparentTemperature: apparentTemperature,
+            humidityPercent: humidityPercent,
+            wind: wind,
+            uvIndex: uvIndex,
+            precipitationChancePercent: precipitationChancePercent,
+            highTemperature: highTemperature,
+            lowTemperature: lowTemperature,
+            sunrise: sunrise,
+            sunset: sunset,
+            nextHourSymbolName: nextHourSymbolName,
+            nextHourTemperature: nextHourTemperature,
+            nextHourCondition: nextHourCondition,
+            airQualityIndex: value,
+            updatedAt: updatedAt
+        )
+    }
+
+    static let preview = Self(
+        symbolName: "cloud.sun.fill",
+        condition: "Partly Cloudy",
+        temperature: "72°F",
+        apparentTemperature: "70°F",
+        humidityPercent: 48,
+        wind: "NW 8 mph",
+        uvIndex: 4,
+        precipitationChancePercent: 12,
+        highTemperature: "78°F",
+        lowTemperature: "61°F",
+        sunrise: "6:22 AM",
+        sunset: "8:13 PM",
+        nextHourSymbolName: "sun.max.fill",
+        nextHourTemperature: "74°F",
+        nextHourCondition: "Mostly Sunny",
+        airQualityIndex: 36
+    )
 }
 
 /// User-facing states for the optional weather row. Every failure state is
@@ -112,6 +197,14 @@ struct CanvasWeatherProviderResult: Sendable {
     let snapshot: CanvasWeatherSnapshot
     let attributionURL: URL
     let attributionMarkURL: URL
+
+    func addingAirQualityIndex(_ value: Int?) -> Self {
+        Self(
+            snapshot: snapshot.addingAirQualityIndex(value),
+            attributionURL: attributionURL,
+            attributionMarkURL: attributionMarkURL
+        )
+    }
 }
 
 protocol CanvasWeatherProviding {
@@ -121,23 +214,91 @@ protocol CanvasWeatherProviding {
 struct WeatherKitCanvasWeatherProvider: CanvasWeatherProviding {
     func currentWeather(for location: CLLocation) async throws -> CanvasWeatherProviderResult {
         let service = WeatherKit.WeatherService.shared
-        let current: WeatherKit.CurrentWeather = try await service.weather(for: location, including: .current)
+        let (current, hourly, daily) = try await service.weather(
+            for: location,
+            including: .current,
+            .hourly,
+            .daily
+        )
         let attribution = try await service.attribution
 
-        let formatter = MeasurementFormatter()
-        formatter.locale = .current
-        formatter.unitOptions = .naturalScale
-        formatter.numberFormatter.maximumFractionDigits = 0
+        let measurementFormatter = MeasurementFormatter()
+        measurementFormatter.locale = .current
+        measurementFormatter.unitOptions = .naturalScale
+        measurementFormatter.numberFormatter.maximumFractionDigits = 0
+        let timeFormatter = DateFormatter()
+        timeFormatter.locale = .current
+        timeFormatter.timeStyle = .short
+        timeFormatter.dateStyle = .none
+
+        let currentHour = hourly.first { abs($0.date.timeIntervalSince(current.date)) < 60 * 60 }
+        let nextHour = hourly.first { $0.date > current.date.addingTimeInterval(30 * 60) }
+        let today = daily.first
         return CanvasWeatherProviderResult(
             snapshot: CanvasWeatherSnapshot(
                 symbolName: current.symbolName,
                 condition: current.condition.description,
-                temperature: formatter.string(from: current.temperature),
+                temperature: measurementFormatter.string(from: current.temperature),
+                apparentTemperature: measurementFormatter.string(from: current.apparentTemperature),
+                humidityPercent: Int((current.humidity * 100).rounded()),
+                wind: "\(current.wind.compassDirection.abbreviation) \(measurementFormatter.string(from: current.wind.speed))",
+                uvIndex: current.uvIndex.value,
+                precipitationChancePercent: currentHour.map { Int(($0.precipitationChance * 100).rounded()) },
+                highTemperature: today.map { measurementFormatter.string(from: $0.highTemperature) },
+                lowTemperature: today.map { measurementFormatter.string(from: $0.lowTemperature) },
+                sunrise: today?.sun.sunrise.map(timeFormatter.string(from:)),
+                sunset: today?.sun.sunset.map(timeFormatter.string(from:)),
+                nextHourSymbolName: nextHour?.symbolName,
+                nextHourTemperature: nextHour.map { measurementFormatter.string(from: $0.temperature) },
+                nextHourCondition: nextHour?.condition.description,
                 updatedAt: .now
             ),
             attributionURL: attribution.legalPageURL,
             attributionMarkURL: attribution.squareMarkURL
         )
+    }
+}
+
+protocol CanvasAirQualityProviding: Sendable {
+    func currentUSAirQualityIndex(for location: CLLocation) async throws -> Int?
+}
+
+struct OpenMeteoAirQualityResponse: Decodable, Sendable {
+    struct Current: Decodable, Sendable {
+        let usAQI: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case usAQI = "us_aqi"
+        }
+    }
+
+    let current: Current?
+}
+
+/// AQI is not exposed by WeatherKit's native or REST datasets. Canvas requests
+/// only Open-Meteo's consolidated current US AQI, using coordinates rounded to
+/// roughly one-kilometer precision to match the app's low-accuracy location
+/// request and the much coarser underlying CAMS forecast grid.
+struct OpenMeteoAirQualityProvider: CanvasAirQualityProviding {
+    func currentUSAirQualityIndex(for location: CLLocation) async throws -> Int? {
+        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")!
+        components.queryItems = [
+            URLQueryItem(name: "latitude", value: Self.coordinateString(location.coordinate.latitude)),
+            URLQueryItem(name: "longitude", value: Self.coordinateString(location.coordinate.longitude)),
+            URLQueryItem(name: "current", value: "us_aqi"),
+            URLQueryItem(name: "forecast_days", value: "1")
+        ]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+        guard let value = try JSONDecoder().decode(OpenMeteoAirQualityResponse.self, from: data).current?.usAQI else { return nil }
+        return min(max(Int(value.rounded()), 0), 500)
+    }
+
+    static func coordinateString(_ value: CLLocationDegrees) -> String {
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 }
 
@@ -163,24 +324,33 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     private static let requestTimeoutNanoseconds: UInt64 = 20_000_000_000
 
     private let weatherProvider: CanvasWeatherProviding
+    private let airQualityProvider: CanvasAirQualityProviding
     private let locationManager: CLLocationManager
     private let autoRequestLocation: Bool
+    private let previewMode: Bool
     private var refreshTask: Task<Void, Never>?
     private var activeRequestID = UUID()
     private var weatherEnabled = false
 
     init(
         weatherProvider: CanvasWeatherProviding = WeatherKitCanvasWeatherProvider(),
+        airQualityProvider: CanvasAirQualityProviding = OpenMeteoAirQualityProvider(),
         autoRequestLocation: Bool = true
     ) {
         self.weatherProvider = weatherProvider
+        self.airQualityProvider = airQualityProvider
         self.locationManager = CLLocationManager()
         self.autoRequestLocation = autoRequestLocation
+        self.previewMode = ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-preview") || ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyKilometer
         locationManager.distanceFilter = 1_000
-        loadCachedSnapshot()
+        if previewMode {
+            loadPreviewSnapshot()
+        } else {
+            loadCachedSnapshot()
+        }
     }
 
     deinit {
@@ -194,6 +364,11 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
             return
         }
 
+        if previewMode {
+            loadPreviewSnapshot()
+            return
+        }
+
         weatherEnabled = true
         loadCachedSnapshot()
         beginRefresh(requestPermission: autoRequestLocation)
@@ -203,6 +378,10 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     /// prompting again automatically.
     func refreshAuthorization() {
         guard weatherEnabled else { return }
+        if previewMode {
+            loadPreviewSnapshot()
+            return
+        }
         beginRefresh(requestPermission: false)
     }
 
@@ -276,15 +455,18 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     private func fetchWeather(for location: CLLocation) {
         let requestID = activeRequestID
         let provider = weatherProvider
+        let airQualityProvider = airQualityProvider
         isLoading = true
         status = .fetching
         errorMessage = nil
 
         refreshTask = Task { [weak self] in
             do {
-                let result = try await Self.withTimeout {
+                async let airQualityIndex = try? await airQualityProvider.currentUSAirQualityIndex(for: location)
+                var result = try await Self.withTimeout {
                     try await provider.currentWeather(for: location)
                 }
+                result = result.addingAirQualityIndex(await airQualityIndex)
                 guard !Task.isCancelled else { return }
                 guard let self, self.weatherEnabled, self.activeRequestID == requestID else { return }
                 self.snapshot = result.snapshot
@@ -384,6 +566,20 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
            let url = URL(string: rawURL) {
             attributionMarkURL = url
         }
+    }
+
+    private func loadPreviewSnapshot() {
+        refreshTask?.cancel()
+        refreshTask = nil
+        activeRequestID = UUID()
+        weatherEnabled = true
+        snapshot = .preview
+        attributionURL = URL(string: "https://weatherkit.apple.com/legal-attribution.html")
+        attributionMarkURL = nil
+        errorMessage = nil
+        isLoading = false
+        status = .live
+        isUsingCachedSnapshot = false
     }
 
     private func persist(_ result: CanvasWeatherProviderResult) {

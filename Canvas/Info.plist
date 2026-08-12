@@ -29,7 +29,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Canvas needs access to your photos so it can display the albums you choose as a private digital frame.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Canvas uses your location only to show current local weather when you turn on the weather overlay.</string>
+	<string>Canvas uses your location only to show local weather and air quality when you turn on the weather overlay.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UILaunchScreen</key>

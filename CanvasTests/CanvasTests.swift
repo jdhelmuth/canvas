@@ -405,6 +405,64 @@ final class CanvasTests: XCTestCase {
         XCTAssertFalse(migratedText.contains("Weather Station Data"))
     }
 
+    func testWeatherDefaultsStayMinimalAndLegacySettingsDecodeCompatibly() throws {
+        let defaults = OverlaySettings()
+        XCTAssertTrue(defaults.effectiveWeatherShowConditions)
+        XCTAssertTrue(defaults.effectiveWeatherShowAirQuality)
+        XCTAssertFalse(defaults.effectiveWeatherShowFeelsLike)
+        XCTAssertFalse(defaults.effectiveWeatherShowHumidity)
+        XCTAssertFalse(defaults.effectiveWeatherShowWind)
+        XCTAssertFalse(defaults.effectiveWeatherShowUVIndex)
+        XCTAssertFalse(defaults.effectiveWeatherShowPrecipitationChance)
+        XCTAssertFalse(defaults.effectiveWeatherShowDailyHighLow)
+        XCTAssertFalse(defaults.effectiveWeatherShowSunriseSunset)
+        XCTAssertFalse(defaults.effectiveWeatherShowNextHour)
+
+        var legacy = OverlaySettings()
+        legacy.weatherShowConditions = nil
+        legacy.weatherShowAirQuality = nil
+        legacy.weatherShowNextHour = nil
+        XCTAssertTrue(legacy.effectiveWeatherShowConditions)
+        XCTAssertTrue(legacy.effectiveWeatherShowAirQuality)
+        XCTAssertFalse(legacy.effectiveWeatherShowNextHour)
+    }
+
+    func testClockAndWeatherPairOnlyWhenBothAreVisible() {
+        XCTAssertTrue(WeatherClockLayoutPolicy.pairsClockAndWeather(showTime: true, showWeather: true))
+        XCTAssertFalse(WeatherClockLayoutPolicy.pairsClockAndWeather(showTime: false, showWeather: true))
+        XCTAssertFalse(WeatherClockLayoutPolicy.pairsClockAndWeather(showTime: true, showWeather: false))
+        XCTAssertFalse(WeatherClockLayoutPolicy.shouldRenderStandalone(.weather, paired: true))
+        XCTAssertTrue(WeatherClockLayoutPolicy.shouldRenderStandalone(.clock, paired: true))
+        XCTAssertTrue(WeatherClockLayoutPolicy.shouldRenderStandalone(.weather, paired: false))
+    }
+
+    func testUSAirQualityCategoriesUsePublishedAQIBands() {
+        XCTAssertEqual(CanvasAirQualityCategory.category(for: 0), .good)
+        XCTAssertEqual(CanvasAirQualityCategory.category(for: 50), .good)
+        XCTAssertEqual(CanvasAirQualityCategory.category(for: 51), .moderate)
+        XCTAssertEqual(CanvasAirQualityCategory.category(for: 101), .unhealthySensitive)
+        XCTAssertEqual(CanvasAirQualityCategory.category(for: 151), .unhealthy)
+        XCTAssertEqual(CanvasAirQualityCategory.category(for: 201), .veryUnhealthy)
+        XCTAssertEqual(CanvasAirQualityCategory.category(for: 301), .hazardous)
+    }
+
+    func testOpenMeteoAQIDecodingAndCoordinateMinimization() throws {
+        let data = Data(#"{"current":{"us_aqi":36.4}}"#.utf8)
+        let decoded = try JSONDecoder().decode(OpenMeteoAirQualityResponse.self, from: data)
+        XCTAssertEqual(decoded.current?.usAQI, 36.4)
+        XCTAssertEqual(OpenMeteoAirQualityProvider.coordinateString(40.44672), "40.45")
+        XCTAssertEqual(OpenMeteoAirQualityProvider.coordinateString(-79.98214), "-79.98")
+    }
+
+    func testWeatherSnapshotAQIEnrichmentPreservesWeatherKitDetails() {
+        let source = CanvasWeatherSnapshot.preview.addingAirQualityIndex(nil)
+        let enriched = source.addingAirQualityIndex(42)
+        XCTAssertEqual(enriched.temperature, source.temperature)
+        XCTAssertEqual(enriched.condition, source.condition)
+        XCTAssertEqual(enriched.nextHourCondition, source.nextHourCondition)
+        XCTAssertEqual(enriched.airQualityIndex, 42)
+    }
+
     func testSwipeNavigationAndPlaybackIndexMoveExactlyOneItem() {
         XCTAssertEqual(SwipeNavigation.direction(for: CGSize(width: -120, height: 8)), 1)
         XCTAssertEqual(SwipeNavigation.direction(for: CGSize(width: 120, height: -8)), -1)

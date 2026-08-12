@@ -55,6 +55,55 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(strokeSlider.waitForExistence(timeout: 3))
     }
 
+    func testWeatherSettingsExposeRealCompactDataChoices() {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-preview"]
+        app.launch()
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
+        app.staticTexts["Clock & Overlays"].tap()
+
+        for _ in 0..<6 where !app.staticTexts["Weather & Visibility"].exists { app.swipeUp() }
+        let weatherGroup = app.staticTexts["Weather & Visibility"]
+        XCTAssertTrue(weatherGroup.waitForExistence(timeout: 3))
+        weatherGroup.tap()
+
+        let conditions = app.switches["weather-condition-toggle"]
+        let airQuality = app.switches["weather-air-quality-toggle"]
+        // Expanding the group can preserve the list near its lower rows. Return
+        // to the start of the weather choices before checking the defaults.
+        for _ in 0..<5 where !conditions.exists || !airQuality.exists { app.swipeDown() }
+        XCTAssertTrue(conditions.waitForExistence(timeout: 3))
+        XCTAssertTrue(airQuality.waitForExistence(timeout: 3))
+        XCTAssertEqual(conditions.value as? String, "1")
+        XCTAssertEqual(airQuality.value as? String, "1")
+        let feelsLike = app.switches["Feels like"]
+        let humidity = app.switches["Humidity"]
+        let wind = app.switches["Wind"]
+        app.swipeUp()
+        XCTAssertTrue(feelsLike.waitForExistence(timeout: 3))
+        XCTAssertTrue(humidity.waitForExistence(timeout: 3))
+        XCTAssertTrue(wind.waitForExistence(timeout: 3))
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Weather settings"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testWeatherWidgetIsPositionedToTheRightOfClock() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame"]
+        app.launch()
+
+        let clock = app.otherElements["canvas.clock.overlay"]
+        let weather = app.otherElements["canvas.weather.overlay"]
+        XCTAssertTrue(clock.waitForExistence(timeout: 5))
+        XCTAssertTrue(weather.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(weather.frame.minX, clock.frame.midX)
+        XCTAssertLessThanOrEqual(weather.frame.maxX, app.windows.firstMatch.frame.maxX)
+    }
+
     func testEmptyHomeStateIsCenteredAndActionable() {
         let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]; app.launch()
         let emptyState = app.otherElements["empty-albums-state"]

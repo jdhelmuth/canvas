@@ -113,6 +113,26 @@ final class AppStore: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-onboarding-album") {
             settingsStore.settings.selectedAlbums = [AlbumReference(id: "ui-test-album", title: "Family favorites", subtype: 0, estimatedCount: 12, isSmart: false, isShared: false)]
         }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-preview") || ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame") {
+            settingsStore.settings.hasCompletedOnboarding = true
+            settingsStore.settings.overlays.showTime = true
+            settingsStore.settings.overlays.showWeather = true
+            settingsStore.settings.overlays.position = .bottomLeading
+            settingsStore.settings.overlays.clockSize = 78
+            settingsStore.settings.overlays.clockFont = .rounded
+            settingsStore.settings.overlays.clockWeight = .medium
+            settingsStore.settings.overlays.backgroundTransparency = 0.28
+        }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-expanded") {
+            settingsStore.settings.overlays.weatherShowFeelsLike = true
+            settingsStore.settings.overlays.weatherShowHumidity = true
+            settingsStore.settings.overlays.weatherShowWind = true
+            settingsStore.settings.overlays.weatherShowUVIndex = true
+            settingsStore.settings.overlays.weatherShowPrecipitationChance = true
+            settingsStore.settings.overlays.weatherShowDailyHighLow = true
+            settingsStore.settings.overlays.weatherShowSunriseSunset = true
+            settingsStore.settings.overlays.weatherShowNextHour = true
+        }
         library = PhotoLibraryService()
         googlePhotos = GooglePhotosService()
         // Repair selections left by an older build or by deleting a saved
