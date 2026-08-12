@@ -1205,6 +1205,32 @@ struct ScheduleEngine {
     static func activeRule(_ rules: [ScheduleRule], date: Date, calendar: Calendar = .current) -> ScheduleRule? { rules.first { isActive($0, date: date, calendar: calendar) } }
 }
 
+/// Canvas-only overnight dimming. This never writes UIScreen brightness; it
+/// only tells the live frame when to apply its low-light visual treatment.
+enum NightDimmingPolicy {
+    static let overlayOpacity = 0.62
+
+    static func isActive(
+        enabled: Bool,
+        startMinutes: Int,
+        stopMinutes: Int,
+        date: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard enabled else { return false }
+        let start = min(max(startMinutes, 0), 24 * 60 - 1)
+        let stop = min(max(stopMinutes, 0), 24 * 60 - 1)
+        guard start != stop else { return false }
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        guard let hour = components.hour, let minute = components.minute else { return false }
+        let now = hour * 60 + minute
+        if start < stop {
+            return now >= start && now < stop
+        }
+        return now >= start || now < stop
+    }
+}
+
 @MainActor
 final class PowerService: ObservableObject {
     @Published private(set) var batteryLevel: Float = -1
@@ -1244,5 +1270,41 @@ final class ScheduleMonitor: ObservableObject {
         activeRule = ScheduleEngine.activeRule(rules, date: Date())
         isPlaybackAllowed = activeRule != nil
     }
+    deinit { task?.cancel() }
+}
+
+@MainActor
+final class NightDimmingMonitor: ObservableObject {
+    @Published private(set) var isActive = false
+    private var task: Task<Void, Never>?
+
+    func start(enabled: Bool, startMinutes: Int, stopMinutes: Int) {
+        task?.cancel()
+        evaluate(enabled: enabled, startMinutes: startMinutes, stopMinutes: stopMinutes)
+        guard enabled, startMinutes != stopMinutes else { return }
+        task = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled else { return }
+                self?.evaluate(enabled: enabled, startMinutes: startMinutes, stopMinutes: stopMinutes)
+            }
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+        isActive = false
+    }
+
+    private func evaluate(enabled: Bool, startMinutes: Int, stopMinutes: Int) {
+        isActive = NightDimmingPolicy.isActive(
+            enabled: enabled,
+            startMinutes: startMinutes,
+            stopMinutes: stopMinutes,
+            date: Date()
+        )
+    }
+
     deinit { task?.cancel() }
 }

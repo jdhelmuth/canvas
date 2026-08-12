@@ -9,6 +9,7 @@ struct PlayerView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = PlaybackViewModel()
     @StateObject private var scheduleMonitor = ScheduleMonitor()
+    @StateObject private var nightDimmingMonitor = NightDimmingMonitor()
     @State private var controlsVisible = true
     @GestureState private var gestureZoom: CGFloat = InteractivePhotoZoomPolicy.restingScale
     @State private var hideTask: Task<Void, Never>?
@@ -32,7 +33,7 @@ struct PlayerView: View {
                 } else {
                     VStack(spacing: 14) { Image(systemName: "moon.stars.fill").font(.largeTitle); Text("Canvas is resting until the next schedule").font(.headline); Text("You can close this frame or adjust Schedules in Settings.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
                 }
-            } else { media.opacity(scheduleMonitor.activeRule?.dimsAtNight == true ? 0.55 : 1) }
+            } else { nightDimmedMedia }
             if controlsVisible && !isLocked { controls }
             if isLocked { lockBadge }
         }
@@ -47,6 +48,7 @@ struct PlayerView: View {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             isLocked = store.settings.lockControls
             scheduleMonitor.start(rules: store.settings.schedules)
+            updateNightDimmingSchedule()
             model.setPlaybackAllowed(playbackGateAllows)
             model.configure(library: store.library, googlePhotos: store.googlePhotos, loader: store.loader, settings: store.settings)
             store.audio.configure(store.settings)
@@ -57,6 +59,7 @@ struct PlayerView: View {
         .onDisappear {
             hideTask?.cancel()
             transitionCompletionTask?.cancel()
+            nightDimmingMonitor.stop()
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
             store.power.endPlayback(); store.audio.stop(); store.weather.clear()
         }
@@ -74,6 +77,7 @@ struct PlayerView: View {
             }
             store.audio.update(updated)
             isLocked = updated.lockControls
+            updateNightDimmingSchedule(settings: updated)
             scheduleHide()
         }
         .onChange(of: store.googlePhotos.albums) { _, _ in
@@ -91,7 +95,14 @@ struct PlayerView: View {
             else { hideTask?.cancel(); controlsVisible = true }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { finishFrameTransition() }
+            if phase == .active {
+                // Re-evaluate immediately after foregrounding so a frame that
+                // crossed a night boundary while suspended never waits for
+                // the monitor's next periodic tick.
+                updateNightDimmingSchedule()
+            } else {
+                finishFrameTransition()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in scheduleHide() }
         .simultaneousGesture(tapGesture)
@@ -460,22 +471,23 @@ struct PlayerView: View {
         case .weather:
             if let weather = store.weather.snapshot {
                 HStack(spacing: 5) {
-                    Image(systemName: weather.symbolName)
-                    Text(weather.displayText)
+                    WeatherConditionGlyph(
+                        symbolName: weather.symbolName,
+                        diameter: max(18, settings.fontSize * 0.68)
+                    )
+                    Text(weather.conditionsText)
                         .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
                     if store.weather.isUsingCachedSnapshot || weather.isStale {
                         Text("Last known")
                             .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
                     }
-                    if let url = store.weather.attributionURL {
-                        Link(weather.attributionText, destination: url)
-                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
-                    } else {
-                        Text(weather.attributionText)
-                            .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
-                    }
+                    WeatherLegalLink(
+                        destination: store.weather.attributionURL,
+                        markURL: store.weather.attributionMarkURL
+                    )
                 }
                 .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
+                .lineLimit(1)
                 .accessibilityIdentifier("canvas.weather.overlay")
             } else {
                 Label(store.weather.status.title, systemImage: store.weather.status.systemImage)
@@ -489,6 +501,27 @@ struct PlayerView: View {
     private func updateWeather() {
         let showWeather = store.settings.overlays.showWeather
         store.weather.update(showWeather: showWeather)
+    }
+    private var isNightDimActive: Bool {
+        nightDimmingMonitor.isActive || scheduleMonitor.activeRule?.dimsAtNight == true
+    }
+    private var nightDimmedMedia: some View {
+        media
+            .overlay {
+                Color.black
+                    .opacity(isNightDimActive ? NightDimmingPolicy.overlayOpacity : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 1.2), value: isNightDimActive)
+    }
+    private func updateNightDimmingSchedule(settings: CanvasSettings? = nil) {
+        let settings = settings ?? store.settings
+        nightDimmingMonitor.start(
+            enabled: settings.effectiveAutomaticNightDimmingEnabled,
+            startMinutes: settings.effectiveNightDimmingStartMinutes,
+            stopMinutes: settings.effectiveNightDimmingStopMinutes
+        )
     }
     private var lockBadge: some View { VStack { Spacer(); Label("Controls locked", systemImage: "lock.fill").font(.caption).foregroundStyle(.white.opacity(0.7)).padding(10).background(.black.opacity(0.35), in: Capsule()).padding(.bottom, 24) } }
     private var tapGesture: some Gesture { TapGesture(count: 2).onEnded { if !isLocked, let asset = model.currentAsset?.appleAsset { Task { await store.library.toggleFavorite(asset) } } }

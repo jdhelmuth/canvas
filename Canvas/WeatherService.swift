@@ -9,23 +9,23 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
     let symbolName: String
     let condition: String
     let temperature: String
-    let attributionText: String
     let updatedAt: Date
 
-    init(symbolName: String, condition: String, temperature: String, attributionText: String, updatedAt: Date = .now) {
+    init(symbolName: String, condition: String, temperature: String, updatedAt: Date = .now) {
         self.symbolName = symbolName
         self.condition = condition
         self.temperature = temperature
-        self.attributionText = attributionText
         self.updatedAt = updatedAt
     }
 
     var isStale: Bool { Date().timeIntervalSince(updatedAt) > 6 * 60 * 60 }
 
+    var conditionsText: String { "\(temperature) · \(condition)" }
+
     /// A stale cache is explicitly labelled so it can never look live.
     var displayText: String {
         let suffix = isStale ? " · Last known" : ""
-        return "\(temperature) · \(condition)\(suffix)"
+        return "\(conditionsText)\(suffix)"
     }
 }
 
@@ -87,9 +87,9 @@ enum WeatherOverlayStatus: Equatable, Sendable {
         case .serviceUnavailable:
             "WeatherKit is temporarily unavailable. Retry in a moment."
         case .authorizationUnavailable:
-            "Apple's WeatherKit authorization service could not issue a token. Confirm WeatherKit is enabled for com.johnhelmuth.canvas, then retry. If it is already enabled, this is an Apple-side service or account-sync issue."
+            "Apple's WeatherKit authorization service could not issue a token. In Apple Developer, confirm both the WeatherKit capability and the separate WeatherKit App Service are enabled for com.johnhelmuth.canvas, then install a newly signed build."
         case .entitlementMissing:
-            "WeatherKit access is not enabled for this signed build. Enable it for com.johnhelmuth.canvas in Apple Developer, then install a new build."
+            "WeatherKit access is not enabled for this signed build. In Apple Developer, enable both the WeatherKit capability and WeatherKit App Service for com.johnhelmuth.canvas, then install a newly signed build."
         case .locationUnavailable:
             "The iPad did not return a usable location. Move somewhere with a clear location signal and retry."
         }
@@ -111,6 +111,7 @@ enum WeatherOverlayStatus: Equatable, Sendable {
 struct CanvasWeatherProviderResult: Sendable {
     let snapshot: CanvasWeatherSnapshot
     let attributionURL: URL
+    let attributionMarkURL: URL
 }
 
 protocol CanvasWeatherProviding {
@@ -127,19 +128,15 @@ struct WeatherKitCanvasWeatherProvider: CanvasWeatherProviding {
         formatter.locale = .current
         formatter.unitOptions = .naturalScale
         formatter.numberFormatter.maximumFractionDigits = 0
-        let attributionText = attribution.legalAttributionText.isEmpty
-            ? attribution.serviceName
-            : attribution.legalAttributionText
-
         return CanvasWeatherProviderResult(
             snapshot: CanvasWeatherSnapshot(
                 symbolName: current.symbolName,
                 condition: current.condition.description,
                 temperature: formatter.string(from: current.temperature),
-                attributionText: attributionText,
                 updatedAt: .now
             ),
-            attributionURL: attribution.legalPageURL
+            attributionURL: attribution.legalPageURL,
+            attributionMarkURL: attribution.squareMarkURL
         )
     }
 }
@@ -156,11 +153,13 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var attributionURL: URL?
+    @Published private(set) var attributionMarkURL: URL?
     @Published private(set) var status: WeatherOverlayStatus = .disabled
     @Published private(set) var isUsingCachedSnapshot = false
 
     private static let snapshotCacheKey = "canvas.weather.snapshot.v1"
     private static let attributionURLCacheKey = "canvas.weather.attribution-url.v1"
+    private static let attributionMarkURLCacheKey = "canvas.weather.attribution-mark-url.v1"
     private static let requestTimeoutNanoseconds: UInt64 = 20_000_000_000
 
     private let weatherProvider: CanvasWeatherProviding
@@ -215,6 +214,7 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         locationManager.stopUpdatingLocation()
         snapshot = nil
         attributionURL = nil
+        attributionMarkURL = nil
         errorMessage = nil
         isLoading = false
         status = .disabled
@@ -289,6 +289,7 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
                 guard let self, self.weatherEnabled, self.activeRequestID == requestID else { return }
                 self.snapshot = result.snapshot
                 self.attributionURL = result.attributionURL
+                self.attributionMarkURL = result.attributionMarkURL
                 self.isUsingCachedSnapshot = false
                 self.isLoading = false
                 self.status = .live
@@ -378,6 +379,11 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
            let url = URL(string: rawURL) {
             attributionURL = url
         }
+        if attributionMarkURL == nil,
+           let rawURL = UserDefaults.standard.string(forKey: Self.attributionMarkURLCacheKey),
+           let url = URL(string: rawURL) {
+            attributionMarkURL = url
+        }
     }
 
     private func persist(_ result: CanvasWeatherProviderResult) {
@@ -385,5 +391,6 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
             UserDefaults.standard.set(data, forKey: Self.snapshotCacheKey)
         }
         UserDefaults.standard.set(result.attributionURL.absoluteString, forKey: Self.attributionURLCacheKey)
+        UserDefaults.standard.set(result.attributionMarkURL.absoluteString, forKey: Self.attributionMarkURLCacheKey)
     }
 }

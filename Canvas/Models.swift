@@ -473,6 +473,12 @@ struct CanvasSettings: Codable, Equatable {
     var keepAwake = true
     var chargingOnly = false
     var lowBatteryStop = 10
+    /// Optional for settings saved before Canvas offered a standalone
+    /// overnight low-light mode. Missing values adopt the automatic 10 PM–7
+    /// AM schedule without changing system brightness.
+    var automaticNightDimmingEnabled: Bool? = true
+    var nightDimmingStartMinutes: Int? = 22 * 60
+    var nightDimmingStopMinutes: Int? = 7 * 60
     var controlAutoHide: Double = 4
     var lockControls = false
     var backgroundAudio: BackgroundAudioMode = .none
@@ -493,6 +499,9 @@ struct CanvasSettings: Codable, Equatable {
     }
 
     var effectiveShowEmptyAlbums: Bool { showEmptyAlbums ?? false }
+    var effectiveAutomaticNightDimmingEnabled: Bool { automaticNightDimmingEnabled ?? true }
+    var effectiveNightDimmingStartMinutes: Int { min(max(nightDimmingStartMinutes ?? 22 * 60, 0), 24 * 60 - 1) }
+    var effectiveNightDimmingStopMinutes: Int { min(max(nightDimmingStopMinutes ?? 7 * 60, 0), 24 * 60 - 1) }
 }
 
 struct OverlaySettings: Codable, Equatable {

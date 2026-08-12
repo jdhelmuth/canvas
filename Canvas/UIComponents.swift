@@ -236,6 +236,53 @@ struct CanvasBackground: View {
     }
 }
 
+/// A compact, friendly condition mark shared by the live frame and Settings
+/// preview. SF Symbols supplies the familiar sun/cloud colors; the soft sky
+/// circle keeps monochrome-only conditions visually colored as well.
+struct WeatherConditionGlyph: View {
+    let symbolName: String
+    var diameter: CGFloat = 24
+
+    var body: some View {
+        Image(systemName: symbolName)
+            .symbolRenderingMode(.multicolor)
+            .font(.system(size: diameter * 0.58, weight: .semibold))
+            .frame(width: diameter, height: diameter)
+            .background(Color.cyan.opacity(0.18), in: Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.16), lineWidth: 0.5))
+            .accessibilityHidden(true)
+    }
+}
+
+/// WeatherKit's own square mark provides a discrete route to its legal sources
+/// page without placing provider names or source text in the normal weather UI.
+struct WeatherLegalLink: View {
+    let destination: URL?
+    let markURL: URL?
+
+    @ViewBuilder
+    var body: some View {
+        if let destination {
+            Link(destination: destination) {
+                AsyncImage(url: markURL) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .scaledToFit()
+                    } else {
+                        Image(systemName: "info.circle")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                }
+                .frame(width: 15, height: 15)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Weather attribution and data sources")
+        }
+    }
+}
+
 struct AppMark: View {
     let size: CGFloat
     var body: some View {

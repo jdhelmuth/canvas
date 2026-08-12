@@ -364,12 +364,12 @@ struct SettingsView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if let snapshot = store.weather.snapshot {
-                Label(snapshot.displayText, systemImage: store.weather.isUsingCachedSnapshot || snapshot.isStale ? "clock.arrow.circlepath" : "location.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Text(snapshot.attributionText)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    WeatherConditionGlyph(symbolName: snapshot.symbolName, diameter: 24)
+                    Text(snapshot.displayText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
             if store.weather.isLoading {
                 ProgressView()
@@ -407,6 +407,26 @@ struct SettingsView: View {
             Toggle("Keep awake while playing", isOn: binding(\.keepAwake))
             Toggle("Charging-only operation", isOn: binding(\.chargingOnly))
             Stepper("Stop below \(store.settings.lowBatteryStop)%", value: binding(\.lowBatteryStop), in: 0...50)
+            Toggle(
+                "Automatic night dimming",
+                isOn: optionalSettingsBinding(\.automaticNightDimmingEnabled, default: true)
+            )
+            .accessibilityIdentifier("automatic-night-dimming-toggle")
+            if store.settings.effectiveAutomaticNightDimmingEnabled {
+                DatePicker(
+                    "Dim from",
+                    selection: minutesBinding(\.nightDimmingStartMinutes, default: 22 * 60),
+                    displayedComponents: .hourAndMinute
+                )
+                DatePicker(
+                    "Return to normal",
+                    selection: minutesBinding(\.nightDimmingStopMinutes, default: 7 * 60),
+                    displayedComponents: .hourAndMinute
+                )
+                Text("While a Canvas frame is open, the picture and overlays use a low-light treatment during these hours and return to normal automatically. Device brightness and other apps are not changed.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             InlineSliderRow(
                 title: "Hide controls after",
                 value: binding(\.controlAutoHide),
@@ -560,6 +580,34 @@ struct SettingsView: View {
             get: { store.settings.overlays[keyPath: keyPath] ?? defaultValue },
             set: { value in
                 store.settingsStore.update { $0.overlays[keyPath: keyPath] = value }
+            }
+        )
+    }
+
+    private func optionalSettingsBinding<T>(_ keyPath: WritableKeyPath<CanvasSettings, T?>, default defaultValue: T) -> Binding<T> {
+        Binding(
+            get: { store.settings[keyPath: keyPath] ?? defaultValue },
+            set: { value in
+                store.settingsStore.update { $0[keyPath: keyPath] = value }
+            }
+        )
+    }
+
+    private func minutesBinding(_ keyPath: WritableKeyPath<CanvasSettings, Int?>, default defaultValue: Int) -> Binding<Date> {
+        Binding(
+            get: {
+                let minutes = store.settings[keyPath: keyPath] ?? defaultValue
+                return Calendar.current.date(
+                    bySettingHour: minutes / 60,
+                    minute: minutes % 60,
+                    second: 0,
+                    of: Date()
+                ) ?? Date()
+            },
+            set: { value in
+                let components = Calendar.current.dateComponents([.hour, .minute], from: value)
+                let minutes = (components.hour ?? 0) * 60 + (components.minute ?? 0)
+                store.settingsStore.update { $0[keyPath: keyPath] = minutes }
             }
         )
     }
@@ -764,13 +812,19 @@ private struct ClockOverlayPreview: View {
         case .weather:
             if let weather = store.weather.snapshot {
                 HStack(spacing: 5) {
-                    Image(systemName: weather.symbolName)
+                    WeatherConditionGlyph(
+                        symbolName: weather.symbolName,
+                        diameter: max(18, settings.fontSize * 0.68)
+                    )
                     Text(weather.displayText)
                         .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
-                    Text(weather.attributionText)
-                        .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+                    WeatherLegalLink(
+                        destination: store.weather.attributionURL,
+                        markURL: store.weather.attributionMarkURL
+                    )
                 }
                 .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
+                .lineLimit(1)
             }
             if store.weather.status != .live {
                 Label(store.weather.status.title, systemImage: store.weather.status.systemImage)

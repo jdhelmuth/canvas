@@ -2,7 +2,7 @@
 
 Build a production-quality native iPad digital photo-frame app named **Canvas**. Use Swift, SwiftUI, and the latest stable Apple frameworks supported by the installed Xcode. Target iPad first, structure for a later iPhone target, prefer native APIs, and avoid third-party dependencies unless they offer a major benefit.
 
-The current product is named **Canvas Slideshow**. Its opt-in weather overlay uses WeatherKit and the iPad's current location; the signed App ID must have the WeatherKit capability enabled before a device build can return live conditions.
+The current product is named **Canvas Slideshow**. Its opt-in weather overlay uses WeatherKit and the iPad's current location; the signed App ID must have both the WeatherKit capability and the separate WeatherKit App Service enabled before a device build can return live conditions.
 
 The source project uses the product name Canvas Slideshow and bundle identifier `com.johnhelmuth.canvas`.
 
@@ -10,7 +10,7 @@ The source project uses the product name Canvas Slideshow and bundle identifier 
 
 Users select one or more albums from Apple Photos, start an edge-to-edge slideshow, place the iPad on a stand, and precisely control playback, layout, transitions, media, overlays, schedules, audio, power behavior, and accessibility.
 
-Defaults: Recents; shuffle; repeat enabled; 10-second photos; crossfade; 1-second transition; automatic layout; portrait pairing enabled; Live Photos play once; videos enabled and muted; overlays hidden; keep awake while playing; charging-only disabled; night schedule disabled; blurred-photo background; controls hide after four seconds.
+Defaults: Recents; shuffle; repeat enabled; 10-second photos; crossfade; 1-second transition; automatic layout; portrait pairing enabled; Live Photos play once; videos enabled and muted; overlays hidden; keep awake while playing; charging-only disabled; automatic Canvas-only night dimming from 10 PM to 7 AM; blurred-photo background; controls hide after four seconds.
 
 ## Required functional scope
 

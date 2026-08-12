@@ -15,6 +15,21 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Albums & Filters"].exists)
     }
 
+    func testAutomaticNightDimmingControlsSurface() {
+        let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]; app.launch()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
+        app.staticTexts["Schedule & Power"].tap()
+
+        let nightDimmingToggle = app.switches["automatic-night-dimming-toggle"]
+        for _ in 0..<5 where !nightDimmingToggle.exists { app.swipeUp() }
+        XCTAssertTrue(nightDimmingToggle.waitForExistence(timeout: 3))
+        XCTAssertEqual(nightDimmingToggle.value as? String, "1")
+        XCTAssertTrue(app.staticTexts["Dim from"].exists)
+        XCTAssertTrue(app.staticTexts["Return to normal"].exists)
+    }
+
     func testClockOverlayStrokeControlsSurface() {
         let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]; app.launch()
         XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))

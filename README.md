@@ -42,8 +42,8 @@ The unit suite covers deterministic shuffle and linear queues, favorites/date or
 - Limited Photos access is intentionally honored; Canvas cannot show albums or assets outside the user-approved set. Users can change the scope in Settings.
 - PhotoKit may return an iCloud loading error or an asset that was deleted while queued. Canvas reports the item and continues rather than crashing.
 - A physical-device build requires the user's Apple Developer signing team and a trusted, connected iPad. The simulator cannot reproduce the user's real Photos library, Live Photos, or iCloud media.
-- iPadOS may suspend a foregrounded/backgrounded process and does not guarantee wake, unlock, or schedule execution while the app is not running. Schedules therefore evaluate while Canvas is active and explicitly explain this limitation.
-- Weather overlays use WeatherKit with a one-time When In Use location permission. Canvas keeps the last successful snapshot locally and reports clear states for denied location, offline access, missing WeatherKit entitlement, and service failures. The `com.johnhelmuth.canvas` App ID must have WeatherKit enabled before a signed device build can return live conditions.
+- iPadOS may suspend a foregrounded/backgrounded process and does not guarantee wake, unlock, or schedule execution while the app is not running. Schedules therefore evaluate while Canvas is active and explicitly explain this limitation. Canvas's separate automatic night mode applies an in-app low-light treatment to an open frame from 10 PM to 7 AM by default, returns to normal automatically, and never changes system brightness.
+- Weather overlays use WeatherKit with a one-time When In Use location permission. Canvas keeps the last successful snapshot locally and reports clear states for denied location, offline access, missing WeatherKit entitlement, and service failures. The `com.johnhelmuth.canvas` App ID must have WeatherKit enabled in both its **App Capabilities** and **App Services** tabs before a signed device build can return live conditions. After changing either setting, refresh signing/provisioning and install a newly signed build.
 - Apple Music playback is not enabled. Local imported audio works without a subscription; MusicKit requires a separate entitlement, user authorization, and policy review.
 - PhotoKit does not provide a universally reliable duplicate-photo identity across libraries. Canvas avoids duplicate asset identifiers when combining albums and leaves content-level duplicate detection out unless Apple exposes a stable match.
 - Opening Photos is best-effort via the Photos URL scheme; the exact asset handoff is controlled by iPadOS.
@@ -65,9 +65,9 @@ The generated Info.plist includes Photos read/add and When In Use location descr
 | Cut/crossfade/slide/push/zoom/Ken Burns/blur/scale/page-style selection | Complete; blur and page-style use native SwiftUI fallbacks |
 | Single/pair/collage/grid/automatic layouts | Complete |
 | Live Photos and muted video playback | Complete |
-| Time/date/capture/weekday/album/location/count/battery/weather overlays | Complete; weather requires the WeatherKit capability and user location permission |
+| Time/date/capture/weekday/album/location/count/battery/weather overlays | Complete; weather requires the WeatherKit capability, WeatherKit App Service, and user location permission |
 | Named weekday schedules and foreground enforcement | Complete; iPadOS background wake limits apply |
-| Keep-awake, charging and battery settings | Complete; brightness restoration is native-session scoped |
+| Keep-awake, charging, battery, and automatic night dimming | Complete; night dimming is an in-app treatment and does not alter system brightness |
 | Favorite, exclude, details, swipe, zoom, lock, keyboard/pointer-ready controls | Complete; Photos handoff is best-effort |
 | Local audio, interruption recovery, independent controls | Complete; Apple Music unavailable without policy/entitlement work |
 | Onboarding, settings, presets, privacy surface, accessibility hooks | Complete |

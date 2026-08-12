@@ -388,7 +388,21 @@ final class CanvasTests: XCTestCase {
     func testWeatherAuthorizationFailureExplainsTheSeparateAppServiceRequirement() {
         XCTAssertEqual(WeatherOverlayStatus.authorizationUnavailable.title, "WeatherKit authorization unavailable")
         XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("authorization service"))
-        XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("account-sync issue"))
+        XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("WeatherKit capability"))
+        XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("WeatherKit App Service"))
+        XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("newly signed build"))
+    }
+
+    func testWeatherSnapshotDropsLegacyLegalSourceTextFromItsPersistedModel() throws {
+        let legacyJSON = Data(#"{"symbolName":"cloud.sun.fill","condition":"Partly Cloudy","temperature":"72°F","attributionText":"WeatherKit Sources\\nWeather Station Data","updatedAt":0}"#.utf8)
+        let snapshot = try JSONDecoder().decode(CanvasWeatherSnapshot.self, from: legacyJSON)
+        let migratedJSON = try JSONEncoder().encode(snapshot)
+        let migratedText = try XCTUnwrap(String(data: migratedJSON, encoding: .utf8))
+
+        XCTAssertEqual(snapshot.symbolName, "cloud.sun.fill")
+        XCTAssertEqual(snapshot.displayText, "72°F · Partly Cloudy · Last known")
+        XCTAssertFalse(migratedText.contains("WeatherKit Sources"))
+        XCTAssertFalse(migratedText.contains("Weather Station Data"))
     }
 
     func testSwipeNavigationAndPlaybackIndexMoveExactlyOneItem() {
@@ -1443,6 +1457,21 @@ final class CanvasTests: XCTestCase {
         XCTAssertTrue(ScheduleEngine.isActive(rule, date: afterMidnight, calendar: calendar))
         let afterStop = calendar.date(from: DateComponents(year: 2026, month: 8, day: 4, hour: 6, minute: 0))!
         XCTAssertFalse(ScheduleEngine.isActive(rule, date: afterStop, calendar: calendar))
+    }
+
+    func testAutomaticNightDimmingCoversOnlyTheConfiguredOvernightWindow() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func date(hour: Int, minute: Int = 0) -> Date {
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 4, hour: hour, minute: minute))!
+        }
+
+        XCTAssertFalse(NightDimmingPolicy.isActive(enabled: true, startMinutes: 22 * 60, stopMinutes: 7 * 60, date: date(hour: 12), calendar: calendar))
+        XCTAssertTrue(NightDimmingPolicy.isActive(enabled: true, startMinutes: 22 * 60, stopMinutes: 7 * 60, date: date(hour: 22), calendar: calendar))
+        XCTAssertTrue(NightDimmingPolicy.isActive(enabled: true, startMinutes: 22 * 60, stopMinutes: 7 * 60, date: date(hour: 2), calendar: calendar))
+        XCTAssertFalse(NightDimmingPolicy.isActive(enabled: true, startMinutes: 22 * 60, stopMinutes: 7 * 60, date: date(hour: 7), calendar: calendar))
+        XCTAssertFalse(NightDimmingPolicy.isActive(enabled: false, startMinutes: 22 * 60, stopMinutes: 7 * 60, date: date(hour: 23), calendar: calendar))
+        XCTAssertFalse(NightDimmingPolicy.isActive(enabled: true, startMinutes: 0, stopMinutes: 0, date: date(hour: 0), calendar: calendar))
     }
 
     func testPresetRoundTrip() throws {
