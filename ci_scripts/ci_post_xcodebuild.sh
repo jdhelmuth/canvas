@@ -6,6 +6,7 @@ set -eu
 ROOT="${CI_PRIMARY_REPOSITORY_PATH:?CI_PRIMARY_REPOSITORY_PATH is required}"
 ARCHIVE="${CI_ARCHIVE_PATH:?CI_ARCHIVE_PATH is required after Archive}"
 CONFIG="$ROOT/release/release-requirements.json"
+CONFIG_READER="$ROOT/scripts/release_config_value.py"
 INFO="$ARCHIVE/Info.plist"
 
 fail() {
@@ -13,8 +14,11 @@ fail() {
   exit 1
 }
 
+command -v python3 >/dev/null 2>&1 || fail "missing required tool: python3"
+[ -f "$CONFIG" ] || fail "release requirements are missing"
+[ -f "$CONFIG_READER" ] || fail "release config reader is missing"
 [ -f "$INFO" ] || fail "archive Info.plist not found"
-EXPECTED_BUNDLE_ID=$(jq -er '.bundleIdentifier' "$CONFIG")
+EXPECTED_BUNDLE_ID=$(python3 "$CONFIG_READER" "$CONFIG" bundleIdentifier)
 ARCHIVE_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleIdentifier' "$INFO")
 ARCHIVE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$INFO")
 ARCHIVE_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$INFO")
