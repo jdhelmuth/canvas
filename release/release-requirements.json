@@ -1,0 +1,10 @@
+{
+  "project": "Canvas.xcodeproj",
+  "scheme": "Canvas",
+  "bundleIdentifier": "com.johnhelmuth.canvas",
+  "platform": "IOS",
+  "privacyManifest": "Canvas/PrivacyInfo.xcprivacy",
+  "minimumXcodeMajor": 26,
+  "minimumIPhoneOSSDKMajor": 26,
+  "recommendedXcodeVersion": "26.6"
+}
