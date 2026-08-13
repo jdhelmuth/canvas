@@ -3,23 +3,29 @@ set -eu
 
 ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
 CONFIG="$ROOT/release/release-requirements.json"
+CONFIG_READER="$ROOT/scripts/release_config_value.py"
 
 fail() {
   echo "error: release requirement failed: $*" >&2
   exit 1
 }
 
-for tool in jq xcodebuild xcrun plutil; do
+for tool in python3 xcodebuild xcrun plutil; do
   command -v "$tool" >/dev/null 2>&1 || fail "missing required tool: $tool"
 done
 [ -f "$CONFIG" ] || fail "missing $CONFIG"
+[ -f "$CONFIG_READER" ] || fail "missing $CONFIG_READER"
 
-PROJECT=$(jq -er '.project' "$CONFIG")
-SCHEME=$(jq -er '.scheme' "$CONFIG")
-EXPECTED_BUNDLE_ID=$(jq -er '.bundleIdentifier' "$CONFIG")
-PRIVACY_MANIFEST=$(jq -er '.privacyManifest' "$CONFIG")
-MIN_XCODE=$(jq -er '.minimumXcodeMajor' "$CONFIG")
-MIN_SDK=$(jq -er '.minimumIPhoneOSSDKMajor' "$CONFIG")
+config_value() {
+  python3 "$CONFIG_READER" "$CONFIG" "$1"
+}
+
+PROJECT=$(config_value project)
+SCHEME=$(config_value scheme)
+EXPECTED_BUNDLE_ID=$(config_value bundleIdentifier)
+PRIVACY_MANIFEST=$(config_value privacyManifest)
+MIN_XCODE=$(config_value minimumXcodeMajor)
+MIN_SDK=$(config_value minimumIPhoneOSSDKMajor)
 
 cd "$ROOT"
 
