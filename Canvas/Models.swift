@@ -103,6 +103,23 @@ enum PhotoSource: String, Codable, CaseIterable, Identifiable {
     var title: String { self == .applePhotos ? "Apple Photos" : "Google Photos" }
 }
 
+/// Selects the source for the optional live weather overlay. WeatherKit stays
+/// the default for existing installs; Ambient is available when the user has
+/// their own compatible station and API key.
+enum CanvasWeatherSource: String, Codable, CaseIterable, Identifiable, Sendable {
+    case weatherKit
+    case ambientStation
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .weatherKit: "Apple Weather"
+        case .ambientStation: "Ambient station"
+        }
+    }
+}
+
 struct AlbumReference: Codable, Hashable, Identifiable {
     let id: String
     let title: String
@@ -469,6 +486,12 @@ struct CanvasSettings: Codable, Equatable {
     var spacing: Double = 8
     var cornerRadius: Double = 18
     var overlays = OverlaySettings()
+    /// Optional so settings saved before the station source existed continue
+    /// to decode as WeatherKit.
+    var weatherSource: CanvasWeatherSource? = .weatherKit
+    /// Internal selected-station identifier. It is never surfaced as an
+    /// editable value; Settings presents friendly station names instead.
+    var ambientDeviceMAC: String?
     var filters = CanvasFilters()
     var keepAwake = true
     var chargingOnly = false
@@ -496,6 +519,12 @@ struct CanvasSettings: Codable, Equatable {
 
     var effectiveFramingMode: MediaFramingMode {
         framingMode ?? (fitMode ? .fitWithBorder : .fillZoom)
+    }
+
+    var effectiveWeatherSource: CanvasWeatherSource { weatherSource ?? .weatherKit }
+    var effectiveAmbientDeviceMAC: String? {
+        guard let value = ambientDeviceMAC?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        return value
     }
 
     var effectiveShowEmptyAlbums: Bool { showEmptyAlbums ?? false }
@@ -530,6 +559,7 @@ struct OverlaySettings: Codable, Equatable {
     var weatherShowWind: Bool? = false
     var weatherShowUVIndex: Bool? = false
     var weatherShowPrecipitationChance: Bool? = false
+    var weatherShowRainToday: Bool? = false
     var weatherShowDailyHighLow: Bool? = false
     var weatherShowSunriseSunset: Bool? = false
     var weatherShowNextHour: Bool? = false
@@ -541,6 +571,11 @@ struct OverlaySettings: Codable, Equatable {
     /// independent of the backing opacity and clock/text opacity.
     var backgroundTransparency: Double?
     var fontSize: Double = 22
+    /// Weather has its own size control so it can be tuned independently from
+    /// the clock and supporting date/text overlays. The optional field keeps
+    /// older settings visually compatible by falling back to their existing
+    /// supporting-text size until the user changes the weather slider.
+    var weatherSize: Double?
     /// Optional so existing settings retain the current long-form date while
     /// newer builds can offer the common date styles without rewriting saved
     /// settings.
@@ -576,6 +611,9 @@ struct OverlaySettings: Codable, Equatable {
 
     var effectiveDateFormat: OverlayDateFormat { dateFormat ?? .long }
     var effectiveTextWeight: ClockWeight { textWeight ?? .regular }
+    var effectiveWeatherSize: Double {
+        min(max(weatherSize ?? fontSize, 12), 48)
+    }
     var effectiveClockStrokeEnabled: Bool { clockStrokeEnabled ?? textStrokeEnabled ?? false }
     var effectiveClockStrokeColor: ClockColor { clockStrokeColor ?? textStrokeColor ?? .black }
     var effectiveClockStrokeWidth: Double { clockStrokeWidth ?? textStrokeWidth ?? 1.5 }
@@ -586,6 +624,7 @@ struct OverlaySettings: Codable, Equatable {
     var effectiveWeatherShowWind: Bool { weatherShowWind ?? false }
     var effectiveWeatherShowUVIndex: Bool { weatherShowUVIndex ?? false }
     var effectiveWeatherShowPrecipitationChance: Bool { weatherShowPrecipitationChance ?? false }
+    var effectiveWeatherShowRainToday: Bool { weatherShowRainToday ?? false }
     var effectiveWeatherShowDailyHighLow: Bool { weatherShowDailyHighLow ?? false }
     var effectiveWeatherShowSunriseSunset: Bool { weatherShowSunriseSunset ?? false }
     var effectiveWeatherShowNextHour: Bool { weatherShowNextHour ?? false }

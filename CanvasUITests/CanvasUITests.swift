@@ -82,6 +82,8 @@ final class CanvasUITests: XCTestCase {
         let humidity = app.switches["Humidity"]
         let wind = app.switches["Wind"]
         app.swipeUp()
+        let weatherSize = app.sliders["Weather size-slider"]
+        XCTAssertTrue(weatherSize.waitForExistence(timeout: 3))
         XCTAssertTrue(feelsLike.waitForExistence(timeout: 3))
         XCTAssertTrue(humidity.waitForExistence(timeout: 3))
         XCTAssertTrue(wind.waitForExistence(timeout: 3))
@@ -102,6 +104,10 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(weather.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(weather.frame.minX, clock.frame.midX)
         XCTAssertLessThanOrEqual(weather.frame.maxX, app.windows.firstMatch.frame.maxX)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Clock and weather overlay"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     func testEmptyHomeStateIsCenteredAndActionable() {
