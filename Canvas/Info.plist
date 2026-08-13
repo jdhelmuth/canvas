@@ -25,9 +25,9 @@
 	<key>GooglePhotosClientID</key>
 	<string>$(GOOGLE_PHOTOS_CLIENT_ID)</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Canvas applies favorite or unfavorite actions only when you explicitly request them. It never edits or deletes your photos.</string>
+	<string>Canvas displays the albums you choose and changes only Favorite status when you explicitly tap Favorite or Unfavorite. It never alters photo contents or deletes items.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Canvas needs access to display the albums you choose and to apply favorite or unfavorite actions only when you explicitly request them. It never edits or deletes your photos.</string>
+	<string>Canvas displays the albums you choose and changes only Favorite status when you explicitly tap Favorite or Unfavorite. It never alters photo contents or deletes items.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Canvas uses your location only to show local weather and air quality when you turn on the weather overlay.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
