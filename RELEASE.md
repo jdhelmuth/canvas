@@ -11,6 +11,7 @@ Canvas releases are gated by `release/release-requirements.json`, the scripts in
 - Add `ASC_ISSUER_ID`, `ASC_KEY_ID`, and `ASC_PRIVATE_KEY` as secret environment variables. The private key is the complete contents of the App Store Connect API `.p8` key.
 - Grant the API key only the App Manager access needed to read build metadata.
 - Set Xcode Cloud's **Next Build Number** higher than the latest uploaded build. The archive gate independently queries App Store Connect and blocks collisions.
+- The gates use Python 3 standard-library JSON/HTTP handling plus tools in the Xcode image; they do not install Homebrew packages and do not require `jq`.
 
 Apple's upload baseline is currently Xcode 26 and the iOS 26 SDK. Check [Apple's Upcoming Requirements](https://developer.apple.com/news/upcoming-requirements/) before every release in case the baseline has changed.
 
