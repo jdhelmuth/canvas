@@ -23,6 +23,7 @@ struct RootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
         .onChange(of: scenePhase) { _, phase in
+            store.weather.setActive(phase == .active)
             if phase == .active {
                 store.library.refreshAuthorization()
                 store.googlePhotos.handleAppReturn()

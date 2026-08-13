@@ -1,5 +1,7 @@
 import XCTest
 import AVFoundation
+import Combine
+import CoreLocation
 import Photos
 import PhotosUI
 @testable import Canvas
@@ -385,6 +387,152 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(service.status, .disabled)
     }
 
+    func testAmbientTemperatureFormattingNormalizesLivePreviewAndConvertedValues() throws {
+        let locale = Locale(identifier: "en_US")
+        XCTAssertEqual(CanvasWeatherTemperatureFormatter.normalized("72°F", locale: locale), "72.0°F")
+        XCTAssertEqual(CanvasWeatherTemperatureFormatter.normalized("22°C", locale: locale), "71.6°F")
+
+        let snapshot = CanvasWeatherSnapshot(
+            symbolName: "sun.max.fill",
+            condition: "Clear",
+            temperature: "72°F",
+            apparentTemperature: "70°F",
+            highTemperature: "78°F",
+            lowTemperature: "61°F",
+            nextHourTemperature: "74°F"
+        )
+        XCTAssertEqual(snapshot.temperature, "72.0°F")
+        XCTAssertEqual(snapshot.apparentTemperature, "70.0°F")
+        XCTAssertEqual(snapshot.highTemperature, "78.0°F")
+        XCTAssertEqual(snapshot.lowTemperature, "61.0°F")
+        XCTAssertEqual(snapshot.nextHourTemperature, "74.0°F")
+        XCTAssertEqual(CanvasWeatherSnapshot.preview.temperature, "72.0°F")
+    }
+
+    func testCachedLegacyWeatherTemperaturesNormalizeEveryTemperatureSurface() throws {
+        let legacyJSON = Data(#"{"symbolName":"sun.max.fill","condition":"Clear","temperature":"72°F","apparentTemperature":"70°F","highTemperature":"78°F","lowTemperature":"61°F","nextHourTemperature":"74°F","updatedAt":0}"#.utf8)
+        let snapshot = try JSONDecoder().decode(CanvasWeatherSnapshot.self, from: legacyJSON)
+
+        XCTAssertEqual(snapshot.temperature, "72.0°F")
+        XCTAssertEqual(snapshot.apparentTemperature, "70.0°F")
+        XCTAssertEqual(snapshot.highTemperature, "78.0°F")
+        XCTAssertEqual(snapshot.lowTemperature, "61.0°F")
+        XCTAssertEqual(snapshot.nextHourTemperature, "74.0°F")
+    }
+
+    @MainActor
+    func testAmbientRefreshPolicyUsesDocumentedCadenceAndSourceTimestamps() {
+        XCTAssertEqual(CanvasAmbientRefreshPolicy.upstreamUpdateFloor, 60)
+        XCTAssertEqual(CanvasAmbientRefreshPolicy.pollingInterval, 60)
+
+        let old = makeSnapshot(temperature: "70°F", timestamp: Date(timeIntervalSince1970: 100))
+        let newer = makeSnapshot(temperature: "71°F", timestamp: Date(timeIntervalSince1970: 101))
+        let same = makeSnapshot(temperature: "72°F", timestamp: Date(timeIntervalSince1970: 100))
+
+        XCTAssertFalse(CanvasAmbientRefreshPolicy.shouldPublish(existing: old, incoming: same, source: .ambientStation))
+        XCTAssertFalse(CanvasAmbientRefreshPolicy.shouldPublish(existing: old, incoming: old, source: .ambientStation))
+        XCTAssertTrue(CanvasAmbientRefreshPolicy.shouldPublish(existing: old, incoming: newer, source: .ambientStation))
+        XCTAssertTrue(CanvasAmbientRefreshPolicy.shouldPublish(existing: old, incoming: same, source: .weatherKit))
+    }
+
+    @MainActor
+    func testAmbientForegroundStartsImmediateRefreshAndPollsAtCadenceWithoutOverlap() async {
+        let provider = TestWeatherProvider(results: [makeResult(temperature: "72°F")])
+        let service = makeAmbientService(provider: provider, interval: 0.02)
+
+        service.update(showWeather: true)
+        let receivedInitialReading = await waitFor { provider.callCount >= 1 }
+        let receivedPolledReading = await waitFor(timeout: 0.5) { provider.callCount >= 2 }
+        XCTAssertTrue(receivedInitialReading)
+        XCTAssertTrue(receivedPolledReading)
+        XCTAssertEqual(provider.maximumConcurrentCalls, 1)
+
+        service.clear()
+    }
+
+    @MainActor
+    func testAmbientPollingStopsInactiveAndForegroundReturnRefreshesImmediately() async {
+        let provider = TestWeatherProvider(results: [makeResult(temperature: "72°F")], delayNanoseconds: 200_000_000)
+        let service = makeAmbientService(provider: provider, interval: 1)
+
+        service.update(showWeather: true)
+        let receivedInitialReading = await waitFor { provider.callCount >= 1 }
+        XCTAssertTrue(receivedInitialReading)
+        service.setActive(false)
+        let inactiveCallCount = provider.callCount
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(provider.callCount, inactiveCallCount)
+
+        service.setActive(true)
+        let refreshedAfterForeground = await waitFor(timeout: 1) { provider.callCount >= inactiveCallCount + 1 }
+        XCTAssertTrue(refreshedAfterForeground)
+        XCTAssertEqual(provider.maximumConcurrentCalls, 1)
+
+        service.clear()
+    }
+
+    @MainActor
+    func testAmbientRefreshDeduplicatesRepeatedTriggersAndNeverOverlapsRequests() async {
+        let provider = TestWeatherProvider(results: [makeResult(temperature: "72°F")], delayNanoseconds: 50_000_000)
+        let service = makeAmbientService(provider: provider, interval: 1)
+
+        service.update(showWeather: true)
+        let receivedInitialReading = await waitFor { provider.callCount >= 1 }
+        XCTAssertTrue(receivedInitialReading)
+        for _ in 0..<5 {
+            service.refreshNow()
+        }
+
+        let receivedDeduplicatedFollowUp = await waitFor(timeout: 1) { provider.callCount >= 2 }
+        XCTAssertTrue(receivedDeduplicatedFollowUp)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(provider.callCount, 2)
+        XCTAssertEqual(provider.maximumConcurrentCalls, 1)
+
+        service.clear()
+    }
+
+    @MainActor
+    func testAmbientNewReadingPublishesToUIAndStaleReadingPreservesCache() async throws {
+        let defaults = try makeTestDefaults()
+        let newestTimestamp = Date(timeIntervalSince1970: 2_000)
+        let staleTimestamp = Date(timeIntervalSince1970: 1_000)
+        let provider = TestWeatherProvider(results: [
+            makeResult(temperature: "72°F", timestamp: newestTimestamp),
+            makeResult(temperature: "70°F", timestamp: staleTimestamp)
+        ])
+        let service = makeAmbientService(provider: provider, interval: 1, defaults: defaults)
+        var publishedTemperatures: [String] = []
+        let subscription = service.$snapshot.sink { snapshot in
+            if let snapshot {
+                publishedTemperatures.append(snapshot.temperature)
+            }
+        }
+
+        service.update(showWeather: true)
+        let receivedInitialReading = await waitFor { provider.callCount >= 1 && service.snapshot != nil }
+        XCTAssertTrue(receivedInitialReading)
+        XCTAssertEqual(service.snapshot?.temperature, "72.0°F")
+        XCTAssertEqual(publishedTemperatures.last, "72.0°F")
+
+        service.refreshNow()
+        let receivedStaleReading = await waitFor(timeout: 1) { provider.callCount >= 2 }
+        XCTAssertTrue(receivedStaleReading)
+        XCTAssertEqual(service.snapshot?.temperature, "72.0°F")
+        XCTAssertTrue(service.isUsingCachedSnapshot)
+
+        let cachedService = makeAmbientService(
+            provider: TestWeatherProvider(results: [makeResult(temperature: "65°F")]),
+            interval: 1,
+            defaults: defaults
+        )
+        XCTAssertEqual(cachedService.snapshot?.temperature, "72.0°F")
+
+        subscription.cancel()
+        service.clear()
+        cachedService.clear()
+    }
+
     func testWeatherAuthorizationFailureExplainsTheSeparateAppServiceRequirement() {
         XCTAssertEqual(WeatherOverlayStatus.authorizationUnavailable.title, "WeatherKit authorization unavailable")
         XCTAssertTrue(WeatherOverlayStatus.authorizationUnavailable.message.contains("authorization service"))
@@ -400,7 +548,7 @@ final class CanvasTests: XCTestCase {
         let migratedText = try XCTUnwrap(String(data: migratedJSON, encoding: .utf8))
 
         XCTAssertEqual(snapshot.symbolName, "cloud.sun.fill")
-        XCTAssertEqual(snapshot.displayText, "72°F · Partly Cloudy · Last known")
+        XCTAssertEqual(snapshot.displayText, "72.0°F · Partly Cloudy · Last known")
         XCTAssertFalse(migratedText.contains("WeatherKit Sources"))
         XCTAssertFalse(migratedText.contains("Weather Station Data"))
     }
@@ -482,13 +630,14 @@ final class CanvasTests: XCTestCase {
 
         XCTAssertEqual(snapshot.symbolName, "cloud.rain.fill")
         XCTAssertEqual(snapshot.condition, "Rain")
-        XCTAssertTrue(snapshot.temperature.contains("72"))
+        XCTAssertEqual(snapshot.temperature, "72.4°F")
+        XCTAssertEqual(snapshot.apparentTemperature, "70.1°F")
         XCTAssertEqual(snapshot.humidityPercent, 48)
         XCTAssertTrue(snapshot.wind?.contains("NW") == true)
         XCTAssertTrue(snapshot.wind?.contains("8") == true)
         XCTAssertEqual(snapshot.rainToday, "0.40 in")
-        XCTAssertEqual(snapshot.highTemperature?.contains("78"), true)
-        XCTAssertEqual(snapshot.lowTemperature?.contains("61"), true)
+        XCTAssertEqual(snapshot.highTemperature, "78.0°F")
+        XCTAssertEqual(snapshot.lowTemperature, "61.0°F")
     }
 
     func testAmbientStationChoicesUseFriendlyLabelsWithoutShowingIdentifiers() throws {
@@ -1976,5 +2125,136 @@ final class CanvasTests: XCTestCase {
         let removable = GoogleAlbumMediaCleanup.pathsNoLongerReferenced(replacing: 0, with: [replacement], in: albums)
         XCTAssertEqual(removable, ["old/old.jpg"])
         XCTAssertFalse(removable.contains("shared/shared.jpg"))
+    }
+
+    private func makeSnapshot(
+        temperature: String,
+        timestamp: Date = .now
+    ) -> CanvasWeatherSnapshot {
+        CanvasWeatherSnapshot(
+            symbolName: "sun.max.fill",
+            condition: "Clear",
+            temperature: temperature,
+            updatedAt: timestamp
+        )
+    }
+
+    private func makeResult(
+        temperature: String,
+        timestamp: Date = .now
+    ) -> CanvasWeatherProviderResult {
+        CanvasWeatherProviderResult(
+            snapshot: makeSnapshot(temperature: temperature, timestamp: timestamp),
+            attributionURL: URL(string: "https://ambientweather.com")!,
+            attributionMarkURL: nil
+        )
+    }
+
+    @MainActor
+    private func makeAmbientService(
+        provider: TestWeatherProvider,
+        interval: TimeInterval,
+        defaults: UserDefaults? = nil
+    ) -> CanvasWeatherService {
+        let configuration = CanvasWeatherConfiguration(
+            source: .ambientStation,
+            ambientDeviceMAC: "00:10:FA:AA:BB:CC",
+            ambientAPIKey: "test-api-key"
+        )
+        let resolvedDefaults = defaults ?? UserDefaults(suiteName: "CanvasTests.weather.service.\(UUID().uuidString)")!
+        return CanvasWeatherService(
+            weatherProvider: provider,
+            airQualityProvider: TestAirQualityProvider(),
+            autoRequestLocation: false,
+            initialLocation: CLLocation(latitude: 40.44, longitude: -79.98),
+            ambientPollingInterval: interval,
+            defaults: resolvedDefaults,
+            configurationProvider: { configuration }
+        )
+    }
+
+    @MainActor
+    private func waitFor(
+        timeout: TimeInterval = 1,
+        condition: @escaping () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return condition()
+    }
+
+    private func makeTestDefaults() throws -> UserDefaults {
+        let suiteName = "CanvasTests.weather.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            throw NSError(domain: "CanvasTests", code: 1)
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+}
+
+private struct TestAirQualityProvider: CanvasAirQualityProviding {
+    func currentUSAirQualityIndex(for location: CLLocation) async throws -> Int? {
+        nil
+    }
+}
+
+private final class TestWeatherProvider: CanvasWeatherProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private let results: [CanvasWeatherProviderResult]
+    private let delayNanoseconds: UInt64
+    private var nextResultIndex = 0
+    private var calls = 0
+    private var activeCalls = 0
+    private var maximumActiveCalls = 0
+
+    init(results: [CanvasWeatherProviderResult], delayNanoseconds: UInt64 = 0) {
+        self.results = results
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+
+    var maximumConcurrentCalls: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return maximumActiveCalls
+    }
+
+    func currentWeather(for location: CLLocation) async throws -> CanvasWeatherProviderResult {
+        let result = beginCall()
+        defer { endCall() }
+
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
+    private func beginCall() -> CanvasWeatherProviderResult {
+        lock.lock()
+        defer { lock.unlock() }
+        precondition(!results.isEmpty)
+        calls += 1
+        activeCalls += 1
+        maximumActiveCalls = max(maximumActiveCalls, activeCalls)
+        let index = min(nextResultIndex, max(0, results.count - 1))
+        let result = results[index]
+        nextResultIndex += 1
+        return result
+    }
+
+    private func endCall() {
+        lock.lock()
+        activeCalls -= 1
+        lock.unlock()
     }
 }

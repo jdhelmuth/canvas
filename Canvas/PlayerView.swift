@@ -48,6 +48,7 @@ struct PlayerView: View {
         .persistentSystemOverlays(.hidden)
         .task {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            store.weather.setActive(true)
             if isWeatherFramePreview { controlsVisible = false }
             isLocked = store.settings.lockControls
             scheduleMonitor.start(rules: store.settings.schedules)
@@ -99,6 +100,7 @@ struct PlayerView: View {
             else { hideTask?.cancel(); controlsVisible = true }
         }
         .onChange(of: scenePhase) { _, phase in
+            store.weather.setActive(phase == .active)
             if phase == .active {
                 // Re-evaluate immediately after foregrounding so a frame that
                 // crossed a night boundary while suspended never waits for

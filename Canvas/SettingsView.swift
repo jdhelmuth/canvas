@@ -59,6 +59,7 @@ struct SettingsView: View {
                 importAudio(result)
             }
             .onChange(of: scenePhase) { _, phase in
+                store.weather.setActive(phase == .active)
                 if phase == .active, store.settings.overlays.showWeather {
                     store.weather.refreshAuthorization()
                 }

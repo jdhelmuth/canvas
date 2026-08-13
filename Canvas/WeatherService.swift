@@ -4,6 +4,42 @@ import Foundation
 import Security
 import WeatherKit
 
+enum CanvasWeatherTemperatureFormatter {
+    static func string(
+        from value: Double,
+        unit: UnitTemperature = .fahrenheit,
+        locale: Locale = .current
+    ) -> String {
+        let formatter = MeasurementFormatter()
+        formatter.locale = locale
+        formatter.unitOptions = .naturalScale
+        formatter.numberFormatter.minimumFractionDigits = 1
+        formatter.numberFormatter.maximumFractionDigits = 1
+        formatter.numberFormatter.usesGroupingSeparator = false
+        return formatter.string(from: Measurement(value: value, unit: unit))
+    }
+
+    static func normalized(_ value: String?, locale: Locale = .current) -> String? {
+        guard let value else { return nil }
+
+        let expression = try? NSRegularExpression(
+            pattern: #"^\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))\s*(?:°|º)?\s*([CFcf])\s*$"#
+        )
+        let range = NSRange(location: 0, length: (value as NSString).length)
+        guard
+            let match = expression?.firstMatch(in: value, options: [], range: range),
+            let numberRange = Range(match.range(at: 1), in: value),
+            let unitRange = Range(match.range(at: 2), in: value),
+            let number = Double(value[numberRange].replacingOccurrences(of: ",", with: "."))
+        else {
+            return value
+        }
+
+        let unit: UnitTemperature = value[unitRange].uppercased() == "C" ? .celsius : .fahrenheit
+        return string(from: number, unit: unit, locale: locale)
+    }
+}
+
 /// App-owned weather data. WeatherKit types stay behind this value type so the
 /// player and settings surfaces do not depend on a provider-specific model.
 struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
@@ -48,22 +84,67 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
     ) {
         self.symbolName = symbolName
         self.condition = condition
-        self.temperature = temperature
-        self.apparentTemperature = apparentTemperature
+        self.temperature = CanvasWeatherTemperatureFormatter.normalized(temperature) ?? temperature
+        self.apparentTemperature = CanvasWeatherTemperatureFormatter.normalized(apparentTemperature)
         self.humidityPercent = humidityPercent
         self.wind = wind
         self.uvIndex = uvIndex
         self.precipitationChancePercent = precipitationChancePercent
         self.rainToday = rainToday
-        self.highTemperature = highTemperature
-        self.lowTemperature = lowTemperature
+        self.highTemperature = CanvasWeatherTemperatureFormatter.normalized(highTemperature)
+        self.lowTemperature = CanvasWeatherTemperatureFormatter.normalized(lowTemperature)
         self.sunrise = sunrise
         self.sunset = sunset
         self.nextHourSymbolName = nextHourSymbolName
-        self.nextHourTemperature = nextHourTemperature
+        self.nextHourTemperature = CanvasWeatherTemperatureFormatter.normalized(nextHourTemperature)
         self.nextHourCondition = nextHourCondition
         self.airQualityIndex = airQualityIndex
         self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case symbolName
+        case condition
+        case temperature
+        case apparentTemperature
+        case humidityPercent
+        case wind
+        case uvIndex
+        case precipitationChancePercent
+        case rainToday
+        case highTemperature
+        case lowTemperature
+        case sunrise
+        case sunset
+        case nextHourSymbolName
+        case nextHourTemperature
+        case nextHourCondition
+        case airQualityIndex
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            symbolName: try container.decode(String.self, forKey: .symbolName),
+            condition: try container.decode(String.self, forKey: .condition),
+            temperature: try container.decode(String.self, forKey: .temperature),
+            apparentTemperature: try container.decodeIfPresent(String.self, forKey: .apparentTemperature),
+            humidityPercent: try container.decodeIfPresent(Int.self, forKey: .humidityPercent),
+            wind: try container.decodeIfPresent(String.self, forKey: .wind),
+            uvIndex: try container.decodeIfPresent(Int.self, forKey: .uvIndex),
+            precipitationChancePercent: try container.decodeIfPresent(Int.self, forKey: .precipitationChancePercent),
+            rainToday: try container.decodeIfPresent(String.self, forKey: .rainToday),
+            highTemperature: try container.decodeIfPresent(String.self, forKey: .highTemperature),
+            lowTemperature: try container.decodeIfPresent(String.self, forKey: .lowTemperature),
+            sunrise: try container.decodeIfPresent(String.self, forKey: .sunrise),
+            sunset: try container.decodeIfPresent(String.self, forKey: .sunset),
+            nextHourSymbolName: try container.decodeIfPresent(String.self, forKey: .nextHourSymbolName),
+            nextHourTemperature: try container.decodeIfPresent(String.self, forKey: .nextHourTemperature),
+            nextHourCondition: try container.decodeIfPresent(String.self, forKey: .nextHourCondition),
+            airQualityIndex: try container.decodeIfPresent(Int.self, forKey: .airQualityIndex),
+            updatedAt: try container.decode(Date.self, forKey: .updatedAt)
+        )
     }
 
     var isStale: Bool { Date().timeIntervalSince(updatedAt) > 6 * 60 * 60 }
@@ -225,6 +306,23 @@ struct CanvasWeatherProviderResult: Sendable {
 
 protocol CanvasWeatherProviding {
     func currentWeather(for location: CLLocation) async throws -> CanvasWeatherProviderResult
+}
+
+enum CanvasAmbientRefreshPolicy {
+    /// Most Ambient stations publish a new API reading about once per minute.
+    /// Polling at that boundary avoids duplicate readings while remaining
+    /// comfortably below the proxy and Ambient API request limits.
+    static let upstreamUpdateFloor: TimeInterval = 60
+    static let pollingInterval: TimeInterval = upstreamUpdateFloor
+
+    static func shouldPublish(
+        existing: CanvasWeatherSnapshot?,
+        incoming: CanvasWeatherSnapshot,
+        source: CanvasWeatherSource
+    ) -> Bool {
+        guard source == .ambientStation, let existing else { return true }
+        return incoming.updatedAt > existing.updatedAt
+    }
 }
 
 /// Canvas cannot read another app's Keychain access group. Store only the
@@ -494,7 +592,9 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
         let isNight = reading.uvIndex.map { $0 <= 0 } ?? false
         let symbolName = raining ? "cloud.rain.fill" : (isNight ? "moon.stars.fill" : "sun.max.fill")
         let condition = raining ? "Rain" : (isNight ? "Clear night" : "Clear")
-        let updatedAt = parseDate(reading.asOf) ?? .now
+        // An absent or malformed source timestamp must never look newer than
+        // a valid cached reading.
+        let updatedAt = parseDate(reading.asOf) ?? .distantPast
 
         return CanvasWeatherSnapshot(
             symbolName: symbolName,
@@ -513,11 +613,10 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
 
     private static func temperature(_ value: Double?) -> String? {
         guard let value else { return nil }
-        let formatter = MeasurementFormatter()
-        formatter.locale = .current
-        formatter.unitOptions = .naturalScale
-        formatter.numberFormatter.maximumFractionDigits = 0
-        return formatter.string(from: Measurement(value: value, unit: UnitTemperature.fahrenheit))
+        return CanvasWeatherTemperatureFormatter.string(
+            from: value,
+            unit: .fahrenheit
+        )
     }
 
     private static func wind(_ speed: Double?, direction: Double?) -> String? {
@@ -592,6 +691,11 @@ struct WeatherKitCanvasWeatherProvider: CanvasWeatherProviding {
         )
         let attribution = try await service.attribution
 
+        let temperatureFormatter = MeasurementFormatter()
+        temperatureFormatter.locale = .current
+        temperatureFormatter.unitOptions = .naturalScale
+        temperatureFormatter.numberFormatter.minimumFractionDigits = 1
+        temperatureFormatter.numberFormatter.maximumFractionDigits = 1
         let measurementFormatter = MeasurementFormatter()
         measurementFormatter.locale = .current
         measurementFormatter.unitOptions = .naturalScale
@@ -608,18 +712,18 @@ struct WeatherKitCanvasWeatherProvider: CanvasWeatherProviding {
             snapshot: CanvasWeatherSnapshot(
                 symbolName: current.symbolName,
                 condition: current.condition.description,
-                temperature: measurementFormatter.string(from: current.temperature),
-                apparentTemperature: measurementFormatter.string(from: current.apparentTemperature),
+                temperature: temperatureFormatter.string(from: current.temperature),
+                apparentTemperature: temperatureFormatter.string(from: current.apparentTemperature),
                 humidityPercent: Int((current.humidity * 100).rounded()),
                 wind: "\(current.wind.compassDirection.abbreviation) \(measurementFormatter.string(from: current.wind.speed))",
                 uvIndex: current.uvIndex.value,
                 precipitationChancePercent: currentHour.map { Int(($0.precipitationChance * 100).rounded()) },
-                highTemperature: today.map { measurementFormatter.string(from: $0.highTemperature) },
-                lowTemperature: today.map { measurementFormatter.string(from: $0.lowTemperature) },
+                highTemperature: today.map { temperatureFormatter.string(from: $0.highTemperature) },
+                lowTemperature: today.map { temperatureFormatter.string(from: $0.lowTemperature) },
                 sunrise: today?.sun.sunrise.map(timeFormatter.string(from:)),
                 sunset: today?.sun.sunset.map(timeFormatter.string(from:)),
                 nextHourSymbolName: nextHour?.symbolName,
-                nextHourTemperature: nextHour.map { measurementFormatter.string(from: $0.temperature) },
+                nextHourTemperature: nextHour.map { temperatureFormatter.string(from: $0.temperature) },
                 nextHourCondition: nextHour?.condition.description,
                 updatedAt: .now
             ),
@@ -699,20 +803,39 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     private let locationManager: CLLocationManager
     private let autoRequestLocation: Bool
     private let previewMode: Bool
+    private let defaults: UserDefaults
+    private let configurationProvider: () -> CanvasWeatherConfiguration
+    private let ambientPollingInterval: TimeInterval
+    private let locationOverride: CLLocation?
     private var refreshTask: Task<Void, Never>?
+    private var pollingTask: Task<Void, Never>?
     private var activeRequestID = UUID()
+    private var refreshInFlight = false
+    private var refreshRequested = false
+    private var locationRequestInFlight = false
+    private var lastLocation: CLLocation?
+    private var isForegrounded = true
     private var weatherEnabled = false
     private var activeWeatherSource: CanvasWeatherSource?
 
     init(
         weatherProvider: CanvasWeatherProviding = ConfiguredCanvasWeatherProvider(),
         airQualityProvider: CanvasAirQualityProviding = OpenMeteoAirQualityProvider(),
-        autoRequestLocation: Bool = true
+        autoRequestLocation: Bool = true,
+        initialLocation: CLLocation? = nil,
+        ambientPollingInterval: TimeInterval = CanvasAmbientRefreshPolicy.pollingInterval,
+        defaults: UserDefaults = .standard,
+        configurationProvider: @escaping () -> CanvasWeatherConfiguration = { CanvasWeatherConfiguration.load() }
     ) {
         self.weatherProvider = weatherProvider
         self.airQualityProvider = airQualityProvider
         self.locationManager = CLLocationManager()
         self.autoRequestLocation = autoRequestLocation
+        self.locationOverride = initialLocation
+        self.lastLocation = initialLocation
+        self.ambientPollingInterval = ambientPollingInterval
+        self.defaults = defaults
+        self.configurationProvider = configurationProvider
         self.previewMode = ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-preview") || ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
         super.init()
         locationManager.delegate = self
@@ -723,11 +846,12 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         } else {
             loadCachedSnapshot()
         }
-        activeWeatherSource = CanvasWeatherConfiguration.load().source
+        activeWeatherSource = configurationProvider().source
     }
 
     deinit {
         refreshTask?.cancel()
+        pollingTask?.cancel()
         locationManager.stopUpdatingLocation()
     }
 
@@ -742,8 +866,9 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
             return
         }
 
-        let configuration = CanvasWeatherConfiguration.load()
+        let configuration = configurationProvider()
         if activeWeatherSource != nil, activeWeatherSource != configuration.source {
+            cancelActiveRefresh()
             snapshot = nil
             attributionURL = nil
             attributionMarkURL = nil
@@ -753,29 +878,50 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         weatherEnabled = true
         loadCachedSnapshot()
         if configuration.source == .ambientStation, configuration.ambientAPIKey == nil {
+            stopPolling()
             finishWithoutRequest(status: .ambientConfigurationMissing, preserveSnapshot: false)
             return
         }
-        beginRefresh(requestPermission: autoRequestLocation)
+        startPollingIfNeeded()
+        refreshNow(requestPermission: autoRequestLocation)
+    }
+
+    /// Ties weather work to the live frame's lifecycle. Going inactive stops
+    /// the timer and cancels the in-flight request; returning active starts a
+    /// fresh request immediately and resumes the Ambient cadence.
+    func setActive(_ active: Bool) {
+        guard isForegrounded != active else { return }
+        isForegrounded = active
+        if active {
+            startPollingIfNeeded()
+            refreshNow(requestPermission: false)
+        } else {
+            stopPolling()
+            refreshRequested = false
+            cancelActiveRefresh()
+            if snapshot != nil {
+                isUsingCachedSnapshot = true
+            }
+        }
     }
 
     /// Re-checks the OS permission when the app returns from Settings without
     /// prompting again automatically.
     func refreshAuthorization() {
-        guard weatherEnabled else { return }
+        guard weatherEnabled, isForegrounded else { return }
         if previewMode {
             loadPreviewSnapshot()
             return
         }
-        beginRefresh(requestPermission: false)
+        startPollingIfNeeded()
+        refreshNow(requestPermission: false)
     }
 
     func clear() {
-        refreshTask?.cancel()
-        refreshTask = nil
-        activeRequestID = UUID()
+        stopPolling()
+        refreshRequested = false
+        cancelActiveRefresh()
         weatherEnabled = false
-        locationManager.stopUpdatingLocation()
         snapshot = nil
         attributionURL = nil
         attributionMarkURL = nil
@@ -785,11 +931,30 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         isUsingCachedSnapshot = false
     }
 
-    private func beginRefresh(requestPermission: Bool) {
-        refreshTask?.cancel()
-        refreshTask = nil
-        activeRequestID = UUID()
-        locationManager.stopUpdatingLocation()
+    @discardableResult
+    func refreshNow(requestPermission: Bool = false) -> Bool {
+        guard weatherEnabled, isForegrounded, !previewMode else { return false }
+
+        let configuration = configurationProvider()
+        activeWeatherSource = configuration.source
+        if configuration.source == .ambientStation, configuration.ambientAPIKey == nil {
+            stopPolling()
+            finishWithoutRequest(status: .ambientConfigurationMissing, preserveSnapshot: false)
+            return false
+        }
+
+        if refreshInFlight || locationRequestInFlight {
+            refreshRequested = true
+            return false
+        }
+
+        // Tests can supply a fixed location so the service's polling and
+        // publication state can be exercised without depending on simulator
+        // authorization. Production callers leave this nil.
+        if let locationOverride {
+            fetchWeather(for: locationOverride)
+            return true
+        }
 
         switch locationManager.authorizationStatus {
         case .notDetermined:
@@ -800,10 +965,15 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
                 locationManager.requestWhenInUseAuthorization()
             }
         case .authorizedWhenInUse, .authorizedAlways:
-            isLoading = true
-            status = .locating
-            errorMessage = nil
-            locationManager.requestLocation()
+            if let lastLocation {
+                fetchWeather(for: lastLocation)
+            } else {
+                locationRequestInFlight = true
+                isLoading = true
+                status = .locating
+                errorMessage = nil
+                locationManager.requestLocation()
+            }
         case .denied:
             finishWithoutRequest(status: .locationDenied)
         case .restricted:
@@ -811,25 +981,30 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         @unknown default:
             finishWithoutRequest(status: .locationUnavailable)
         }
+        return true
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        guard weatherEnabled else { return }
-        beginRefresh(requestPermission: false)
+        guard weatherEnabled, isForegrounded else { return }
+        locationRequestInFlight = false
+        refreshNow(requestPermission: false)
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard weatherEnabled, let location = locations.last else { return }
+        guard weatherEnabled, isForegrounded, let location = locations.last else { return }
+        locationRequestInFlight = false
         guard location.horizontalAccuracy >= 0 else {
             finishWithoutRequest(status: .locationUnavailable)
             return
         }
+        lastLocation = location
         locationManager.stopUpdatingLocation()
         fetchWeather(for: location)
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        guard weatherEnabled else { return }
+        guard weatherEnabled, isForegrounded else { return }
+        locationRequestInFlight = false
         if manager.authorizationStatus == .denied {
             finishWithoutRequest(status: .locationDenied)
         } else {
@@ -837,35 +1012,94 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         }
     }
 
+    private func startPollingIfNeeded() {
+        guard
+            !previewMode,
+            weatherEnabled,
+            isForegrounded,
+            activeWeatherSource == .ambientStation
+        else {
+            stopPolling()
+            return
+        }
+        guard pollingTask == nil else { return }
+
+        let nanoseconds = UInt64(max(0.01, ambientPollingInterval) * 1_000_000_000)
+        pollingTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: nanoseconds)
+                } catch {
+                    return
+                }
+                guard
+                    let self,
+                    self.weatherEnabled,
+                    self.isForegrounded,
+                    self.activeWeatherSource == .ambientStation
+                else {
+                    return
+                }
+                self.refreshNow(requestPermission: false)
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollingTask?.cancel()
+        pollingTask = nil
+    }
+
+    private func cancelActiveRefresh() {
+        activeRequestID = UUID()
+        refreshTask?.cancel()
+        locationManager.stopUpdatingLocation()
+        locationRequestInFlight = false
+        isLoading = false
+    }
+
     private func fetchWeather(for location: CLLocation) {
-        let requestID = activeRequestID
+        guard !refreshInFlight else {
+            refreshRequested = true
+            return
+        }
+
+        let requestID = UUID()
+        activeRequestID = requestID
+        let source = activeWeatherSource ?? configurationProvider().source
         let provider = weatherProvider
         let airQualityProvider = airQualityProvider
+        refreshInFlight = true
         isLoading = true
         status = .fetching
         errorMessage = nil
 
-        refreshTask = Task { [weak self] in
+        refreshTask = Task { @MainActor [weak self] in
+            defer { self?.completeRefresh(requestID: requestID) }
             do {
-                async let airQualityIndex = try? await airQualityProvider.currentUSAirQualityIndex(for: location)
-                var result = try await Self.withTimeout {
-                    try await provider.currentWeather(for: location)
+                let result = try await Self.withTimeout {
+                    async let airQualityIndex = try? await airQualityProvider.currentUSAirQualityIndex(for: location)
+                    var result = try await provider.currentWeather(for: location)
+                    result = result.addingAirQualityIndex(await airQualityIndex)
+                    return result
                 }
-                result = result.addingAirQualityIndex(await airQualityIndex)
                 guard !Task.isCancelled else { return }
-                guard let self, self.weatherEnabled, self.activeRequestID == requestID else { return }
-                self.snapshot = result.snapshot
-                self.attributionURL = result.attributionURL
-                self.attributionMarkURL = result.attributionMarkURL
-                self.isUsingCachedSnapshot = false
-                self.isLoading = false
-                self.status = .live
-                self.errorMessage = nil
-                self.persist(result)
+                guard
+                    let self,
+                    self.weatherEnabled,
+                    self.isForegrounded,
+                    self.activeRequestID == requestID
+                else { return }
+                self.publish(result, source: source)
             } catch is CancellationError {
                 return
             } catch {
-                guard let self, self.weatherEnabled, self.activeRequestID == requestID else { return }
+                guard
+                    let self,
+                    self.weatherEnabled,
+                    self.isForegrounded,
+                    self.activeRequestID == requestID
+                else { return }
                 self.isLoading = false
                 self.status = Self.status(for: error)
                 self.errorMessage = self.status.message
@@ -876,9 +1110,43 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         }
     }
 
-    private func finishWithoutRequest(status: WeatherOverlayStatus, preserveSnapshot: Bool = true) {
-        refreshTask?.cancel()
+    private func completeRefresh(requestID _: UUID) {
+        guard refreshInFlight else { return }
+        refreshInFlight = false
         refreshTask = nil
+
+        guard weatherEnabled, isForegrounded else {
+            refreshRequested = false
+            return
+        }
+        guard refreshRequested else { return }
+        refreshRequested = false
+        refreshNow(requestPermission: false)
+    }
+
+    private func publish(_ result: CanvasWeatherProviderResult, source: CanvasWeatherSource) {
+        guard CanvasAmbientRefreshPolicy.shouldPublish(existing: snapshot, incoming: result.snapshot, source: source) else {
+            isLoading = false
+            status = .live
+            errorMessage = nil
+            if snapshot != nil {
+                isUsingCachedSnapshot = true
+            }
+            return
+        }
+
+        snapshot = result.snapshot
+        attributionURL = result.attributionURL
+        attributionMarkURL = result.attributionMarkURL
+        isUsingCachedSnapshot = false
+        isLoading = false
+        status = .live
+        errorMessage = nil
+        persist(result, source: source)
+    }
+
+    private func finishWithoutRequest(status: WeatherOverlayStatus, preserveSnapshot: Bool = true) {
+        cancelActiveRefresh()
         isLoading = false
         self.status = status
         errorMessage = status.message
@@ -948,31 +1216,31 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     }
 
     private func loadCachedSnapshot() {
-        let source = CanvasWeatherConfiguration.load().source
-        let cachedSource = UserDefaults.standard.string(forKey: Self.snapshotSourceCacheKey)
+        let source = configurationProvider().source
+        let cachedSource = defaults.string(forKey: Self.snapshotSourceCacheKey)
         guard source == .weatherKit || cachedSource == source.rawValue else { return }
         if snapshot == nil,
-           let data = UserDefaults.standard.data(forKey: Self.snapshotCacheKey),
+           let data = defaults.data(forKey: Self.snapshotCacheKey),
            let cached = try? JSONDecoder().decode(CanvasWeatherSnapshot.self, from: data) {
             snapshot = cached
             isUsingCachedSnapshot = true
         }
         if attributionURL == nil,
-           let rawURL = UserDefaults.standard.string(forKey: Self.attributionURLCacheKey),
+           let rawURL = defaults.string(forKey: Self.attributionURLCacheKey),
            let url = URL(string: rawURL) {
             attributionURL = url
         }
         if attributionMarkURL == nil,
-           let rawURL = UserDefaults.standard.string(forKey: Self.attributionMarkURLCacheKey),
+           let rawURL = defaults.string(forKey: Self.attributionMarkURLCacheKey),
            let url = URL(string: rawURL) {
             attributionMarkURL = url
         }
     }
 
     private func loadPreviewSnapshot() {
-        refreshTask?.cancel()
-        refreshTask = nil
-        activeRequestID = UUID()
+        stopPolling()
+        refreshRequested = false
+        cancelActiveRefresh()
         weatherEnabled = true
         snapshot = .preview
         attributionURL = URL(string: "https://weatherkit.apple.com/legal-attribution.html")
@@ -983,16 +1251,16 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         isUsingCachedSnapshot = false
     }
 
-    private func persist(_ result: CanvasWeatherProviderResult) {
+    private func persist(_ result: CanvasWeatherProviderResult, source: CanvasWeatherSource) {
         if let data = try? JSONEncoder().encode(result.snapshot) {
-            UserDefaults.standard.set(data, forKey: Self.snapshotCacheKey)
+            defaults.set(data, forKey: Self.snapshotCacheKey)
         }
-        UserDefaults.standard.set(CanvasWeatherConfiguration.load().source.rawValue, forKey: Self.snapshotSourceCacheKey)
-        UserDefaults.standard.set(result.attributionURL.absoluteString, forKey: Self.attributionURLCacheKey)
+        defaults.set(source.rawValue, forKey: Self.snapshotSourceCacheKey)
+        defaults.set(result.attributionURL.absoluteString, forKey: Self.attributionURLCacheKey)
         if let markURL = result.attributionMarkURL {
-            UserDefaults.standard.set(markURL.absoluteString, forKey: Self.attributionMarkURLCacheKey)
+            defaults.set(markURL.absoluteString, forKey: Self.attributionMarkURLCacheKey)
         } else {
-            UserDefaults.standard.removeObject(forKey: Self.attributionMarkURLCacheKey)
+            defaults.removeObject(forKey: Self.attributionMarkURLCacheKey)
         }
     }
 }
