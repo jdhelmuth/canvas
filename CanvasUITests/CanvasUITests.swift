@@ -82,6 +82,8 @@ final class CanvasUITests: XCTestCase {
         let humidity = app.switches["Humidity"]
         let wind = app.switches["Wind"]
         app.swipeUp()
+        let weatherSize = app.sliders["Weather size-slider"]
+        XCTAssertTrue(weatherSize.waitForExistence(timeout: 3))
         XCTAssertTrue(feelsLike.waitForExistence(timeout: 3))
         XCTAssertTrue(humidity.waitForExistence(timeout: 3))
         XCTAssertTrue(wind.waitForExistence(timeout: 3))

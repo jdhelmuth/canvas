@@ -73,6 +73,7 @@ struct PlayerView: View {
         .onChange(of: model.currentAsset?.id) { _, _ in scheduleHide() }
         .onChange(of: model.isPlaying) { _, _ in scheduleHide() }
         .onChange(of: store.settings.overlays.showWeather) { _, _ in updateWeather() }
+        .onChange(of: store.settings.effectiveWeatherSource) { _, _ in updateWeather() }
         .onChange(of: store.settings) { _, updated in
             Task {
                 await model.updateSettings(updated)

@@ -414,9 +414,17 @@ final class CanvasTests: XCTestCase {
         XCTAssertFalse(defaults.effectiveWeatherShowWind)
         XCTAssertFalse(defaults.effectiveWeatherShowUVIndex)
         XCTAssertFalse(defaults.effectiveWeatherShowPrecipitationChance)
+        XCTAssertFalse(defaults.effectiveWeatherShowRainToday)
         XCTAssertFalse(defaults.effectiveWeatherShowDailyHighLow)
         XCTAssertFalse(defaults.effectiveWeatherShowSunriseSunset)
         XCTAssertFalse(defaults.effectiveWeatherShowNextHour)
+        XCTAssertEqual(defaults.effectiveWeatherSize, defaults.fontSize)
+
+        var independent = defaults
+        independent.weatherSize = 36
+        independent.fontSize = 18
+        XCTAssertEqual(independent.effectiveWeatherSize, 36)
+        XCTAssertEqual(independent.fontSize, 18)
 
         var legacy = OverlaySettings()
         legacy.weatherShowConditions = nil
@@ -452,6 +460,43 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(decoded.current?.usAQI, 36.4)
         XCTAssertEqual(OpenMeteoAirQualityProvider.coordinateString(40.44672), "40.45")
         XCTAssertEqual(OpenMeteoAirQualityProvider.coordinateString(-79.98214), "-79.98")
+    }
+
+    func testAmbientStationSettingsDefaultToWeatherKitAndNormalizeMAC() throws {
+        let encoded = try JSONEncoder().encode(CanvasSettings())
+        let decoded = try JSONDecoder().decode(CanvasSettings.self, from: encoded)
+        XCTAssertEqual(decoded.effectiveWeatherSource, .weatherKit)
+        XCTAssertNil(decoded.effectiveAmbientDeviceMAC)
+        XCTAssertEqual(
+            AmbientWeatherCanvasProvider.normalizeMAC("00-10-fa-aa-bb-cc"),
+            "00:10:FA:AA:BB:CC"
+        )
+        XCTAssertNil(AmbientWeatherCanvasProvider.normalizeMAC("WS-5000"))
+    }
+
+    func testAmbientReadingDecodingAndObservationGlyphMapping() throws {
+        let data = Data(#"{"reading":{"tempF":72.4,"apparentTempF":70.1,"humidityPercent":48,"windMph":8.2,"windGustMph":12.3,"windDirectionDeg":315,"pressureInHg":29.9,"uvIndex":0,"hourlyRainIn":0.2,"rainTodayIn":0.4,"highF":78,"lowF":61,"asOf":"2026-08-12T20:00:00.000Z"}}"#.utf8)
+        let response = try JSONDecoder().decode(CanvasAmbientCurrentResponse.self, from: data)
+        let reading = try XCTUnwrap(response.reading)
+        let snapshot = AmbientWeatherCanvasProvider.snapshot(from: reading)
+
+        XCTAssertEqual(snapshot.symbolName, "cloud.rain.fill")
+        XCTAssertEqual(snapshot.condition, "Rain")
+        XCTAssertTrue(snapshot.temperature.contains("72"))
+        XCTAssertEqual(snapshot.humidityPercent, 48)
+        XCTAssertTrue(snapshot.wind?.contains("NW") == true)
+        XCTAssertTrue(snapshot.wind?.contains("8") == true)
+        XCTAssertEqual(snapshot.rainToday, "0.40 in")
+        XCTAssertEqual(snapshot.highTemperature?.contains("78"), true)
+        XCTAssertEqual(snapshot.lowTemperature?.contains("61"), true)
+    }
+
+    func testAmbientStationChoicesUseFriendlyLabelsWithoutShowingIdentifiers() throws {
+        let data = Data(#"{"devices":[{"macAddress":"00:10:FA:AA:BB:CC","name":"Backyard","location":"Pittsburgh"},{"macAddress":"00:10:FA:DD:EE:FF","name":"","location":""}]}"#.utf8)
+        let response = try JSONDecoder().decode(CanvasAmbientDeviceResponse.self, from: data)
+        XCTAssertEqual(response.devices[0].displayName, "Backyard · Pittsburgh")
+        XCTAssertEqual(response.devices[1].displayName, "Ambient station")
+        XCTAssertFalse(response.devices[0].displayName.contains(response.devices[0].macAddress))
     }
 
     func testWeatherSnapshotAQIEnrichmentPreservesWeatherKitDetails() {

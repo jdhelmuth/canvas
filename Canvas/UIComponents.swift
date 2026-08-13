@@ -313,6 +313,8 @@ struct WeatherOverlayWidget: View {
     let attributionURL: URL?
     let attributionMarkURL: URL?
 
+    private var weatherSize: CGFloat { CGFloat(settings.effectiveWeatherSize) }
+
     private struct Metric: Identifiable {
         let id: String
         let icon: String
@@ -355,7 +357,7 @@ struct WeatherOverlayWidget: View {
                                 .foregroundStyle(.white.opacity(textOpacity * 0.78))
                                 .lineLimit(1)
                         }
-                        .font(.system(size: max(12, settings.fontSize * 0.48), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                        .font(.system(size: max(12, weatherSize * 0.48), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Next hour, \(temperature), \(condition)")
                     }
@@ -363,7 +365,7 @@ struct WeatherOverlayWidget: View {
                     HStack(spacing: 2) {
                         if isUsingCachedSnapshot || snapshot.isStale {
                             Label("Last known", systemImage: "clock.arrow.circlepath")
-                                .font(.system(size: max(10, settings.fontSize * 0.42), weight: .medium, design: .rounded))
+                                .font(.system(size: max(10, weatherSize * 0.42), weight: .medium, design: .rounded))
                                 .foregroundStyle(.white.opacity(textOpacity * 0.7))
                                 .accessibilityLabel("Last known weather")
                         }
@@ -379,7 +381,7 @@ struct WeatherOverlayWidget: View {
                 .accessibilityElement(children: .contain)
             } else {
                 Label(status.title, systemImage: status.systemImage)
-                    .font(.system(size: max(12, settings.fontSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                    .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
                     .accessibilityLabel("Weather, \(status.title)")
             }
         }
@@ -391,15 +393,15 @@ struct WeatherOverlayWidget: View {
         HStack(spacing: 10) {
             WeatherConditionGlyph(
                 symbolName: snapshot.symbolName,
-                diameter: min(max(38, settings.fontSize * 1.85), 62)
+                diameter: min(max(38, weatherSize * 1.85), 62)
             )
             VStack(alignment: .leading, spacing: 0) {
                 Text(snapshot.temperature)
-                    .font(.system(size: min(max(24, settings.fontSize * 1.28), 58), weight: .medium, design: .rounded))
+                    .font(.system(size: min(max(24, weatherSize * 1.28), 58), weight: .medium, design: .rounded))
                     .fontWidth(.condensed)
                     .overlayTextStroke(settings: settings, mediaImage: mediaImage, opacity: textOpacity)
                 Text(snapshot.condition)
-                    .font(.system(size: max(12, settings.fontSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                    .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
                     .foregroundStyle(.white.opacity(textOpacity * 0.78))
                     .lineLimit(1)
             }
@@ -435,6 +437,9 @@ struct WeatherOverlayWidget: View {
         if settings.effectiveWeatherShowPrecipitationChance, let value = snapshot.precipitationChancePercent {
             result.append(Metric(id: "precipitation", icon: "umbrella.fill", text: "\(value)%", accessibilityText: "Precipitation chance \(value) percent", tint: .blue))
         }
+        if settings.effectiveWeatherShowRainToday, let value = snapshot.rainToday {
+            result.append(Metric(id: "rain-today", icon: "drop.fill", text: value, accessibilityText: "Rain today \(value)", tint: .blue))
+        }
         if settings.effectiveWeatherShowDailyHighLow,
            let high = snapshot.highTemperature,
            let low = snapshot.lowTemperature {
@@ -469,7 +474,7 @@ struct WeatherOverlayWidget: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.74)
         }
-        .font(.system(size: max(11, settings.fontSize * 0.47), weight: .semibold, design: .rounded))
+        .font(.system(size: max(11, weatherSize * 0.47), weight: .semibold, design: .rounded))
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -481,7 +486,7 @@ struct WeatherOverlayWidget: View {
     private func widgetWidth(for snapshot: CanvasWeatherSnapshot) -> CGFloat {
         let hasExpandedDetails = metrics(for: snapshot).count > 1 || settings.effectiveWeatherShowNextHour
         let base = hasExpandedDetails ? 350.0 : 258.0
-        let scale = min(max(settings.fontSize / 22, 0.9), 1.25)
+        let scale = min(max(weatherSize / 22, 0.72), 1.65)
         return base * scale
     }
 }

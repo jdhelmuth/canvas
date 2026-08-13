@@ -11,6 +11,10 @@ struct SettingsView: View {
     @State private var showPresetPrompt = false
     @State private var presetNameError: String?
     @State private var showAudioImporter = false
+    @State private var ambientAPIKey = CanvasAmbientCredentialStore.loadAPIKey() ?? ""
+    @State private var ambientStations: [CanvasAmbientDevice] = []
+    @State private var ambientStationsLoading = false
+    @State private var ambientStationsError: String?
     @State private var expandedOverlayGroups: Set<OverlaySettingsGroup> = [.visibility]
 
     private enum OverlaySettingsGroup: String, Hashable {
@@ -86,6 +90,21 @@ struct SettingsView: View {
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .onAppear {
+            ambientAPIKey = CanvasAmbientCredentialStore.loadAPIKey() ?? ""
+            if store.settings.overlays.showWeather {
+                store.weather.update(showWeather: true)
+            }
+            if store.settings.effectiveWeatherSource == .ambientStation {
+                Task { @MainActor in await loadAmbientStations() }
+            }
+        }
+        .onChange(of: store.settings.effectiveWeatherSource) { _, source in
+            if source == .ambientStation {
+                Task { @MainActor in await loadAmbientStations() }
+            } else {
+                ambientStations = []
+                ambientStationsError = nil
+            }
             if store.settings.overlays.showWeather {
                 store.weather.update(showWeather: true)
             }
@@ -331,6 +350,60 @@ struct SettingsView: View {
             DisclosureGroup(isExpanded: overlayGroupBinding(.weather)) {
                 Toggle("Current weather (opt-in)", isOn: binding(\.overlays.showWeather))
                 if store.settings.overlays.showWeather {
+                    Picker("Weather source", selection: weatherSourceBinding) {
+                        ForEach(CanvasWeatherSource.allCases) { Text($0.title).tag($0) }
+                    }
+                    if store.settings.effectiveWeatherSource == .ambientStation {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SecureField("Ambient personal API key", text: $ambientAPIKey)
+                                .textContentType(.password)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .accessibilityIdentifier("ambient-api-key-field")
+                            if ambientStationsLoading {
+                                ProgressView("Finding your stations…")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else if !ambientStations.isEmpty {
+                                Picker("Station", selection: ambientStationBinding) {
+                                    ForEach(Array(ambientStations.enumerated()), id: \.element.macAddress) { index, station in
+                                        Text(ambientStationLabel(station, index: index))
+                                            .tag(station.macAddress)
+                                    }
+                                }
+                                if ambientStations.count > 1 {
+                                    Text("Choose which Ambient station supplies Canvas. You can change this anytime.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Text("ClimateIQ supplies its shared Ambient application key through the existing secure proxy. Canvas stores only your personal key in Keychain. Save your key to load the stations linked to your Ambient account.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            if let ambientStationsError {
+                                Text(ambientStationsError)
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                            }
+                            HStack {
+                                Button("Save & find stations") { saveAmbientConnection() }
+                                    .buttonStyle(.borderedProminent)
+                                    .accessibilityIdentifier("save-ambient-connection")
+                                if CanvasAmbientCredentialStore.loadAPIKey() != nil {
+                                    Button("Forget key", role: .destructive) {
+                                        ambientAPIKey = ""
+                                        CanvasAmbientCredentialStore.clearAPIKey()
+                                        ambientStations = []
+                                        ambientStationsError = nil
+                                        store.settingsStore.update { $0.ambientDeviceMAC = nil }
+                                        CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
+                                        store.weather.update(showWeather: true)
+                                    }
+                                    .buttonStyle(.bordered)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
                     weatherStatusRow
                     Text("The minimal layout shows current conditions and AQI. Add only the details you want to see at a glance.")
                         .font(.footnote)
@@ -344,15 +417,32 @@ struct SettingsView: View {
                         "Air quality index",
                         isOn: optionalOverlayBinding(\.weatherShowAirQuality, default: true)
                     )
+                    .accessibilityLabel("Air quality index")
                     .accessibilityIdentifier("weather-air-quality-toggle")
                     Toggle("Feels like", isOn: optionalOverlayBinding(\.weatherShowFeelsLike, default: false))
                     Toggle("Humidity", isOn: optionalOverlayBinding(\.weatherShowHumidity, default: false))
                     Toggle("Wind", isOn: optionalOverlayBinding(\.weatherShowWind, default: false))
                     Toggle("UV index", isOn: optionalOverlayBinding(\.weatherShowUVIndex, default: false))
-                    Toggle("Precipitation chance", isOn: optionalOverlayBinding(\.weatherShowPrecipitationChance, default: false))
+                    if store.settings.effectiveWeatherSource == .ambientStation {
+                        Toggle("Rain today", isOn: optionalOverlayBinding(\.weatherShowRainToday, default: false))
+                    } else {
+                        Toggle("Precipitation chance", isOn: optionalOverlayBinding(\.weatherShowPrecipitationChance, default: false))
+                    }
                     Toggle("Today's high & low", isOn: optionalOverlayBinding(\.weatherShowDailyHighLow, default: false))
-                    Toggle("Sunrise & sunset", isOn: optionalOverlayBinding(\.weatherShowSunriseSunset, default: false))
-                    Toggle("Next-hour outlook", isOn: optionalOverlayBinding(\.weatherShowNextHour, default: false))
+                    if store.settings.effectiveWeatherSource == .weatherKit {
+                        Toggle("Sunrise & sunset", isOn: optionalOverlayBinding(\.weatherShowSunriseSunset, default: false))
+                        Toggle("Next-hour outlook", isOn: optionalOverlayBinding(\.weatherShowNextHour, default: false))
+                    }
+                    InlineSliderRow(
+                        title: "Weather size",
+                        value: optionalOverlayBinding(
+                            \.weatherSize,
+                            default: store.settings.overlays.effectiveWeatherSize
+                        ),
+                        range: 12...48,
+                        valueText: { "\(Int($0.rounded())) pt" }
+                    )
+                    .accessibilityHint("Adjust weather independently from the clock and date text.")
                     WeatherDataAttributionView(
                         weatherDestination: store.weather.attributionURL,
                         weatherMarkURL: store.weather.attributionMarkURL
@@ -411,10 +501,10 @@ struct SettingsView: View {
                     UIApplication.shared.open(url)
                 }
                 .buttonStyle(.bordered)
-            case .networkUnavailable, .serviceUnavailable, .authorizationUnavailable, .entitlementMissing, .locationUnavailable:
+            case .networkUnavailable, .serviceUnavailable, .authorizationUnavailable, .entitlementMissing, .locationUnavailable, .ambientUnavailable:
                 Button("Retry weather") { store.weather.update(showWeather: true) }
                     .buttonStyle(.bordered)
-            case .disabled, .requestingLocation, .locating, .fetching, .live:
+            case .disabled, .requestingLocation, .locating, .fetching, .live, .ambientConfigurationMissing:
                 EmptyView()
             }
         }
@@ -516,7 +606,7 @@ struct SettingsView: View {
     private var privacySection: some View {
         Section("Storage & Privacy") {
             Label("Private by default", systemImage: "lock.shield.fill")
-            Text("Canvas stores preferences and exclusions locally. Apple photos remain in Apple Photos. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. If you enable weather, Canvas sends location to Apple Weather and an approximately one-kilometer location to Open-Meteo for AQI. Canvas has no analytics, ads, or tracking.")
+            Text("Canvas stores preferences and exclusions locally. Apple photos remain in Apple Photos. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. WeatherKit sends location to Apple; Ambient sends your personal API key and station identifier to ClimateIQ's secure proxy, while the shared application key stays server-side. AQI uses an approximately one-kilometer location with Open-Meteo. Canvas has no analytics, ads, or tracking.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -580,6 +670,79 @@ struct SettingsView: View {
         }
         store.settingsStore.settings.audioFileURLs = Array(Set(copied))
     }
+
+    private var weatherSourceBinding: Binding<CanvasWeatherSource> {
+        Binding(
+            get: { store.settings.effectiveWeatherSource },
+            set: { value in
+                store.settingsStore.update { $0.weatherSource = value }
+            }
+        )
+    }
+
+    private var ambientStationBinding: Binding<String> {
+        Binding(
+            get: { store.settings.effectiveAmbientDeviceMAC ?? ambientStations.first?.macAddress ?? "" },
+            set: { value in
+                store.settingsStore.update { $0.ambientDeviceMAC = value.isEmpty ? nil : value }
+                CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
+                if store.settings.overlays.showWeather {
+                    store.weather.update(showWeather: true)
+                }
+            }
+        )
+    }
+
+    private func ambientStationLabel(_ station: CanvasAmbientDevice, index: Int) -> String {
+        station.displayName == "Ambient station" ? "Ambient station \(index + 1)" : station.displayName
+    }
+
+    private func saveAmbientConnection() {
+        CanvasAmbientCredentialStore.saveAPIKey(ambientAPIKey)
+        store.settingsStore.update { $0.ambientDeviceMAC = nil }
+        CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
+        ambientStations = []
+        ambientStationsError = nil
+        Task { @MainActor in
+            await loadAmbientStations()
+            store.weather.update(showWeather: store.settings.overlays.showWeather)
+        }
+    }
+
+    @MainActor
+    private func loadAmbientStations() async {
+        guard store.settings.effectiveWeatherSource == .ambientStation else { return }
+        let key = ambientAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            ambientStations = []
+            ambientStationsError = nil
+            ambientStationsLoading = false
+            return
+        }
+
+        ambientStationsLoading = true
+        ambientStationsError = nil
+        defer { ambientStationsLoading = false }
+        do {
+            let devices = try await AmbientWeatherCanvasProvider(apiKey: key).availableDevices()
+            guard !Task.isCancelled else { return }
+            ambientStations = devices
+            let current = store.settings.effectiveAmbientDeviceMAC
+            let selected = current.flatMap { current in devices.contains(where: { $0.macAddress == current }) ? current : nil }
+                ?? devices.first?.macAddress
+            if selected != current {
+                store.settingsStore.update { $0.ambientDeviceMAC = selected }
+                CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled else { return }
+            ambientStations = []
+            ambientStationsError = "Couldn’t load your stations. Check the key and try again."
+        }
+    }
+
     private func binding<T>(_ keyPath: WritableKeyPath<CanvasSettings, T>) -> Binding<T> {
         Binding(
             get: { store.settings[keyPath: keyPath] },
