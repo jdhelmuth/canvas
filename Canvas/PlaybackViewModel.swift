@@ -40,6 +40,10 @@ final class PlaybackViewModel: ObservableObject {
     private var canvasSize: CGSize = .zero
     private var loadGeneration = 0
     private var timerToken: UInt64 = 0
+    private var reloadInFlight = false
+    private var pendingReload = false
+    private var pendingSettings: CanvasSettings?
+    private var pendingQueueRebuild = false
 
     var currentAsset: CanvasMediaItem? { displayedFrame?.asset }
     var currentImage: UIImage? { displayedFrame?.image }
@@ -49,23 +53,114 @@ final class PlaybackViewModel: ObservableObject {
     func configure(library: PhotoLibraryService, googlePhotos: GooglePhotosService, loader: AssetImageLoader, settings: CanvasSettings) {
         guard !configured else { return }
         self.library = library; self.googlePhotos = googlePhotos; self.loader = loader; self.settings = settings; configured = true
-        Task { await reload() }
+        Task { [weak self] in await self?.reload() }
     }
 
-    func reload(settings updatedSettings: CanvasSettings? = nil) async {
+    func refreshLibrary() async {
+        await reload()
+    }
+
+    /// Coalesces provider/settings notifications while the current frame is
+    /// loading. Photos can report several changes during startup; each
+    /// notification must not cancel and restart the same first frame.
+    func reload(settings updatedSettings: CanvasSettings? = nil, rebuildQueue: Bool = false) async {
+        if reloadInFlight {
+            pendingReload = true
+            if let updatedSettings { pendingSettings = updatedSettings }
+            pendingQueueRebuild = pendingQueueRebuild || rebuildQueue
+            return
+        }
+
+        reloadInFlight = true
+        defer {
+            reloadInFlight = false
+            if !pendingReload || Task.isCancelled {
+                pendingReload = false
+                pendingSettings = nil
+                pendingQueueRebuild = false
+            } else {
+                let nextSettings = pendingSettings
+                let nextQueueRebuild = pendingQueueRebuild
+                pendingReload = false
+                pendingSettings = nil
+                pendingQueueRebuild = false
+                Task { [weak self] in
+                    await self?.reload(settings: nextSettings, rebuildQueue: nextQueueRebuild)
+                }
+            }
+        }
+
+        await performReload(settings: updatedSettings, rebuildQueue: rebuildQueue)
+    }
+
+    private func performReload(settings updatedSettings: CanvasSettings?, rebuildQueue: Bool) async {
         guard let library else { return }
+        if let updatedSettings { settings = updatedSettings }
+
+        let appleItems = library.mediaItems(for: settings.selectedAlbums, filters: settings.filters)
+        let googleItems = googlePhotos?.items(for: settings.selectedAlbums, filters: settings.filters) ?? []
+        let assets = MediaIdentityMatcher.deduplicated(appleItems + googleItems)
+        let queueCurrentAssetID = queue.indices.contains(currentIndex) ? queue[currentIndex].id : nil
+        let displayedAssetID = displayedFrame?.asset.id
+        let identityToPreserve = queueCurrentAssetID ?? displayedAssetID
+        let candidateQueue: [CanvasMediaItem]
+        if rebuildQueue {
+            candidateQueue = QueueBuilder.build(
+                assets,
+                mode: settings.queueMode,
+                repeatEnabled: settings.repeatEnabled,
+                previousIDs: previousIDs,
+                recentAvoidance: settings.recentAvoidance,
+                shuffleSeed: Int.random(in: Int.min...Int.max)
+            )
+        } else {
+            candidateQueue = QueueBuilder.refresh(
+                queue,
+                with: assets,
+                mode: settings.queueMode,
+                repeatEnabled: settings.repeatEnabled,
+                previousIDs: previousIDs,
+                recentAvoidance: settings.recentAvoidance,
+                shuffleSeed: Int.random(in: Int.min...Int.max)
+            )
+        }
+        let candidateIndex = PlaybackQueueIdentity.index(
+            for: identityToPreserve,
+            in: candidateQueue,
+            fallbackIndex: currentIndex
+        )
+        let canPreserveFrame = PlaybackQueueIdentity.canPreserveDisplayedFrame(
+            currentAssetID: displayedAssetID,
+            queueCurrentAssetID: queueCurrentAssetID,
+            displayedGroupIDs: displayedFrame?.layoutAssets.map(\.id) ?? [],
+            candidateQueue: candidateQueue,
+            forceReload: rebuildQueue
+        )
+
+        queue = candidateQueue
+        queueCount = queue.count
+        currentIndex = candidateIndex
+
+        if canPreserveFrame {
+            // Keep the current visual frame and its transition route intact;
+            // only the future queue may have changed underneath it.
+            navigationHistory.reset(to: currentPosition)
+            startTimer()
+            return
+        }
+
         cancelTimer()
         loadTask?.cancel()
         loadGeneration &+= 1
         let generation = loadGeneration
-        if let updatedSettings { settings = updatedSettings }
-        let appleItems = library.mediaItems(for: settings.selectedAlbums, filters: settings.filters)
-        let googleItems = googlePhotos?.items(for: settings.selectedAlbums, filters: settings.filters) ?? []
-        let assets = MediaIdentityMatcher.deduplicated(appleItems + googleItems)
-        queue = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: settings.repeatEnabled, previousIDs: previousIDs, recentAvoidance: settings.recentAvoidance, shuffleSeed: Int.random(in: Int.min...Int.max))
-        queueCount = queue.count
-        currentIndex = min(currentIndex, max(0, queue.count - 1))
         navigationHistory = PlaybackNavigationHistory()
+
+        guard !queue.isEmpty else {
+            displayedFrame = nil
+            errorMessage = "Choose an album with playable media to start Canvas."
+            return
+        }
+
         await loadCurrent(generation: generation, transitionSeed: 1, gestureDirection: 0)
         guard !Task.isCancelled, loadGeneration == generation else { return }
         if displayedFrame != nil, queue.indices.contains(currentIndex) {
@@ -84,10 +179,10 @@ final class PlaybackViewModel: ObservableObject {
             || settings.queueMode != updatedSettings.queueMode
             || settings.recentAvoidance != updatedSettings.recentAvoidance
             || settings.layout != updatedSettings.layout
-        settings = updatedSettings
         if requiresReload {
-            await reload(settings: updatedSettings)
+            await reload(settings: updatedSettings, rebuildQueue: true)
         } else {
+            settings = updatedSettings
             startTimer()
         }
     }

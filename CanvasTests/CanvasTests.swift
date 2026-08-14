@@ -69,6 +69,60 @@ final class CanvasTests: XCTestCase {
         XCTAssertNotEqual(first, second)
     }
 
+    func testProviderRefreshPreservesStartedQueueAndAdvancesPastFirstItemOnce() {
+        let assets = (0..<4).map { index in
+            CanvasMediaItem(
+                id: "apple:startup-\(index)",
+                source: .applePhotos,
+                kind: .photo,
+                creationDate: nil,
+                filename: "startup-\(index).jpg",
+                isFavorite: false,
+                pixelWidth: 1600,
+                pixelHeight: 900,
+                albumTitle: "Frame",
+                appleAsset: nil,
+                localURL: nil,
+                contentHash: nil
+            )
+        }
+        XCTAssertEqual(assets.map(\.id), ["apple:startup-0", "apple:startup-1", "apple:startup-2", "apple:startup-3"])
+        let initial = QueueBuilder.build(assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 42)
+        var refreshed = QueueBuilder.refresh(initial, with: assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 99)
+        let firstID = initial[0].id
+
+        XCTAssertEqual(refreshed.map(\.id), initial.map(\.id))
+        for _ in 0..<3 {
+            XCTAssertTrue(
+                PlaybackQueueIdentity.canPreserveDisplayedFrame(
+                    currentAssetID: firstID,
+                    queueCurrentAssetID: firstID,
+                    displayedGroupIDs: [firstID],
+                    candidateQueue: refreshed,
+                    forceReload: false
+                )
+            )
+            refreshed = QueueBuilder.refresh(refreshed, with: assets, mode: .shuffle, repeatEnabled: true, shuffleSeed: 99)
+            XCTAssertEqual(refreshed.map(\.id), initial.map(\.id))
+            XCTAssertEqual(Set(refreshed.map(\.id)), Set(assets.map(\.id)))
+        }
+
+        let currentIndex = PlaybackQueueIdentity.index(for: firstID, in: refreshed, fallbackIndex: 0)
+        let nextIndex = PlaybackAdvancePolicy.destinationIndex(
+            imageSizes: refreshed.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) },
+            currentIndex: currentIndex,
+            direction: 1,
+            layout: .single,
+            canvasSize: CGSize(width: 1194, height: 834),
+            repeatEnabled: true,
+            usesDisplayedGroup: true
+        )
+
+        XCTAssertEqual(nextIndex, (currentIndex + 1) % refreshed.count)
+        XCTAssertNotEqual(nextIndex, currentIndex)
+        XCTAssertEqual(refreshed[nextIndex ?? 0].id, initial[(initial.firstIndex { $0.id == firstID }! + 1) % initial.count].id)
+    }
+
     func testQueueShuffleMixesOrientationRunsWithoutDroppingMedia() {
         let assets = (0..<12).map { index in
             let isPortrait = index < 6
@@ -612,6 +666,7 @@ final class CanvasTests: XCTestCase {
             659,
             accuracy: 0.001
         )
+        XCTAssertFalse(WeatherOverlayFooterPolicy.rendersCompactVisualFooter)
     }
 
     func testPlaybackTimingPolicyRejectsZeroPhotoDurationAndPreservesUnlimitedVideo() {
@@ -1680,6 +1735,12 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(FrameLaunchPolicy.decision(for: [item]), .ready)
         let google = CanvasMediaItem(id: "google:frame", source: .googlePhotos, kind: .photo, creationDate: nil, filename: "google-frame.jpg", isFavorite: false, pixelWidth: 100, pixelHeight: 100, albumTitle: "Saved Google", appleAsset: nil, localURL: URL(fileURLWithPath: "/tmp/google-frame.jpg"), contentHash: "google-frame")
         XCTAssertEqual(FrameLaunchPolicy.decision(for: [google]), .ready)
+    }
+
+    func testFrameLaunchPolicyMakesRepeatedStartIdempotent() {
+        XCTAssertTrue(FrameLaunchPolicy.canStart(isPresented: false, isStarting: false))
+        XCTAssertFalse(FrameLaunchPolicy.canStart(isPresented: true, isStarting: false))
+        XCTAssertFalse(FrameLaunchPolicy.canStart(isPresented: false, isStarting: true))
     }
 
     func testMediaBackdropUsesCurrentMediaOnlyWhenConfiguredAndAvailable() {

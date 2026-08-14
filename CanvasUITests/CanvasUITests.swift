@@ -104,6 +104,7 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(weather.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(weather.frame.minX, clock.frame.midX)
         XCTAssertLessThanOrEqual(weather.frame.maxX, app.windows.firstMatch.frame.maxX)
+        XCTAssertFalse(app.staticTexts["Last known"].exists)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Clock and weather overlay"
         attachment.lifetime = .keepAlways

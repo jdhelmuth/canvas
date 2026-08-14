@@ -46,6 +46,10 @@ enum FrameLaunchPolicy {
     static func hasPlayableMedia(_ items: [CanvasMediaItem]) -> Bool {
         !MediaIdentityMatcher.deduplicated(items).isEmpty
     }
+
+    static func canStart(isPresented: Bool, isStarting: Bool) -> Bool {
+        !isPresented && !isStarting
+    }
 }
 
 /// Describes the source used for the frame's behind-media treatment. Keeping
@@ -446,6 +450,13 @@ enum WeatherClockLayoutPolicy {
     }
 }
 
+/// The compact live weather card has no stale-data footer. Current weather
+/// content remains in the card, while attribution and actionable status stay
+/// on their dedicated non-stale surfaces.
+enum WeatherOverlayFooterPolicy {
+    static let rendersCompactVisualFooter = false
+}
+
 enum CanvasAirQualityCategory: String, CaseIterable, Sendable {
     case good
     case moderate
@@ -762,6 +773,38 @@ enum PlaybackAdvancePolicy {
         shuffleEachLoop: Bool
     ) -> Bool {
         shuffleEachLoop && targetIndex == nil && direction > 0 && currentIndex == 0
+    }
+}
+
+/// Keeps a provider refresh from turning a stable frame into a new session.
+/// Queue positions are disposable; media identifiers and the currently
+/// displayed group are the durable playback identity.
+enum PlaybackQueueIdentity {
+    static func index(
+        for assetID: String?,
+        in queue: [CanvasMediaItem],
+        fallbackIndex: Int
+    ) -> Int {
+        guard !queue.isEmpty else { return 0 }
+        if let assetID, let index = queue.firstIndex(where: { $0.id == assetID }) {
+            return index
+        }
+        return min(max(fallbackIndex, 0), queue.count - 1)
+    }
+
+    static func canPreserveDisplayedFrame(
+        currentAssetID: String?,
+        queueCurrentAssetID: String?,
+        displayedGroupIDs: [String],
+        candidateQueue: [CanvasMediaItem],
+        forceReload: Bool
+    ) -> Bool {
+        guard !forceReload,
+              let currentAssetID,
+              currentAssetID == queueCurrentAssetID,
+              !displayedGroupIDs.isEmpty else { return false }
+        let candidateIDs = Set(candidateQueue.map(\.id))
+        return displayedGroupIDs.allSatisfy(candidateIDs.contains)
     }
 }
 
