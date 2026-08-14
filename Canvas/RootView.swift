@@ -387,7 +387,7 @@ struct LibraryHomeView: View {
     }
 
     private func startFrame() {
-        guard !isStartingFrame else { return }
+        guard FrameLaunchPolicy.canStart(isPresented: showPlayer, isStarting: isStartingFrame) else { return }
         isStartingFrame = true
         // Resolve the same sources PlaybackViewModel uses, on the button's
         // main-actor action. The old detached Task could leave the button in a

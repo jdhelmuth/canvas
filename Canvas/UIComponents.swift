@@ -373,13 +373,11 @@ struct WeatherOverlayWidget: View {
                         .accessibilityLabel("Next hour, \(temperature), \(condition)")
                     }
 
+                    // Attribution remains available for current weather data.
+                    // The stale-data label belongs to the persisted service
+                    // state, not to this compact live card, so it is never
+                    // rendered as a footer or moved to another row.
                     HStack(spacing: 2) {
-                        if isUsingCachedSnapshot || snapshot.isStale {
-                            Label("Last known", systemImage: "clock.arrow.circlepath")
-                                .font(.system(size: max(10, weatherSize * 0.42), weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(textOpacity * 0.7))
-                                .accessibilityLabel("Last known weather")
-                        }
                         Spacer(minLength: 0)
                         WeatherLegalLink(destination: attributionURL, markURL: attributionMarkURL)
                         if settings.effectiveWeatherShowAirQuality, snapshot.airQualityIndex != nil {

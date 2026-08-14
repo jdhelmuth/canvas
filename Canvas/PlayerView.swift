@@ -70,7 +70,7 @@ struct PlayerView: View {
         .onAppear { store.power.refresh(); if powerAllowsPlayback { store.power.beginPlayback(keepAwake: store.settings.keepAwake) }; scheduleHide() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
-        .onChange(of: store.library.libraryRevision) { _, _ in Task { await model.reload() } }
+        .onChange(of: store.library.libraryRevision) { _, _ in Task { await model.refreshLibrary() } }
         .onChange(of: model.currentAsset?.id) { _, _ in scheduleHide() }
         .onChange(of: model.isPlaying) { _, _ in scheduleHide() }
         .onChange(of: store.settings.overlays.showWeather) { _, _ in updateWeather() }
@@ -87,7 +87,7 @@ struct PlayerView: View {
         }
         .onChange(of: store.googlePhotos.albums) { _, _ in
             Task {
-                await model.reload(settings: store.settings)
+                await model.refreshLibrary()
                 if model.queueCount == 0 { dismiss() }
             }
         }
