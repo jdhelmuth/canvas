@@ -84,6 +84,7 @@ final class SettingsStore: ObservableObject {
 final class AppStore: ObservableObject {
     let settingsStore: SettingsStore
     let library: PhotoLibraryService
+    let googlePhotosMirror: GooglePhotosMirrorService
     let googlePhotos: GooglePhotosService
     let queue: QueueService
     let loader: AssetImageLoader
@@ -134,6 +135,7 @@ final class AppStore: ObservableObject {
             settingsStore.settings.overlays.weatherShowNextHour = true
         }
         library = PhotoLibraryService()
+        googlePhotosMirror = GooglePhotosMirrorService()
         googlePhotos = GooglePhotosService()
         // Repair selections left by an older build or by deleting a saved
         // Google album while its picker view was not observing the change.

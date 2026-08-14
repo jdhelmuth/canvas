@@ -14,9 +14,9 @@ Build output is intentionally excluded from the repository. Physical installatio
 
 ## First run
 
-Canvas explains Photos access during onboarding, supports Full and Limited Photos authorization, then lets the user combine regular, smart, and shared albums. The default frame is shuffled, repeating, ten seconds per photo, with a one-second crossfade and the screen kept awake during active playback.
+Canvas explains Photos access during onboarding, supports Full and Limited Photos authorization for browsing, then lets the user combine regular, smart, and shared albums. Full Photos access is required to safely create and reuse the named Apple Photos album used for explicit Google imports. The default frame is shuffled, repeating, ten seconds per photo, with a one-second crossfade and the screen kept awake during active playback.
 
-All adjustable values are stored as one versioned Codable settings document in UserDefaults. Imported local audio is copied into Application Support/Canvas Audio. The original Photos library is never duplicated or modified by Canvas.
+All adjustable values are stored as one versioned Codable settings document in UserDefaults. Imported local audio is copied into Application Support/Canvas Audio. Explicit Google imports are stored locally and copied non-destructively into one named Apple Photos album; Apple Photos also shows those assets in All Photos. Canvas never deletes or replaces Apple Photos assets.
 
 ## Architecture
 
@@ -39,13 +39,13 @@ The unit suite covers deterministic shuffle and linear queues, favorites/date or
 
 ## Apple-platform limitations
 
-- Limited Photos access is intentionally honored; Canvas cannot show albums or assets outside the user-approved set. Users can change the scope in Settings.
+- Limited Photos access is honored for browsing, but it cannot safely create, find, and verify a reusable named album. Google imports remain intact locally and Apple Photos mirroring stays pending until the user chooses Full Access in Settings.
 - PhotoKit may return an iCloud loading error or an asset that was deleted while queued. Canvas reports the item and continues rather than crashing.
 - A physical-device build requires the user's Apple Developer signing team and a trusted, connected iPad. The simulator cannot reproduce the user's real Photos library, Live Photos, or iCloud media.
 - iPadOS may suspend a foregrounded/backgrounded process and does not guarantee wake, unlock, or schedule execution while the app is not running. Schedules therefore evaluate while Canvas is active and explicitly explain this limitation. Canvas's separate automatic night mode applies an in-app low-light treatment to an open frame from 10 PM to 7 AM by default, returns to normal automatically, and never changes system brightness.
 - Weather overlays use WeatherKit with a one-time When In Use location permission for current conditions, feels-like temperature, humidity, wind, UV, precipitation chance, today's high/low, sunrise/sunset, and a next-hour outlook. Optional AQI uses Open-Meteo/CAMS with coordinates rounded to approximately one-kilometer precision because WeatherKit does not expose AQI. Canvas keeps the last successful snapshot locally and reports clear states for denied location, offline access, missing WeatherKit entitlement, and service failures. The `com.johnhelmuth.canvas` App ID must have WeatherKit enabled in both its **App Capabilities** and **App Services** tabs before a signed device build can return live conditions. After changing either setting, refresh signing/provisioning and install a newly signed build.
 - Apple Music playback is not enabled. Local imported audio works without a subscription; MusicKit requires a separate entitlement, user authorization, and policy review.
-- PhotoKit does not provide a universally reliable duplicate-photo identity across libraries. Canvas avoids duplicate asset identifiers when combining albums and leaves content-level duplicate detection out unless Apple exposes a stable match.
+- PhotoKit does not provide a universal cross-library identity. For Google items Canvas explicitly mirrors, it persists Google-ID and SHA-256 mappings, verifies PhotoKit local identifiers, and uses deterministic resource markers to make retry and crash recovery idempotent.
 - Opening Photos is best-effort via the Photos URL scheme; the exact asset handoff is controlled by iPadOS.
 
 ## Privacy strings

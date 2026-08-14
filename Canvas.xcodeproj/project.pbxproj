@@ -412,8 +412,8 @@
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show current local weather when you turn on the weather overlay.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas does not need to add or change photos.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to your photos so it can display the albums you choose as a private digital frame.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas adds non-destructive copies of your selected Google Photos to a named Apple Photos album for organization and offline access.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to display chosen albums and safely create or reuse a named album for Google Photos you explicitly import.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -533,8 +533,8 @@
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show current local weather when you turn on the weather overlay.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas does not need to add or change photos.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to your photos so it can display the albums you choose as a private digital frame.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas adds non-destructive copies of your selected Google Photos to a named Apple Photos album for organization and offline access.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to display chosen albums and safely create or reuse a named album for Google Photos you explicitly import.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

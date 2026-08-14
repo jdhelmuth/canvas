@@ -664,7 +664,7 @@ struct AlbumPickerView: View {
                     Button { showGoogleImport = true } label: {
                         Label("Add or refresh a Google album", systemImage: "photo.badge.plus")
                     }
-                    Text("Saved Google selections appear here as albums. Google’s external Picker starts with media and requires searching for an album title; it cannot open to an album list.")
+                    Text("Google’s Picker returns only the items chosen in one session; it does not give Canvas a live album feed. Each run adds or refreshes those items in a saved Canvas album, keeps earlier selections, and copies new items into a dedicated Apple Photos album when Full Photos access is enabled.")
                         .font(.footnote).foregroundStyle(.secondary)
                     if googleAlbums.isEmpty {
                         Text("No Google albums saved yet.").font(.footnote).foregroundStyle(.secondary)
@@ -768,7 +768,7 @@ struct GooglePhotosImportView: View {
                             Label("Open Google Photos", systemImage: "photo.badge.plus")
                         }
                         .disabled(isBusy)
-                        Text("Canvas first tries the Google Photos app’s supported handoff, then falls back to the web Picker. Google starts with recent items—not an album list—so use Search for the album title, select its contents, and tap Done.")
+                        Text("Canvas cannot change what Google’s Picker shows. It starts with recent items—not an album list—so search for the album title, select up to 2,000 items, and tap Done. Use this same saved album name in another session to add another batch. With Full Photos access, Canvas also creates or reuses one named Apple Photos album and adds only new copies there.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }
@@ -806,15 +806,36 @@ struct GooglePhotosImportView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
-                        } else {
-                            Text(summary.isPartial ? "This Picker session has been closed. Start a new Google selection to try the remaining items." : "Canvas selected this saved album for your next frame. Tap Done to return to the album list, or choose photos again to update it.")
+                        }
+                        if summary.canRetryApplePhotosMirror {
+                            Button("Retry Apple Photos album") { retryApplePhotosMirror(summary.albumID) }
+                                .disabled(isBusy)
+                            Text("This retry uses Canvas’s already-downloaded files and does not reopen Google’s Picker. If Photos access is Limited or off, choose Full Access in Settings first.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if !summary.canRetryFailedItems && !summary.canRetryApplePhotosMirror {
+                            Text(summary.isPartial ? "This Picker session has been closed. Start a new Google selection to try the remaining items; everything already saved stays available." : "Canvas selected this saved album for your next frame. Tap Done to return to the album list, or start another Picker session with the same name to add or refresh more items.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
-                Section("How shared albums work") {
-                    Text("Google’s current Picker API does not let Canvas enumerate or browse your Google album list. To import a shared album, search for its title in Google Photos, select the items you want, and finish the Picker. Canvas saves those selected items offline as one Google album; repeat the flow with the same Canvas name to refresh it.")
+                Section("Shared albums and contributions") {
+                    Text("For photos added by someone else, first open the shared album in Google Photos while signed in to this account and choose Save photos to save all shared items to this account’s library. Saving only the album to Albums does not save its contents.")
+                        .accessibilityIdentifier("google-shared-contributor-guidance")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("Return to Canvas and start a new Picker session. Each session adds new items and refreshes matching Google IDs while previously saved Canvas items stay. Canvas cannot automatically follow later Google album changes, and Google limits a Picker session to 2,000 items.")
+                        .accessibilityIdentifier("google-additive-picker-guidance")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Link("Google shared-album help", destination: URL(string: "https://support.google.com/photos/answer/6131416")!)
+                }
+                Section("Apple Photos copy") {
+                    Text("After Canvas saves a Google selection locally, Full Photos access lets it add non-duplicate copies to one Apple Photos album with the saved name. Apple Photos necessarily shows those same assets in All Photos too. Canvas never deletes or replaces Apple Photos assets, even if you delete the saved Canvas album or disconnect Google.")
+                        .accessibilityIdentifier("google-apple-photos-mirror-guidance")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("Limited Photos access is not enough to safely find and verify a reusable named album. Choose Full Access in Settings, then use Retry Apple Photos album—no new Google selection is needed.")
+                        .accessibilityIdentifier("google-apple-full-access-guidance")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if !store.googlePhotos.configurationAvailable {
@@ -829,13 +850,25 @@ struct GooglePhotosImportView: View {
                     }
                 }
                 if !store.googlePhotos.albums.isEmpty {
-                    Section("Synced Google albums") {
+                    Section("Saved Google albums") {
                         ForEach(store.googlePhotos.albums) { album in
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(album.title)
                                     Text("\(album.items.count) items · Updated \(album.updatedAt.formatted(date: .abbreviated, time: .shortened))")
                                         .font(.caption).foregroundStyle(.secondary)
+                                    Text(store.googlePhotosMirror.statusDescription(for: album.id))
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                    if store.googlePhotosMirror.shouldOfferRetry(
+                                        for: album.id,
+                                        expectedItemCount: album.items.count
+                                    ) {
+                                        Button("Retry Apple Photos album") {
+                                            retryApplePhotosMirror(album.id)
+                                        }
+                                        .font(.caption)
+                                        .disabled(isBusy)
+                                    }
                                 }
                                 Spacer()
                                 Button { albumToDelete = album } label: {
@@ -873,7 +906,7 @@ struct GooglePhotosImportView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Delete \(albumToDelete?.title ?? "this album") from Canvas only. Nothing will be deleted from Google Photos.")
+                Text("Delete \(albumToDelete?.title ?? "this album") from Canvas only. Nothing will be deleted from Google Photos or Apple Photos; the Apple album and its copies remain.")
             }
         }
     }
@@ -901,7 +934,7 @@ struct GooglePhotosImportView: View {
                 case nil:
                     Text("Opening the Google Photos picker…")
                 }
-                Text("The Picker starts with recent media. Use Search for the album title, select its photos or videos, and finish the selection.")
+                Text("The Picker starts with recent media. Search for the album title, select up to 2,000 photos or videos, and finish. Another session with the same saved album name adds another batch without removing earlier items.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Button("Open Picker again") { reopenPicker() }
                     .disabled(!isBusy)
@@ -945,7 +978,11 @@ struct GooglePhotosImportView: View {
         albumName = resolvedTitle
         pickerTask?.cancel()
         pickerTask = Task { @MainActor in
-            await store.googlePhotos.syncAlbum(named: resolvedTitle, matchingWith: store.library)
+            await store.googlePhotos.syncAlbum(
+                named: resolvedTitle,
+                matchingWith: store.library,
+                mirrorWith: store.googlePhotosMirror
+            )
             if let summary = store.googlePhotos.lastImportSummary {
                 selectImportedAlbum(summary.albumID)
             }
@@ -976,10 +1013,24 @@ struct GooglePhotosImportView: View {
     private func retryFailedDownloads() {
         pickerTask?.cancel()
         pickerTask = Task { @MainActor in
-            await store.googlePhotos.retryFailedDownloads()
+            await store.googlePhotos.retryFailedDownloads(
+                mirroringWith: store.googlePhotosMirror,
+                photoLibrary: store.library
+            )
             if let summary = store.googlePhotos.lastImportSummary, !summary.albumID.isEmpty {
                 selectImportedAlbum(summary.albumID)
             }
+            pickerTask = nil
+        }
+    }
+    private func retryApplePhotosMirror(_ albumID: String) {
+        pickerTask?.cancel()
+        pickerTask = Task { @MainActor in
+            await store.googlePhotos.retryApplePhotosMirror(
+                albumID: albumID,
+                with: store.googlePhotosMirror,
+                photoLibrary: store.library
+            )
             pickerTask = nil
         }
     }

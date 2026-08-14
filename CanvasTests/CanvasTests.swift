@@ -2001,6 +2001,7 @@ final class CanvasTests: XCTestCase {
 
     func testGooglePickerWaitIsBounded() {
         XCTAssertEqual(GooglePhotosService.maximumPickerWait, 300, accuracy: 0.001)
+        XCTAssertEqual(GooglePhotosService.maximumPickerItemCount, 2_000)
     }
 
     func testGooglePickerPaginationTracksPagesAndStopsOnEmptyToken() {
@@ -2031,6 +2032,8 @@ final class CanvasTests: XCTestCase {
             title: "Shared family",
             selectedCount: 404,
             savedCount: 20,
+            preservedCount: 50,
+            totalSavedCount: 70,
             skippedCount: 384,
             failureSummaries: [GoogleImportFailureSummary(category: .rateLimited, count: 300, example: "HTTP 429"), GoogleImportFailureSummary(category: .processing, count: 84, example: "HTTP 404")],
             canRetryFailedItems: true,
@@ -2038,8 +2041,203 @@ final class CanvasTests: XCTestCase {
         )
         XCTAssertTrue(summary.isPartial)
         XCTAssertTrue(summary.message.contains("20 saved of 404 selected"))
+        XCTAssertTrue(summary.message.contains("kept 50 previously saved items"))
+        XCTAssertTrue(summary.message.contains("70 total items are available"))
         XCTAssertEqual(summary.failureSummaries.map(\.count).reduce(0, +), 384)
         XCTAssertTrue(summary.canRetryFailedItems)
+    }
+
+    func testGoogleSameNameSessionsRetainMixedContributorItemsAndStableAlbumIdentity() throws {
+        // Picker does not expose contributor metadata. These IDs model items
+        // returned from separate sessions after each contributor's media became
+        // selectable in the signed-in Google library.
+        let mine = makeGoogleRecord(id: "john-upload", timestamp: 100)
+        let contributed = makeGoogleRecord(id: "wife-upload", timestamp: 200)
+        let original = GoogleAlbumRecord(
+            id: "google-album:google-home",
+            title: "Google Home",
+            items: [mine],
+            updatedAt: Date(timeIntervalSince1970: 100),
+            matchedAppleAlbumID: "apple-family"
+        )
+
+        let plan = GoogleAlbumImportPolicy.adding(
+            title: "Google Home",
+            records: [contributed],
+            matchedAppleAlbumID: nil,
+            to: [original],
+            updatedAt: Date(timeIntervalSince1970: 300),
+            newAlbumID: "must-not-replace-stable-id"
+        )
+
+        XCTAssertTrue(plan.updatedExistingAlbum)
+        XCTAssertEqual(plan.albumID, original.id)
+        XCTAssertEqual(plan.itemMerge.records.map(\.googleID), [mine.googleID, contributed.googleID])
+        XCTAssertEqual(plan.itemMerge.preservedCount, 1)
+        XCTAssertEqual(plan.itemMerge.addedCount, 1)
+        XCTAssertEqual(plan.itemMerge.refreshedCount, 0)
+        XCTAssertEqual(plan.albums.first?.matchedAppleAlbumID, "apple-family")
+
+        let persisted = try JSONDecoder().decode(
+            [GoogleAlbumRecord].self,
+            from: JSONEncoder().encode(plan.albums)
+        )
+        XCTAssertEqual(persisted, plan.albums)
+    }
+
+    func testGoogleDifferentAlbumNameNeverCollapsesOnSharedSubset() {
+        let shared = makeGoogleRecord(id: "shared")
+        let original = GoogleAlbumRecord(
+            id: "google-album:first",
+            title: "First album",
+            items: [shared, makeGoogleRecord(id: "first-only")],
+            updatedAt: .now,
+            matchedAppleAlbumID: nil
+        )
+
+        let plan = GoogleAlbumImportPolicy.adding(
+            title: "Second album",
+            records: [shared],
+            matchedAppleAlbumID: nil,
+            to: [original],
+            newAlbumID: "google-album:second"
+        )
+
+        XCTAssertFalse(plan.updatedExistingAlbum)
+        XCTAssertEqual(plan.albums.count, 2)
+        XCTAssertEqual(plan.albumID, "google-album:second")
+        XCTAssertEqual(plan.albums.first(where: { $0.id == original.id })?.title, original.title)
+    }
+
+    func testGoogleRetryRefreshPreservesFailuresOmittedByPicker() {
+        struct RetryItem: Equatable { let id: String; let urlVersion: Int }
+        let previous = [
+            RetryItem(id: "returned", urlVersion: 1),
+            RetryItem(id: "omitted", urlVersion: 1)
+        ]
+        let refreshed = [RetryItem(id: "returned", urlVersion: 2)]
+
+        let merged = GoogleFailedItemRefreshPolicy.merging(
+            refreshed: refreshed,
+            into: previous,
+            id: \.id
+        )
+
+        XCTAssertEqual(merged, [
+            RetryItem(id: "returned", urlVersion: 2),
+            RetryItem(id: "omitted", urlVersion: 1)
+        ])
+    }
+
+    func testGoogleStableIDRefreshDeduplicatesAndNewestRecordWins() {
+        let old = makeGoogleRecord(id: "same-google-id", timestamp: 100, relativePath: "same-google-id/old.jpg", contentHash: "old-hash")
+        let firstRefresh = makeGoogleRecord(id: "same-google-id", timestamp: 100, relativePath: "same-google-id/new.jpg", contentHash: "new-hash")
+        let finalRefresh = makeGoogleRecord(id: "same-google-id", timestamp: 100, relativePath: "same-google-id/final.jpg", contentHash: "final-hash")
+
+        let result = GoogleMediaMergePolicy.adding([firstRefresh, finalRefresh], to: [old])
+
+        XCTAssertEqual(result.records, [finalRefresh])
+        XCTAssertEqual(result.preservedCount, 0)
+        XCTAssertEqual(result.addedCount, 0)
+        XCTAssertEqual(result.refreshedCount, 1)
+    }
+
+    func testGoogleDownloadPathsAreContentVersionedBeforeAlbumCommit() {
+        let first = GoogleMediaStoragePathPolicy.relativePath(
+            sanitizedGoogleID: "same-google-id",
+            sanitizedFilename: "family.jpg",
+            contentHash: "first-version"
+        )
+        let retry = GoogleMediaStoragePathPolicy.relativePath(
+            sanitizedGoogleID: "same-google-id",
+            sanitizedFilename: "family.jpg",
+            contentHash: "first-version"
+        )
+        let refreshed = GoogleMediaStoragePathPolicy.relativePath(
+            sanitizedGoogleID: "same-google-id",
+            sanitizedFilename: "family.jpg",
+            contentHash: "second-version"
+        )
+
+        XCTAssertEqual(first, retry)
+        XCTAssertNotEqual(first, refreshed)
+        XCTAssertTrue(first.hasPrefix("same-google-id/"))
+        XCTAssertTrue(first.hasSuffix("/family.jpg"))
+    }
+
+    func testGoogleFailedAlbumCommitCleansOnlyUnreferencedStagedPaths() {
+        let prior = makeGoogleRecord(id: "prior", relativePath: "prior/stable.jpg")
+        let reused = makeGoogleRecord(id: "reused", relativePath: prior.relativePath)
+        let staged = makeGoogleRecord(id: "staged", relativePath: "staged/new-hash-family.jpg")
+
+        let cleanup = GoogleAlbumMediaCleanup.pathsFromUncommittedDownloads(
+            [reused, staged],
+            previouslyReferencedPaths: [prior.relativePath]
+        )
+
+        XCTAssertEqual(cleanup, [staged.relativePath])
+        XCTAssertFalse(cleanup.contains(prior.relativePath))
+    }
+
+    func testGooglePartialRefreshPreservesOmittedRecordsAndCleansOnlySupersededPath() {
+        let contributed = makeGoogleRecord(id: "wife-upload", timestamp: 100, relativePath: "wife-upload/wife.jpg")
+        let oldMine = makeGoogleRecord(id: "john-upload", timestamp: 200, relativePath: "john-upload/old.jpg", contentHash: "old-hash")
+        let refreshedMine = makeGoogleRecord(id: "john-upload", timestamp: 200, relativePath: "john-upload/new.jpg", contentHash: "new-hash")
+        let album = GoogleAlbumRecord(
+            id: "google-album:google-home",
+            title: "Google Home",
+            items: [contributed, oldMine],
+            updatedAt: .now,
+            matchedAppleAlbumID: nil
+        )
+
+        let plan = GoogleAlbumImportPolicy.adding(
+            title: "Google Home",
+            records: [refreshedMine],
+            matchedAppleAlbumID: nil,
+            to: [album],
+            newAlbumID: "unused"
+        )
+        let removable = GoogleAlbumMediaCleanup.pathsNoLongerReferenced(
+            replacing: 0,
+            with: plan.itemMerge.records,
+            in: [album]
+        )
+
+        XCTAssertEqual(Set(plan.itemMerge.records.map(\.googleID)), [contributed.googleID, refreshedMine.googleID])
+        XCTAssertEqual(plan.itemMerge.preservedCount, 1)
+        XCTAssertEqual(removable, [oldMine.relativePath])
+        XCTAssertFalse(removable.contains(contributed.relativePath))
+    }
+
+    @MainActor
+    func testGoogleAdditiveRefreshKeepsPersistedAlbumSelectionStable() {
+        let suiteName = "CanvasTests.google-additive-selection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let first = SettingsStore(defaults: defaults)
+        let original = GoogleAlbumRecord(
+            id: "google-album:google-home",
+            title: "Google Home",
+            items: [makeGoogleRecord(id: "john-upload")],
+            updatedAt: .now,
+            matchedAppleAlbumID: nil
+        )
+        first.settings.selectedAlbums = [original.reference]
+
+        let plan = GoogleAlbumImportPolicy.adding(
+            title: original.title,
+            records: [makeGoogleRecord(id: "wife-upload", timestamp: 200)],
+            matchedAppleAlbumID: nil,
+            to: [original],
+            newAlbumID: "unused"
+        )
+        let refreshed = plan.albums.first(where: { $0.id == plan.albumID })!.reference
+        first.settings.selectedAlbums = first.settings.selectedAlbums.map { $0.id == plan.albumID ? refreshed : $0 }
+
+        let restored = SettingsStore(defaults: defaults).settings.selectedAlbums
+        XCTAssertEqual(restored.map(\.id), [original.id])
+        XCTAssertEqual(restored.first?.estimatedCount, 2)
     }
 
     @MainActor
@@ -2125,6 +2323,300 @@ final class CanvasTests: XCTestCase {
         let removable = GoogleAlbumMediaCleanup.pathsNoLongerReferenced(replacing: 0, with: [replacement], in: albums)
         XCTAssertEqual(removable, ["old/old.jpg"])
         XCTAssertFalse(removable.contains("shared/shared.jpg"))
+    }
+
+    func testGoogleAppleMirrorRequiresFullReadWriteAuthorization() {
+        XCTAssertTrue(GooglePhotosMirrorAuthorizationPolicy.permitsNamedAlbumMirroring(.authorized))
+        XCTAssertFalse(GooglePhotosMirrorAuthorizationPolicy.permitsNamedAlbumMirroring(.limited))
+        XCTAssertFalse(GooglePhotosMirrorAuthorizationPolicy.permitsNamedAlbumMirroring(.denied))
+        XCTAssertFalse(GooglePhotosMirrorAuthorizationPolicy.permitsNamedAlbumMirroring(.restricted))
+        XCTAssertFalse(GooglePhotosMirrorAuthorizationPolicy.permitsNamedAlbumMirroring(.notDetermined))
+    }
+
+    func testGoogleAppleMirrorRetryRemainsAvailableAcrossRelaunchForPendingItems() {
+        let pending = GooglePhotosMirrorAlbumEntry(
+            title: "Google Home",
+            appleAlbumID: "apple-album",
+            albumRemovedByUser: false,
+            pendingReason: "1 item still needs copying.",
+            assetsByGoogleID: [:],
+            updatedAt: .now
+        )
+        let removed = GooglePhotosMirrorAlbumEntry(
+            title: "Google Home",
+            appleAlbumID: "deleted-album",
+            albumRemovedByUser: true,
+            pendingReason: nil,
+            assetsByGoogleID: [:],
+            updatedAt: .now
+        )
+
+        XCTAssertTrue(GooglePhotosMirrorRetryPolicy.shouldOfferRetry(entry: nil, expectedItemCount: 1, indexLoadFailed: false))
+        XCTAssertTrue(GooglePhotosMirrorRetryPolicy.shouldOfferRetry(entry: pending, expectedItemCount: 1, indexLoadFailed: false))
+        XCTAssertFalse(GooglePhotosMirrorRetryPolicy.shouldOfferRetry(entry: removed, expectedItemCount: 1, indexLoadFailed: false))
+        XCTAssertFalse(GooglePhotosMirrorRetryPolicy.shouldOfferRetry(entry: pending, expectedItemCount: 1, indexLoadFailed: true))
+    }
+
+    func testGoogleAppleMirrorAlbumResolutionNeverGuesses() {
+        XCTAssertEqual(
+            GooglePhotosMirrorAlbumResolutionPolicy.resolve(
+                persistedAlbumID: "apple-managed",
+                persistedAlbumRemoved: false,
+                persistedAlbumAccessible: true,
+                exactEditableAlbumIDs: ["same-name-user-album"]
+            ),
+            .reuse("apple-managed")
+        )
+        XCTAssertEqual(
+            GooglePhotosMirrorAlbumResolutionPolicy.resolve(
+                persistedAlbumID: "apple-deleted",
+                persistedAlbumRemoved: false,
+                persistedAlbumAccessible: false,
+                exactEditableAlbumIDs: ["same-album-new-identifier"]
+            ),
+            .reuse("same-album-new-identifier")
+        )
+        XCTAssertEqual(
+            GooglePhotosMirrorAlbumResolutionPolicy.resolve(
+                persistedAlbumID: "apple-deleted",
+                persistedAlbumRemoved: false,
+                persistedAlbumAccessible: false,
+                exactEditableAlbumIDs: []
+            ),
+            .failRemoved
+        )
+        XCTAssertEqual(
+            GooglePhotosMirrorAlbumResolutionPolicy.resolve(
+                persistedAlbumID: nil,
+                persistedAlbumRemoved: false,
+                persistedAlbumAccessible: false,
+                exactEditableAlbumIDs: ["unique-exact"]
+            ),
+            .reuse("unique-exact")
+        )
+        XCTAssertEqual(
+            GooglePhotosMirrorAlbumResolutionPolicy.resolve(
+                persistedAlbumID: nil,
+                persistedAlbumRemoved: false,
+                persistedAlbumAccessible: false,
+                exactEditableAlbumIDs: ["duplicate-a", "duplicate-b"]
+            ),
+            .failAmbiguous
+        )
+        XCTAssertEqual(
+            GooglePhotosMirrorAlbumResolutionPolicy.resolve(
+                persistedAlbumID: nil,
+                persistedAlbumRemoved: false,
+                persistedAlbumAccessible: false,
+                exactEditableAlbumIDs: []
+            ),
+            .create
+        )
+    }
+
+    func testGoogleAppleMirrorCrashMarkerRecoversAndDeduplicatesSameContent() {
+        let first = makeGoogleRecord(id: "first", contentHash: String(repeating: "a", count: 64))
+        let duplicate = makeGoogleRecord(id: "duplicate", contentHash: String(repeating: "a", count: 64))
+        let marker = GoogleApplePhotosMirrorIdentity.markerFilename(
+            contentHash: first.contentHash,
+            originalFilename: first.filename
+        )
+
+        XCTAssertEqual(GoogleApplePhotosMirrorIdentity.contentHash(fromMarkerFilename: marker), first.contentHash)
+        let result = GooglePhotosMirrorAssetReconciliationPolicy.reconcile(
+            records: [first, duplicate],
+            persistedEntries: [:],
+            accessibleAssetIDs: ["apple-recovered"],
+            recoveredAssetIDsByContentHash: [first.contentHash: "apple-recovered"],
+            verifiedAt: Date(timeIntervalSince1970: 500)
+        )
+
+        XCTAssertTrue(result.recordsNeedingCreationByHash.isEmpty)
+        XCTAssertEqual(result.alreadyMirroredCount, 2)
+        XCTAssertEqual(result.entriesByGoogleID[first.googleID]?.appleAssetID, "apple-recovered")
+        XCTAssertEqual(result.entriesByGoogleID[duplicate.googleID]?.appleAssetID, "apple-recovered")
+    }
+
+    func testGoogleAppleMirrorStaleAssetBecomesUserDeletionTombstone() {
+        let removed = makeGoogleRecord(id: "removed", contentHash: String(repeating: "b", count: 64))
+        let sameBytesNewID = makeGoogleRecord(id: "same-bytes", contentHash: removed.contentHash)
+        let persisted = GooglePhotosMirrorAssetEntry(
+            contentHash: removed.contentHash,
+            appleAssetID: "missing-apple-asset",
+            markerFilename: GoogleApplePhotosMirrorIdentity.markerFilename(
+                contentHash: removed.contentHash,
+                originalFilename: removed.filename
+            ),
+            state: .active,
+            lastVerifiedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        let result = GooglePhotosMirrorAssetReconciliationPolicy.reconcile(
+            records: [removed, sameBytesNewID],
+            persistedEntries: [removed.googleID: persisted],
+            accessibleAssetIDs: [],
+            recoveredAssetIDsByContentHash: [:],
+            verifiedAt: Date(timeIntervalSince1970: 500)
+        )
+
+        XCTAssertEqual(result.entriesByGoogleID[removed.googleID]?.state, .removedByUser)
+        XCTAssertEqual(result.entriesByGoogleID[sameBytesNewID.googleID]?.state, .removedByUser)
+        XCTAssertTrue(result.recordsNeedingCreationByHash.isEmpty)
+        XCTAssertEqual(result.alreadyMirroredCount, 0)
+    }
+
+    func testGoogleAppleMirrorStaleAssetIdentifierRecoversByCanvasMarker() {
+        let record = makeGoogleRecord(id: "migrated", contentHash: String(repeating: "d", count: 64))
+        let persisted = GooglePhotosMirrorAssetEntry(
+            contentHash: record.contentHash,
+            appleAssetID: "stale-apple-identifier",
+            markerFilename: GoogleApplePhotosMirrorIdentity.markerFilename(
+                contentHash: record.contentHash,
+                originalFilename: record.filename
+            ),
+            state: .active,
+            lastVerifiedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        let result = GooglePhotosMirrorAssetReconciliationPolicy.reconcile(
+            records: [record],
+            persistedEntries: [record.googleID: persisted],
+            accessibleAssetIDs: [],
+            recoveredAssetIDsByContentHash: [record.contentHash: "recovered-apple-identifier"],
+            verifiedAt: Date(timeIntervalSince1970: 500)
+        )
+
+        XCTAssertEqual(result.entriesByGoogleID[record.googleID]?.state, .active)
+        XCTAssertEqual(result.entriesByGoogleID[record.googleID]?.appleAssetID, "recovered-apple-identifier")
+        XCTAssertTrue(result.recordsNeedingCreationByHash.isEmpty)
+        XCTAssertEqual(result.alreadyMirroredCount, 1)
+    }
+
+    func testGoogleAppleMirrorIndexIsAtomicAndSurvivesCanvasLocalDeletion() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent("canvas-mirror-index-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+        let indexURL = tempRoot.appendingPathComponent("mirror.json")
+        let store = GooglePhotosMirrorIndexStore(url: indexURL)
+        let asset = GooglePhotosMirrorAssetEntry(
+            contentHash: String(repeating: "c", count: 64),
+            appleAssetID: "apple-asset",
+            markerFilename: "canvas-google-\(String(repeating: "c", count: 64)).jpg",
+            state: .active,
+            lastVerifiedAt: Date(timeIntervalSince1970: 100)
+        )
+        let mirrorAlbum = GooglePhotosMirrorAlbumEntry(
+            title: "Google Home",
+            appleAlbumID: "apple-album",
+            albumRemovedByUser: false,
+            pendingReason: nil,
+            assetsByGoogleID: ["google-item": asset],
+            updatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let index = GooglePhotosMirrorIndex(albumsByCanvasID: ["google-album:home": mirrorAlbum])
+        try store.persist(index)
+
+        let localItem = makeGoogleRecord(id: "google-item")
+        let localAlbum = GoogleAlbumRecord(
+            id: "google-album:home",
+            title: "Google Home",
+            items: [localItem],
+            updatedAt: .now,
+            matchedAppleAlbumID: nil
+        )
+        XCTAssertNotNil(GoogleAlbumDeletionPlan.removing(albumID: localAlbum.id, from: [localAlbum]))
+
+        let restored = GooglePhotosMirrorIndexStore(url: indexURL)
+        XCTAssertNil(restored.loadError)
+        XCTAssertEqual(restored.index, index)
+        XCTAssertEqual(restored.index.albumsByCanvasID[localAlbum.id]?.appleAlbumID, "apple-album")
+    }
+
+    func testGoogleAppleMirrorIndexRefusesToOverwriteNewerSchema() throws {
+        let tempRoot = FileManager.default.temporaryDirectory.appendingPathComponent("canvas-mirror-newer-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        let indexURL = tempRoot.appendingPathComponent("mirror.json")
+        let newer = GooglePhotosMirrorIndex(
+            schemaVersion: GooglePhotosMirrorIndex.currentSchemaVersion + 1,
+            albumsByCanvasID: [:]
+        )
+        let originalData = try JSONEncoder().encode(newer)
+        try originalData.write(to: indexURL, options: .atomic)
+
+        let store = GooglePhotosMirrorIndexStore(url: indexURL)
+        XCTAssertNotNil(store.loadError)
+        XCTAssertThrowsError(try store.persist(GooglePhotosMirrorIndex()))
+        XCTAssertEqual(try Data(contentsOf: indexURL), originalData)
+    }
+
+    @MainActor
+    func testGoogleAppleMirrorSerialQueuePreventsConcurrentIndexPlanningAcrossAlbums() async throws {
+        let queue = GooglePhotosMirrorSerialQueue()
+        var events: [String] = []
+        let firstStarted = expectation(description: "first mirror started")
+        let first = Task { @MainActor in
+            try await queue.run {
+                events.append("first-start")
+                firstStarted.fulfill()
+                try await Task.sleep(nanoseconds: 20_000_000)
+                events.append("first-end")
+            }
+        }
+        await fulfillment(of: [firstStarted], timeout: 1)
+        let second = Task { @MainActor in
+            try await queue.run {
+                events.append("second-start")
+                events.append("second-end")
+            }
+        }
+        try await first.value
+        try await second.value
+
+        XCTAssertEqual(events, ["first-start", "first-end", "second-start", "second-end"])
+    }
+
+    func testGoogleAppleMirrorSummaryExplainsAllPhotosAndRetryWithoutPicker() {
+        let success = GoogleApplePhotosMirrorSummary(
+            albumTitle: "Google Home",
+            addedCount: 2,
+            alreadyMirroredCount: 3,
+            failedCount: 0,
+            preservedUserRemovalCount: 0,
+            issue: nil,
+            retryAvailable: false
+        )
+        XCTAssertTrue(success.message.contains("All Photos"))
+        XCTAssertTrue(success.isComplete)
+
+        let issue = GoogleApplePhotosMirrorSummary(
+            albumTitle: "Google Home",
+            addedCount: 0,
+            alreadyMirroredCount: 0,
+            failedCount: 5,
+            preservedUserRemovalCount: 0,
+            issue: "Full Photos access is required.",
+            retryAvailable: true
+        )
+        XCTAssertTrue(issue.message.contains("kept every downloaded item locally"))
+        XCTAssertTrue(issue.canRetry)
+    }
+
+    private func makeGoogleRecord(
+        id: String,
+        timestamp: TimeInterval = 100,
+        relativePath: String? = nil,
+        contentHash: String? = nil
+    ) -> GoogleMediaRecord {
+        GoogleMediaRecord(
+            googleID: id,
+            kind: .photo,
+            creationDate: Date(timeIntervalSince1970: timestamp),
+            filename: "\(id).jpg",
+            pixelWidth: 1_200,
+            pixelHeight: 800,
+            relativePath: relativePath ?? "\(id)/\(id).jpg",
+            contentHash: contentHash ?? "hash-\(id)"
+        )
     }
 
     private func makeSnapshot(

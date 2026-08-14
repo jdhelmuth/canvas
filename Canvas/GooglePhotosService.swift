@@ -159,6 +159,9 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     /// Google supplies a session timeout, but keep a local upper bound so a
     /// browser handoff that never loads cannot leave Canvas polling forever.
     nonisolated static let maximumPickerWait: TimeInterval = 5 * 60
+    /// Google coerces larger Picker selections to 2,000 items. Additional
+    /// media must be selected in another additive session.
+    nonisolated static let maximumPickerItemCount = 2_000
     @Published private(set) var state: GooglePhotosConnectionState
     @Published private(set) var albums: [GoogleAlbumRecord] = []
     @Published private(set) var lastSyncDate: Date?
@@ -175,6 +178,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     private let tokenService = "com.johnhelmuth.canvas.google-photos"
     private var activePickerSessionID: String?
     private var activeOperationID: UUID?
+    private var activeAppleMirrorRetryID: UUID?
     private var pendingImport: PendingGoogleImport?
 
     override init() {
@@ -206,6 +210,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     }
 
     func connect() async {
+        activeAppleMirrorRetryID = nil
         do {
             state = .connecting
             _ = try await authorizeInteractively()
@@ -220,9 +225,13 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         tokens = nil
         deleteTokens()
         if removeImportedAlbums {
-            for album in albums { removeFiles(for: album) }
+            let importedAlbums = albums
             albums = []
-            saveAlbums()
+            if saveAlbums() {
+                for album in importedAlbums { removeFiles(for: album) }
+            } else {
+                albums = importedAlbums
+            }
         }
         state = configurationAvailable ? .disconnected : .unavailable(Self.missingConfigurationMessage)
     }
@@ -230,7 +239,11 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     /// Opens Google's supported Picker. Users can search for an album title there
     /// (including a shared album) and select its items; the API does not expose an
     /// album-list endpoint for this flow.
-    func syncAlbum(named rawTitle: String, matchingWith appleLibrary: PhotoLibraryService) async {
+    func syncAlbum(
+        named rawTitle: String,
+        matchingWith appleLibrary: PhotoLibraryService,
+        mirrorWith mirrorService: GooglePhotosMirrorService
+    ) async {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { state = .failed("Enter an album name before selecting from Google Photos."); return }
         discardPendingImport()
@@ -284,23 +297,43 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
             let picked = uniquePickedItems(try await listPickedItemsWithRetry(sessionID: completed.id))
             guard !picked.isEmpty else { throw GooglePhotosError.noItemsSelected }
             let downloadResult = try await download(picked, progress: .initial)
-            let existingAlbumID = albums.first { $0.title.normalizedAlbumTitle == title.normalizedAlbumTitle }?.id
-            let appleMatch = appleLibrary.bestMatchingAlbum(for: downloadResult.records)
-            var importedID: String?
-            if !downloadResult.records.isEmpty {
-                importedID = mergeAlbum(title: title, records: downloadResult.records, matchedAppleAlbumID: appleMatch)
-                lastSyncedAlbumID = importedID
+            guard isCurrent(operationID) else {
+                removeUncommittedFiles(for: downloadResult.records)
+                return
             }
+            let existingAlbum = albums.first { $0.title.normalizedAlbumTitle == title.normalizedAlbumTitle }
+            let appleMatch = appleLibrary.bestMatchingAlbum(for: downloadResult.records)
+            var importedID = existingAlbum?.id
+            var preservedCount = existingAlbum?.items.count ?? 0
+            var totalSavedCount = existingAlbum?.items.count ?? 0
+            var updatedExistingAlbum = existingAlbum != nil
+            if !downloadResult.records.isEmpty {
+                let plan = try addToAlbum(title: title, records: downloadResult.records, matchedAppleAlbumID: appleMatch)
+                importedID = plan.albumID
+                preservedCount = plan.itemMerge.preservedCount
+                totalSavedCount = plan.itemMerge.records.count
+                updatedExistingAlbum = plan.updatedExistingAlbum
+                lastSyncedAlbumID = plan.albumID
+            }
+            let applePhotosMirror: GoogleApplePhotosMirrorSummary? = if let importedID, !importedID.isEmpty {
+                await mirrorAlbum(importedID, with: mirrorService, photoLibrary: appleLibrary)
+            } else {
+                nil
+            }
+            guard isCurrent(operationID) else { return }
             let hasFailures = !downloadResult.failures.isEmpty
             lastImportSummary = GooglePhotosImportSummary(
                 albumID: importedID ?? "",
                 title: title,
                 selectedCount: picked.count,
                 savedCount: downloadResult.records.count,
+                preservedCount: preservedCount,
+                totalSavedCount: totalSavedCount,
                 skippedCount: downloadResult.skippedCount,
                 failureSummaries: downloadResult.failureSummaries,
                 canRetryFailedItems: hasFailures,
-                updatedExistingAlbum: existingAlbumID != nil
+                updatedExistingAlbum: updatedExistingAlbum,
+                applePhotosMirror: applePhotosMirror
             )
             lastSyncDate = Date()
             if hasFailures {
@@ -309,7 +342,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
                     title: title,
                     selectedCount: picked.count,
                     matchedAppleAlbumID: appleMatch,
-                    updatedExistingAlbum: existingAlbumID != nil,
+                    updatedExistingAlbum: updatedExistingAlbum,
                     albumID: importedID,
                     savedRecords: downloadResult.records,
                     failedItems: downloadResult.failures.map(\.item)
@@ -362,7 +395,11 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     /// Retries only the media records that failed during the most recent
     /// import. The Picker session is kept alive for this purpose until the
     /// person taps Done or starts a fresh selection.
-    func retryFailedDownloads() async {
+    func retryFailedDownloads(
+        mirroringWith mirrorService: GooglePhotosMirrorService,
+        photoLibrary: PhotoLibraryService
+    ) async {
+        activeAppleMirrorRetryID = nil
         guard var pending = pendingImport, !pending.failedItems.isEmpty else {
             state = .failed("There are no saved Google Photos failures to retry. Start a new selection.")
             return
@@ -375,27 +412,48 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         }
         do {
             let candidates = try await refreshedFailedItems(for: pending)
+            guard isCurrent(operationID) else { return }
             guard !candidates.isEmpty else {
                 throw GooglePhotosError.importFailed("Google no longer exposes the failed media in this Picker session. Start a new selection.")
             }
             let result = try await download(candidates, progress: .retry)
-            let combinedRecords = mergeRecords(pending.savedRecords + result.records)
+            guard isCurrent(operationID) else {
+                removeUncommittedFiles(for: result.records)
+                return
+            }
+            let combinedRecords = GoogleMediaMergePolicy.adding(result.records, to: pending.savedRecords).records
+            var mergePlan: GoogleAlbumImportPlan?
             if !result.records.isEmpty {
-                pending.albumID = mergeAlbum(title: pending.title, records: combinedRecords, matchedAppleAlbumID: pending.matchedAppleAlbumID)
+                let plan = try addToAlbum(title: pending.title, records: combinedRecords, matchedAppleAlbumID: pending.matchedAppleAlbumID)
+                mergePlan = plan
+                pending.albumID = plan.albumID
                 pending.savedRecords = combinedRecords
                 lastSyncedAlbumID = pending.albumID
             }
             pending.failedItems = result.failures.map(\.item)
             pendingImport = pending
+            let savedAlbum = pending.albumID.flatMap { id in albums.first(where: { $0.id == id }) }
+            let currentSessionIDs = Set(combinedRecords.map(\.googleID))
+            let preservedCount = mergePlan?.itemMerge.preservedCount ?? savedAlbum?.items.filter { !currentSessionIDs.contains($0.googleID) }.count ?? 0
+            let totalSavedCount = mergePlan?.itemMerge.records.count ?? savedAlbum?.items.count ?? 0
+            let applePhotosMirror: GoogleApplePhotosMirrorSummary? = if let albumID = pending.albumID, !albumID.isEmpty {
+                await mirrorAlbum(albumID, with: mirrorService, photoLibrary: photoLibrary)
+            } else {
+                nil
+            }
+            guard isCurrent(operationID) else { return }
             let summary = GooglePhotosImportSummary(
                 albumID: pending.albumID ?? "",
                 title: pending.title,
                 selectedCount: pending.selectedCount,
                 savedCount: combinedRecords.count,
+                preservedCount: preservedCount,
+                totalSavedCount: totalSavedCount,
                 skippedCount: result.skippedCount,
                 failureSummaries: result.failureSummaries,
                 canRetryFailedItems: !result.failures.isEmpty,
-                updatedExistingAlbum: pending.updatedExistingAlbum
+                updatedExistingAlbum: pending.updatedExistingAlbum,
+                applePhotosMirror: applePhotosMirror
             )
             lastImportSummary = summary
             lastSyncDate = Date()
@@ -418,6 +476,55 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         }
     }
 
+    /// Retries only the non-destructive Apple Photos mirror. It never opens a
+    /// new Google Picker session and never deletes or replaces Photos content.
+    func retryApplePhotosMirror(
+        albumID: String,
+        with mirrorService: GooglePhotosMirrorService,
+        photoLibrary: PhotoLibraryService
+    ) async {
+        guard let album = albums.first(where: { $0.id == albumID }) else {
+            state = .failed("The saved Google album is no longer available in Canvas.")
+            return
+        }
+        switch state {
+        case .connecting, .selecting, .syncing, .retrying:
+            return
+        default:
+            break
+        }
+        let retryID = UUID()
+        activeAppleMirrorRetryID = retryID
+        defer {
+            if activeAppleMirrorRetryID == retryID { activeAppleMirrorRetryID = nil }
+        }
+        let returnState = state
+        state = .syncing(completed: 0, total: max(1, album.items.count))
+        let mirrorSummary = await mirrorAlbum(albumID, with: mirrorService, photoLibrary: photoLibrary)
+        guard activeAppleMirrorRetryID == retryID, !Task.isCancelled else { return }
+        if var summary = lastImportSummary, summary.albumID == albumID {
+            summary.applePhotosMirror = mirrorSummary
+            lastImportSummary = summary
+        } else {
+            lastImportSummary = GooglePhotosImportSummary(
+                albumID: albumID,
+                title: album.title,
+                selectedCount: 0,
+                savedCount: 0,
+                preservedCount: album.items.count,
+                totalSavedCount: album.items.count,
+                skippedCount: 0,
+                failureSummaries: [],
+                canRetryFailedItems: false,
+                updatedExistingAlbum: true,
+                applePhotosMirror: mirrorSummary
+            )
+        }
+        // This is an Apple-only retry and must not imply that Google OAuth or
+        // a Picker session was revalidated.
+        state = returnState
+    }
+
     /// Discards an incomplete Picker session when the user chooses Done or
     /// starts a new selection. Google recommends deleting sessions after the
     /// media bytes have been retrieved.
@@ -425,6 +532,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         let sessionID = pendingImport?.sessionID ?? activePickerSessionID
         pendingImport = nil
         activeOperationID = nil
+        activeAppleMirrorRetryID = nil
         activePickerSessionID = nil
         pickerNativeURL = nil
         pickerBrowserURL = nil
@@ -481,6 +589,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         let sessionID = activePickerSessionID ?? pendingImport?.sessionID
         activePickerSessionID = nil
         activeOperationID = nil
+        activeAppleMirrorRetryID = nil
         pendingImport = nil
         pickerBrowserURL = nil
         pickerNativeURL = nil
@@ -518,9 +627,13 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
                 albums.first(where: { $0.id == id })?.title.normalizedAlbumTitle == pending.title.normalizedAlbumTitle
             if sameAlbum { discardPendingImport() }
         }
-        for path in plan.removableRelativePaths { try? fileManager.removeItem(at: mediaRoot.appendingPathComponent(path)) }
+        let previousAlbums = albums
         albums = plan.remainingAlbums
-        saveAlbums()
+        guard saveAlbums() else {
+            albums = previousAlbums
+            return false
+        }
+        for path in plan.removableRelativePaths { try? fileManager.removeItem(at: mediaRoot.appendingPathComponent(path)) }
         if lastSyncedAlbumID == id { lastSyncedAlbumID = nil }
         if lastImportSummary?.albumID == id { lastImportSummary = nil }
         return true
@@ -617,7 +730,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     private func createPickerSession(token: String) async throws -> PickerSession {
         var request = URLRequest(url: URL(string: "https://photospicker.googleapis.com/v1/sessions")!)
         request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["pickingConfig": ["maxItemCount": "2000"]])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["pickingConfig": ["maxItemCount": String(Self.maximumPickerItemCount)]])
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return try await decode(request)
@@ -745,7 +858,10 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
             do {
                 result.append(try await download(item))
             } catch {
-                if error is CancellationError { throw error }
+                if error is CancellationError {
+                    removeUncommittedFiles(for: result)
+                    throw error
+                }
                 if Self.isAuthorizationFailure(error) {
                     let reason = "Google Photos authorization expired while downloading this selection. Reconnect Google Photos, then retry unavailable items."
                     let remaining = picked[index...].map { GoogleDownloadFailure(item: $0, category: .authorization, reason: reason) }
@@ -816,11 +932,24 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
                 }
                 let hash = try hashFile(at: temporaryURL)
                 let safeName = (item.mediaFile.filename?.isEmpty == false ? item.mediaFile.filename! : "\(item.id).\(kind == .video ? "mp4" : "jpg")").safeFilename
-                let relative = "\(item.id.safeFilename)/\(safeName)"
+                let relative = GoogleMediaStoragePathPolicy.relativePath(
+                    sanitizedGoogleID: item.id.safeFilename,
+                    sanitizedFilename: safeName,
+                    contentHash: hash
+                )
                 let destination = mediaRoot.appendingPathComponent(relative)
                 try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                if fileManager.fileExists(atPath: destination.path) { try fileManager.removeItem(at: destination) }
-                try fileManager.moveItem(at: temporaryURL, to: destination)
+                if fileManager.fileExists(atPath: destination.path) {
+                    // A content-addressed path may already be referenced by a
+                    // prior successful session. Reuse only verified bytes and
+                    // never overwrite that last-known-good file before the
+                    // updated album metadata has committed.
+                    guard try hashFile(at: destination) == hash else {
+                        throw GooglePhotosError.importFailed("Canvas found conflicting local media bytes and preserved the existing file.")
+                    }
+                } else {
+                    try fileManager.moveItem(at: temporaryURL, to: destination)
+                }
                 let metadata = item.mediaFile.mediaFileMetadata
                 return GoogleMediaRecord(googleID: item.id, kind: kind, creationDate: Self.parseDate(item.createTime), filename: safeName, pixelWidth: metadata?.width ?? 0, pixelHeight: metadata?.height ?? 0, relativePath: relative, contentHash: hash)
             } catch {
@@ -910,7 +1039,11 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
             let latest = try await listPickedItemsWithRetry(sessionID: pending.sessionID)
             let failedIDs = Set(pending.failedItems.map(\.id))
             let refreshed = uniquePickedItems(latest).filter { failedIDs.contains($0.id) }
-            return refreshed.isEmpty ? pending.failedItems : refreshed
+            return GoogleFailedItemRefreshPolicy.merging(
+                refreshed: refreshed,
+                into: pending.failedItems,
+                id: \.id
+            )
         } catch let error as GooglePhotosError {
             if case .authorizationFailed = error { throw error }
             return pending.failedItems
@@ -922,14 +1055,6 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     private func uniquePickedItems(_ items: [PickedMediaItem]) -> [PickedMediaItem] {
         var seen = Set<String>()
         return items.filter { seen.insert($0.id).inserted }
-    }
-
-    private func mergeRecords(_ records: [GoogleMediaRecord]) -> [GoogleMediaRecord] {
-        var values: [String: GoogleMediaRecord] = [:]
-        for record in records { values[record.googleID] = record }
-        return values.values.sorted { lhs, rhs in
-            (lhs.creationDate ?? .distantPast) < (rhs.creationDate ?? .distantPast)
-        }
     }
 
     private func hashFile(at url: URL) throws -> String {
@@ -969,6 +1094,71 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         }
     }
 
+    private func mirrorAlbum(
+        _ albumID: String,
+        with mirrorService: GooglePhotosMirrorService,
+        photoLibrary: PhotoLibraryService
+    ) async -> GoogleApplePhotosMirrorSummary {
+        guard let album = albums.first(where: { $0.id == albumID }) else {
+            return GoogleApplePhotosMirrorSummary(
+                albumTitle: "Apple Photos",
+                addedCount: 0,
+                alreadyMirroredCount: 0,
+                failedCount: 0,
+                preservedUserRemovalCount: 0,
+                issue: "The saved Canvas album record could not be found.",
+                retryAvailable: false
+            )
+        }
+        let sourceURLs = Dictionary(uniqueKeysWithValues: album.items.map {
+            ($0.googleID, mediaRoot.appendingPathComponent($0.relativePath))
+        })
+        do {
+            let result = try await mirrorService.mirror(
+                canvasAlbumID: album.id,
+                title: album.title,
+                records: album.items,
+                sourceURLsByGoogleID: sourceURLs,
+                photoLibrary: photoLibrary
+            )
+            let failedCount = result.failedGoogleIDs.count
+            return GoogleApplePhotosMirrorSummary(
+                albumTitle: album.title,
+                addedCount: result.addedCount,
+                alreadyMirroredCount: result.alreadyMirroredCount,
+                failedCount: failedCount,
+                preservedUserRemovalCount: result.tombstoneGoogleIDs.count,
+                issue: failedCount == 0
+                    ? nil
+                    : "\(failedCount) item\(failedCount == 1 ? "" : "s") could not be copied. Retry the Apple Photos album without reopening Google’s Picker.",
+                retryAvailable: failedCount > 0
+            )
+        } catch {
+            let retryAvailable: Bool
+            if let mirrorError = error as? GoogleApplePhotosMirrorError {
+                switch mirrorError {
+                case .managedAlbumRemoved:
+                    retryAvailable = false
+                default:
+                    retryAvailable = true
+                }
+            } else if error is GooglePhotosMirrorIndexError {
+                retryAvailable = false
+            } else {
+                retryAvailable = true
+            }
+            return GoogleApplePhotosMirrorSummary(
+                albumTitle: album.title,
+                addedCount: 0,
+                alreadyMirroredCount: 0,
+                failedCount: album.items.count,
+                preservedUserRemovalCount: 0,
+                issue: error.localizedDescription,
+                retryAvailable: retryAvailable
+            )
+        }
+    }
+
     // MARK: Persistence and matching
 
     private var applicationSupport: URL {
@@ -978,51 +1168,79 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     private var albumsURL: URL { applicationSupport.appendingPathComponent("google-photos-albums.json") }
 
     @discardableResult
-    private func mergeAlbum(title: String, records: [GoogleMediaRecord], matchedAppleAlbumID: String?) -> String {
-        let normalizedTitle = title.normalizedAlbumTitle
-        let incomingIDs = Set(records.map(\.googleID))
-        let matchIndex = albums.indices.first { index in
-            let existingIDs = Set(albums[index].items.map(\.googleID))
-            let overlap = Double(existingIDs.intersection(incomingIDs).count) / Double(max(1, min(existingIDs.count, incomingIDs.count)))
-            return albums[index].title.normalizedAlbumTitle == normalizedTitle || overlap >= 0.8
-        }
-        if let matchIndex {
-            // Refreshing one saved album must not remove a downloaded file
-            // still referenced by another saved Google album.  The albums are
-            // source-separated in the picker, but their local media files are
-            // intentionally deduplicated by Google ID/path.
-            let removablePaths = GoogleAlbumMediaCleanup.pathsNoLongerReferenced(
-                replacing: matchIndex,
-                with: records,
+    private func addToAlbum(title: String, records: [GoogleMediaRecord], matchedAppleAlbumID: String?) throws -> GoogleAlbumImportPlan {
+        let plan = GoogleAlbumImportPolicy.adding(
+            title: title,
+            records: records,
+            matchedAppleAlbumID: matchedAppleAlbumID,
+            to: albums
+        )
+        let removablePaths: Set<String>
+        if let replacedAlbumIndex = plan.replacedAlbumIndex {
+            // A later Picker session is additive. Remove only a path superseded
+            // by a newly downloaded record with the same stable Google ID, and
+            // only when no other saved album still references that old path.
+            removablePaths = GoogleAlbumMediaCleanup.pathsNoLongerReferenced(
+                replacing: replacedAlbumIndex,
+                with: plan.itemMerge.records,
                 in: albums
             )
-            for path in removablePaths {
+        } else {
+            removablePaths = []
+        }
+        let previousAlbums = albums
+        let previouslyReferencedPaths = Set(previousAlbums.flatMap { $0.items.map(\.relativePath) })
+        albums = plan.albums
+        guard saveAlbums() else {
+            albums = previousAlbums
+            // The album metadata did not commit, so remove only newly staged
+            // content-addressed files. Existing referenced paths and bytes are
+            // never touched on this failure path.
+            let uncommittedPaths = GoogleAlbumMediaCleanup.pathsFromUncommittedDownloads(
+                records,
+                previouslyReferencedPaths: previouslyReferencedPaths
+            )
+            for path in uncommittedPaths {
                 try? fileManager.removeItem(at: mediaRoot.appendingPathComponent(path))
             }
-            albums[matchIndex].title = title
-            albums[matchIndex].items = records
-            albums[matchIndex].updatedAt = Date()
-            albums[matchIndex].matchedAppleAlbumID = matchedAppleAlbumID
-        } else {
-            albums.append(GoogleAlbumRecord(id: "google-album:\(UUID().uuidString)", title: title, items: records, updatedAt: Date(), matchedAppleAlbumID: matchedAppleAlbumID))
+            throw GooglePhotosError.importFailed("Canvas downloaded the Google selection but could not preserve its album record. Check device storage and try again.")
         }
-        albums.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        saveAlbums()
-        return albums.first(where: { album in
-            album.title.normalizedAlbumTitle == normalizedTitle || !Set(album.items.map(\.googleID)).isDisjoint(with: incomingIDs)
-        })?.id ?? ""
+        // Commit metadata atomically before cleaning old paths. A persistence
+        // failure therefore leaves every previously referenced file intact.
+        for path in removablePaths {
+            try? fileManager.removeItem(at: mediaRoot.appendingPathComponent(path))
+        }
+        return plan
     }
 
     private func loadAlbums() -> [GoogleAlbumRecord] {
         guard let data = try? Data(contentsOf: albumsURL) else { return [] }
         return (try? JSONDecoder().decode([GoogleAlbumRecord].self, from: data)) ?? []
     }
-    private func saveAlbums() {
-        try? fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(albums) { try? data.write(to: albumsURL, options: .atomic) }
+    @discardableResult
+    private func saveAlbums() -> Bool {
+        do {
+            try fileManager.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
+            let data = try JSONEncoder().encode(albums)
+            try data.write(to: albumsURL, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
     private func removeFiles(for album: GoogleAlbumRecord) {
         for path in album.items.map(\.relativePath) { try? fileManager.removeItem(at: mediaRoot.appendingPathComponent(path)) }
+    }
+
+    private func removeUncommittedFiles(for records: [GoogleMediaRecord]) {
+        let referencedPaths = Set(albums.flatMap { $0.items.map(\.relativePath) })
+        let removablePaths = GoogleAlbumMediaCleanup.pathsFromUncommittedDownloads(
+            records,
+            previouslyReferencedPaths: referencedPaths
+        )
+        for path in removablePaths {
+            try? fileManager.removeItem(at: mediaRoot.appendingPathComponent(path))
+        }
     }
 
     private func saveTokens(_ value: OAuthTokens) {
@@ -1050,6 +1268,24 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
         guard let value else { return nil }
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
+/// New downloads are content-addressed so refreshing a stable Google media ID
+/// can never overwrite the bytes referenced by the last committed album
+/// record. Older relative paths remain valid and are cleaned only after a
+/// successful additive metadata commit supersedes them.
+enum GoogleMediaStoragePathPolicy {
+    static func relativePath(
+        sanitizedGoogleID: String,
+        sanitizedFilename: String,
+        contentHash: String
+    ) -> String {
+        let hash = GoogleApplePhotosMirrorIdentity.canonicalContentHash(contentHash)
+        // Keep the 64-character version key in its own component so a valid
+        // provider filename cannot become invalid merely because Canvas added
+        // its content address in front of it.
+        return "\(sanitizedGoogleID)/\(hash)/\(sanitizedFilename)"
     }
 }
 

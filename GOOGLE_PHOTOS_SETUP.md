@@ -1,6 +1,6 @@
 # Google Photos setup
 
-Canvas uses the Google Photos Picker API, the only supported Google API for reading user-selected photos and videos. Since March 31, 2025, Google does not allow third-party apps to enumerate a user's library or shared albums. A person opens an album in Google's picker and selects its items; Canvas downloads an offline copy and merges a later selection made with the same Canvas album name.
+Canvas uses the Google Photos Picker API, the generally available Google API for reading user-selected photos and videos. Since March 31, 2025, Google does not allow third-party apps to enumerate a user's library or shared albums through the Library API. The Picker returns only the media explicitly selected in one session, not album identity, membership, ownership, or a subscription to later changes. Canvas downloads an offline copy and additively merges later selections made with the same Canvas album name.
 
 ## Configure the build
 
@@ -13,10 +13,14 @@ Canvas uses the Google Photos Picker API, the only supported Google API for read
 
 Canvas uses OAuth authorization code flow with PKCE. Access and refresh tokens are stored in the iOS Keychain. Imported media and album metadata stay in the app's Application Support directory. A build without the two settings remains fully functional for Apple Photos and shows an actionable missing-configuration message instead of starting a broken sign-in.
 
-## Sync behavior and limitations
+## Saved-selection behavior and limitations
 
-- Name the album in Canvas, then open the desired album in the Google picker and select its items.
-- Repeating the flow with the same name refreshes the existing Canvas album. Strong Google item overlap also matches a renamed album.
+- Name the album in Canvas, open Google's Picker, search for the desired album title, select its items, and tap Done. Google limits each Picker session to 2,000 items.
+- Shared-album media added by another contributor may need to be saved to the signed-in account's library before Google's Picker will return it. In Google Photos, open the shared album and choose **Save photos**; saving only the album to the Albums tab does not save its contents. Then start a new Picker session in Canvas.
+- Repeating the flow with the same Canvas name adds another batch and refreshes matching persistent Google item IDs. Items saved by earlier sessions remain in the Canvas album because absence from a new Picker selection does not prove that an item left the Google album.
+- After the local Canvas album commits, Full Apple Photos access lets Canvas create or reuse one named album and add non-duplicate copies there. These assets necessarily also appear in **All Photos**. Limited access is not enough to safely find and verify a reusable named album; the local Google import remains available and the Apple copy can be retried after enabling Full Access.
+- To rebuild a saved Canvas album from scratch, delete its saved Canvas copy and import again. This never deletes anything from Google Photos or Apple Photos; an Apple album and assets previously created by Canvas remain under the user's control.
 - Exact Google items, identical downloaded bytes, and conservative cross-source metadata matches are deduplicated in playback.
-- A Google selection that exactly matches an Apple album is not shown as a second album. Partial overlaps remain separately selectable so Google-only items are not lost; duplicated media is still removed from the queue.
-- Google does not expose ongoing shared-album change notifications. Refreshing requires another explicit picker selection.
+- Google does not expose ongoing shared-album change notifications through Picker. Canvas cannot automatically follow changes; every addition or refresh requires a new explicit Picker session.
+
+Official references: [Picker experience](https://developers.google.com/photos/picker/guides/picking-experience), [Picker session limit](https://developers.google.com/photos/picker/reference/rest/v1/sessions), [Photos API changes](https://developers.google.com/photos/support/updates), and [saving shared photos](https://support.google.com/photos/answer/6131416).

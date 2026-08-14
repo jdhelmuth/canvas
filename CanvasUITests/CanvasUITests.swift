@@ -205,6 +205,25 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Google Photos"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Open Google Photos"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "no Google OAuth client")).firstMatch.exists)
+
+        let contributorGuidance = app.staticTexts["google-shared-contributor-guidance"]
+        let additiveGuidance = app.staticTexts["google-additive-picker-guidance"]
+        for _ in 0..<6 where !contributorGuidance.exists || !additiveGuidance.exists { app.swipeUp() }
+        XCTAssertTrue(contributorGuidance.waitForExistence(timeout: 3))
+        XCTAssertTrue(additiveGuidance.waitForExistence(timeout: 3))
+        XCTAssertTrue(contributorGuidance.label.contains("Save photos"))
+        XCTAssertTrue(additiveGuidance.label.contains("previously saved Canvas items stay"))
+        XCTAssertTrue(additiveGuidance.label.contains("2,000 items"))
+
+        let appleMirrorGuidance = app.staticTexts["google-apple-photos-mirror-guidance"]
+        let fullAccessGuidance = app.staticTexts["google-apple-full-access-guidance"]
+        for _ in 0..<8 where !appleMirrorGuidance.exists || !fullAccessGuidance.exists { app.swipeUp() }
+        XCTAssertTrue(appleMirrorGuidance.waitForExistence(timeout: 3))
+        XCTAssertTrue(fullAccessGuidance.waitForExistence(timeout: 3))
+        XCTAssertTrue(appleMirrorGuidance.label.contains("All Photos"))
+        XCTAssertTrue(appleMirrorGuidance.label.contains("never deletes or replaces Apple Photos assets"))
+        XCTAssertTrue(fullAccessGuidance.label.contains("Full Access"))
+        XCTAssertTrue(fullAccessGuidance.label.contains("no new Google selection is needed"))
     }
 
     func testPhysicalWeatherOverlayUsesLiveWeatherKit() throws {

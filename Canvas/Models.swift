@@ -1,6 +1,7 @@
 import Foundation
 import Photos
 import SwiftUI
+import CryptoKit
 
 enum AppearanceMode: String, Codable, CaseIterable, Identifiable {
     case system, light, dark
@@ -171,10 +172,157 @@ struct GoogleAlbumRecord: Codable, Hashable, Identifiable {
     var title: String
     var items: [GoogleMediaRecord]
     var updatedAt: Date
+    /// Historical near-exact metadata match used only for cross-provider
+    /// display context. It is not ownership provenance and is never a writable
+    /// Apple Photos destination.
     var matchedAppleAlbumID: String?
 
     var reference: AlbumReference {
         AlbumReference(id: id, title: title, subtype: 0, estimatedCount: items.count, isSmart: false, isShared: true, source: .googlePhotos)
+    }
+}
+
+/// A privacy-preserving resource filename lets Canvas recover a PhotoKit
+/// mapping if Photos committed a copy immediately before Canvas was killed or
+/// metadata persistence failed. It contains only a one-way hash of the
+/// downloaded bytes, never an account, contributor, or raw provider ID.
+enum GoogleApplePhotosMirrorIdentity {
+    static let filenamePrefix = "canvas-google-"
+
+    static func canonicalContentHash(_ contentHash: String) -> String {
+        let hex = contentHash.lowercased().filter { $0.isHexDigit }
+        if hex.count == 64 { return hex }
+        return SHA256.hash(data: Data(contentHash.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func markerFilename(contentHash: String, originalFilename: String) -> String {
+        let pathExtension = (originalFilename as NSString).pathExtension.lowercased()
+        let stableHash = canonicalContentHash(contentHash)
+        return filenamePrefix + stableHash + (pathExtension.isEmpty ? "" : ".\(pathExtension)")
+    }
+
+    static func contentHash(fromMarkerFilename filename: String) -> String? {
+        let basename = (filename as NSString).deletingPathExtension.lowercased()
+        guard basename.hasPrefix(filenamePrefix) else { return nil }
+        let hash = String(basename.dropFirst(filenamePrefix.count))
+        guard hash.count == 64, hash.allSatisfy(\.isHexDigit) else { return nil }
+        return hash
+    }
+}
+
+/// Picker sessions return only the media selected in that one session. An
+/// omitted item is therefore not evidence that it left a Google album. Merge
+/// by Google's persistent media ID so later selections can safely add batches
+/// or refresh bytes/metadata without discarding an earlier selection.
+struct GoogleMediaMergeResult: Equatable {
+    let records: [GoogleMediaRecord]
+    let preservedCount: Int
+    let addedCount: Int
+    let refreshedCount: Int
+}
+
+enum GoogleMediaMergePolicy {
+    static func adding(_ incoming: [GoogleMediaRecord], to existing: [GoogleMediaRecord]) -> GoogleMediaMergeResult {
+        var existingByID: [String: GoogleMediaRecord] = [:]
+        for record in existing { existingByID[record.googleID] = record }
+
+        var incomingByID: [String: GoogleMediaRecord] = [:]
+        for record in incoming { incomingByID[record.googleID] = record }
+
+        let existingIDs = Set(existingByID.keys)
+        let incomingIDs = Set(incomingByID.keys)
+        var mergedByID = existingByID
+        // The newly downloaded record wins for a stable Google ID so refreshed
+        // filenames, metadata, hashes, and local paths do not remain stale.
+        for (id, record) in incomingByID { mergedByID[id] = record }
+
+        let ordered = mergedByID.values.sorted { lhs, rhs in
+            let lhsDate = lhs.creationDate ?? .distantPast
+            let rhsDate = rhs.creationDate ?? .distantPast
+            if lhsDate != rhsDate { return lhsDate < rhsDate }
+            return lhs.googleID < rhs.googleID
+        }
+        return GoogleMediaMergeResult(
+            records: ordered,
+            preservedCount: existingIDs.subtracting(incomingIDs).count,
+            addedCount: incomingIDs.subtracting(existingIDs).count,
+            refreshedCount: existingIDs.intersection(incomingIDs).count
+        )
+    }
+}
+
+/// Pure album-level plan used by the persistence service and tests. Matching an
+/// existing album preserves its Canvas ID, which also preserves the user's
+/// selected-album reference across any number of Picker sessions.
+struct GoogleAlbumImportPlan: Equatable {
+    let albums: [GoogleAlbumRecord]
+    let albumID: String
+    let replacedAlbumIndex: Int?
+    let itemMerge: GoogleMediaMergeResult
+
+    var updatedExistingAlbum: Bool { replacedAlbumIndex != nil }
+}
+
+enum GoogleAlbumImportPolicy {
+    static func adding(
+        title: String,
+        records: [GoogleMediaRecord],
+        matchedAppleAlbumID: String?,
+        to albums: [GoogleAlbumRecord],
+        updatedAt: Date = Date(),
+        newAlbumID: String = "google-album:\(UUID().uuidString)"
+    ) -> GoogleAlbumImportPlan {
+        let titleKey = title.googleAlbumMatchKey
+        let matchIndex = albums.indices.first { index in
+            albums[index].title.googleAlbumMatchKey == titleKey
+        }
+
+        var updatedAlbums = albums
+        let itemMerge: GoogleMediaMergeResult
+        let albumID: String
+        if let matchIndex {
+            let existing = albums[matchIndex]
+            itemMerge = GoogleMediaMergePolicy.adding(records, to: existing.items)
+            albumID = existing.id
+            updatedAlbums[matchIndex].title = title
+            updatedAlbums[matchIndex].items = itemMerge.records
+            updatedAlbums[matchIndex].updatedAt = updatedAt
+            updatedAlbums[matchIndex].matchedAppleAlbumID = matchedAppleAlbumID ?? existing.matchedAppleAlbumID
+        } else {
+            itemMerge = GoogleMediaMergePolicy.adding(records, to: [])
+            albumID = newAlbumID
+            updatedAlbums.append(
+                GoogleAlbumRecord(
+                    id: albumID,
+                    title: title,
+                    items: itemMerge.records,
+                    updatedAt: updatedAt,
+                    matchedAppleAlbumID: matchedAppleAlbumID
+                )
+            )
+        }
+        updatedAlbums.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        return GoogleAlbumImportPlan(
+            albums: updatedAlbums,
+            albumID: albumID,
+            replacedAlbumIndex: matchIndex,
+            itemMerge: itemMerge
+        )
+    }
+}
+
+/// A Picker retry can return updated URLs for only some failures. Preserve the
+/// original item for every omitted ID so a partial refresh can never silently
+/// mark an unattempted failure as complete.
+enum GoogleFailedItemRefreshPolicy {
+    static func merging<Item>(
+        refreshed: [Item],
+        into previous: [Item],
+        id: (Item) -> String
+    ) -> [Item] {
+        var refreshedByID: [String: Item] = [:]
+        for item in refreshed { refreshedByID[id(item)] = item }
+        return previous.map { refreshedByID[id($0)] ?? $0 }
     }
 }
 
@@ -203,6 +351,13 @@ struct GoogleAlbumDeletionPlan: Equatable {
 /// Canvas album, so replacing one album must never remove a path still owned by
 /// another album.
 enum GoogleAlbumMediaCleanup {
+    static func pathsFromUncommittedDownloads(
+        _ records: [GoogleMediaRecord],
+        previouslyReferencedPaths: Set<String>
+    ) -> Set<String> {
+        Set(records.map(\.relativePath)).subtracting(previouslyReferencedPaths)
+    }
+
     static func pathsNoLongerReferenced(
         replacing albumIndex: Int,
         with records: [GoogleMediaRecord],
@@ -286,32 +441,76 @@ struct GoogleImportFailureSummary: Equatable, Identifiable {
     var id: String { category.id }
 }
 
+struct GoogleApplePhotosMirrorSummary: Equatable {
+    let albumTitle: String
+    let addedCount: Int
+    let alreadyMirroredCount: Int
+    let failedCount: Int
+    let preservedUserRemovalCount: Int
+    let issue: String?
+    let retryAvailable: Bool
+
+    var isComplete: Bool { failedCount == 0 && issue == nil }
+    var canRetry: Bool { !isComplete && retryAvailable }
+
+    var message: String {
+        if let issue {
+            return "Canvas kept every downloaded item locally, but could not finish the Apple Photos album \"\(albumTitle)\": \(issue)"
+        }
+        let added = "\(addedCount) new item\(addedCount == 1 ? "" : "s")"
+        let retained = alreadyMirroredCount > 0
+            ? " and kept \(alreadyMirroredCount) existing mirrored item\(alreadyMirroredCount == 1 ? "" : "s")"
+            : ""
+        let respectedRemoval = preservedUserRemovalCount > 0
+            ? " Canvas respected \(preservedUserRemovalCount) item\(preservedUserRemovalCount == 1 ? "" : "s") you removed from Apple Photos and did not recreate \(preservedUserRemovalCount == 1 ? "it" : "them")."
+            : ""
+        return "Canvas added \(added)\(retained) in the Apple Photos album \"\(albumTitle)\". Apple Photos also shows these copies in All Photos.\(respectedRemoval)"
+    }
+}
+
 struct GooglePhotosImportSummary: Equatable {
     let albumID: String
     let title: String
     let selectedCount: Int
     let savedCount: Int
+    let preservedCount: Int
+    let totalSavedCount: Int
     let skippedCount: Int
     let failureSummaries: [GoogleImportFailureSummary]
     let canRetryFailedItems: Bool
     let updatedExistingAlbum: Bool
+    var applePhotosMirror: GoogleApplePhotosMirrorSummary? = nil
 
-    var itemCount: Int { savedCount }
-    var isPartial: Bool { skippedCount > 0 }
+    var itemCount: Int { totalSavedCount }
+    var isPartial: Bool { skippedCount > 0 || applePhotosMirror?.isComplete == false }
+    var canRetryApplePhotosMirror: Bool { applePhotosMirror?.canRetry == true }
 
     var message: String {
         let action = updatedExistingAlbum ? "updated" : "saved"
         let selectedText = "\(selectedCount) selected item\(selectedCount == 1 ? "" : "s")"
         let savedText = "\(savedCount) saved"
+        let preservedText = preservedCount > 0
+            ? " Canvas kept \(preservedCount) previously saved item\(preservedCount == 1 ? "" : "s") that this Picker session did not return."
+            : ""
+        let totalText = totalSavedCount > 0 ? " \(totalSavedCount) total item\(totalSavedCount == 1 ? " is" : "s are") available in Canvas." : ""
+        let mirrorText = applePhotosMirror.map { " \($0.message)" } ?? ""
         if skippedCount > 0 {
-            return "Google album \"\(title)\" \(action) \(savedText) of \(selectedText). \(skippedCount) item\(skippedCount == 1 ? " was" : " were") skipped and remain unavailable."
+            return "Google album \"\(title)\" \(action) \(savedText) of \(selectedText).\(preservedText)\(totalText) \(skippedCount) item\(skippedCount == 1 ? " was" : " were") skipped and remain unavailable.\(mirrorText)"
         }
-        return "Google album \"\(title)\" \(action) all \(selectedText) and is selected for Canvas."
+        return "Google album \"\(title)\" \(action) all \(selectedText).\(preservedText)\(totalText) It is selected for Canvas.\(mirrorText)"
     }
 
     var statusTitle: String {
-        if skippedCount > 0 { return "Google Photos import finished with unavailable items" }
+        if skippedCount > 0 || applePhotosMirror?.isComplete == false { return "Google Photos import finished with issues" }
         return "Google Photos selection is ready"
+    }
+}
+
+private extension String {
+    var googleAlbumMatchKey: String {
+        folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
     }
 }
 
