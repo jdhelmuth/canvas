@@ -39,6 +39,7 @@ final class PlaybackViewModel: ObservableObject {
     private var playbackAllowed = true
     private var canvasSize: CGSize = .zero
     private var loadGeneration = 0
+    private var timerToken: UInt64 = 0
 
     var currentAsset: CanvasMediaItem? { displayedFrame?.asset }
     var currentImage: UIImage? { displayedFrame?.image }
@@ -53,7 +54,7 @@ final class PlaybackViewModel: ObservableObject {
 
     func reload(settings updatedSettings: CanvasSettings? = nil) async {
         guard let library else { return }
-        timerTask?.cancel()
+        cancelTimer()
         loadTask?.cancel()
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -99,11 +100,11 @@ final class PlaybackViewModel: ObservableObject {
         if allowed {
             startTimer()
         } else {
-            timerTask?.cancel()
+            cancelTimer()
         }
     }
 
-    func togglePlaying() { isPlaying.toggle(); if isPlaying { startTimer() } else { timerTask?.cancel() } }
+    func togglePlaying() { isPlaying.toggle(); if isPlaying { startTimer() } else { cancelTimer() } }
     @discardableResult func next() -> Bool { navigateByDisplayedGroup(direction: 1) }
     @discardableResult func previous() -> Bool { navigateByDisplayedGroup(direction: -1) }
 
@@ -160,7 +161,7 @@ final class PlaybackViewModel: ObservableObject {
     @discardableResult
     private func advance(direction: Int, targetIndex: Int? = nil, gestureDirection: Int = 0) -> Bool {
         guard playbackAllowed, !queue.isEmpty else { return false }
-        timerTask?.cancel()
+        cancelTimer()
         loadTask?.cancel()
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -187,7 +188,7 @@ final class PlaybackViewModel: ObservableObject {
         }
         guard let nextIndex else {
             isPlaying = false
-            timerTask?.cancel()
+            cancelTimer()
             return false
         }
         let transitionSeed = UInt64.random(in: UInt64.min...UInt64.max)
@@ -237,6 +238,7 @@ final class PlaybackViewModel: ObservableObject {
         guard !Task.isCancelled, loadGeneration == generation else { return }
         guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let library, let loader else { return }
         elapsed = 0
+        progress = 0
         errorMessage = nil
         currentMediaDuration = asset.appleAsset?.duration ?? 0
         if currentMediaDuration <= 0, asset.kind == .video, let url = asset.localURL {
@@ -305,34 +307,48 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private func startTimer() {
-        timerTask?.cancel()
-        guard playbackAllowed, isPlaying, !queue.isEmpty else { return }
-        let duration: Double
-        if let asset = currentAsset, asset.kind == .video {
-            let appleDuration = asset.appleAsset?.duration ?? 0
-            let mediaDuration = appleDuration > 0 ? appleDuration : currentMediaDuration
-            duration = (settings.playFullVideo || settings.videoDuration <= 0) && mediaDuration > 0
-                ? mediaDuration
-                : max(settings.videoDuration, 1)
-        } else if currentAsset?.kind == .livePhoto {
-            duration = settings.livePhotoDuration
-        } else {
-            duration = settings.photoDuration
-        }
+        cancelTimer()
+        guard playbackAllowed, isPlaying, !queue.isEmpty,
+              let frame = displayedFrame,
+              let currentAsset else { return }
+
+        let duration = PlaybackTimingPolicy.duration(
+            for: currentAsset.kind,
+            settings: settings,
+            mediaDuration: currentMediaDuration
+        )
+        let generation = loadGeneration
+        let frameID = frame.id
+        let token = timerToken
+        let initialElapsed = min(max(elapsed, 0), duration)
+        let startedAt = Date()
         timerTask = Task { [weak self] in
             guard let self else { return }
-            let tick = 0.1
-            while !Task.isCancelled && self.elapsed < duration {
+            while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
-                if Task.isCancelled { return }
-                self.elapsed += tick
-                self.progress = min(self.elapsed / max(duration, 0.1), 1)
-            }
-            if !Task.isCancelled {
+                guard !Task.isCancelled,
+                      self.timerToken == token,
+                      self.loadGeneration == generation,
+                      self.displayedFrame?.id == frameID,
+                      self.playbackAllowed,
+                      self.isPlaying else { return }
+
+                let elapsed = min(duration, initialElapsed + Date().timeIntervalSince(startedAt))
+                self.elapsed = elapsed
+                self.progress = min(elapsed / duration, 1)
+                guard elapsed >= duration else { continue }
+
                 // Timed transitions must replace the displayed group as a
                 // whole, just like a swipe, rather than advancing one tile.
                 self.navigateByDisplayedGroup(direction: 1)
+                return
             }
         }
+    }
+
+    private func cancelTimer() {
+        timerToken &+= 1
+        timerTask?.cancel()
+        timerTask = nil
     }
 }

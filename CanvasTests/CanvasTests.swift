@@ -592,6 +592,46 @@ final class CanvasTests: XCTestCase {
         XCTAssertTrue(WeatherClockLayoutPolicy.shouldRenderStandalone(.weather, paired: false))
     }
 
+    func testClockWeatherRowStacksWhenPortraitWidthCannotHoldBothIntrinsicSurfaces() {
+        XCTAssertTrue(
+            WeatherClockLayoutPolicy.horizontalRowFits(
+                canvasWidth: 1024,
+                clockWidth: 280,
+                weatherWidth: 350
+            )
+        )
+        XCTAssertFalse(
+            WeatherClockLayoutPolicy.horizontalRowFits(
+                canvasWidth: 834,
+                clockWidth: 828,
+                weatherWidth: 350
+            )
+        )
+        XCTAssertEqual(
+            WeatherClockLayoutPolicy.horizontalRowWidth(clockWidth: 280, weatherWidth: 350),
+            659,
+            accuracy: 0.001
+        )
+    }
+
+    func testPlaybackTimingPolicyRejectsZeroPhotoDurationAndPreservesUnlimitedVideo() {
+        XCTAssertEqual(PlaybackTimingPolicy.normalizedPhotoDuration(0), 10)
+        XCTAssertEqual(PlaybackTimingPolicy.normalizedPhotoDuration(.nan), 10)
+        XCTAssertEqual(PlaybackTimingPolicy.normalizedPhotoDuration(0.2), 1)
+        XCTAssertEqual(PlaybackTimingPolicy.normalizedVideoDuration(0), 0)
+
+        var settings = CanvasSettings()
+        settings.photoDuration = 0
+        settings.livePhotoDuration = .infinity
+        settings.videoDuration = 0
+        settings.transitionDuration = -.infinity
+        XCTAssertTrue(settings.normalizePlaybackTiming())
+        XCTAssertEqual(settings.photoDuration, 10)
+        XCTAssertEqual(settings.livePhotoDuration, 10)
+        XCTAssertEqual(settings.videoDuration, 0)
+        XCTAssertEqual(settings.transitionDuration, 1)
+    }
+
     func testUSAirQualityCategoriesUsePublishedAQIBands() {
         XCTAssertEqual(CanvasAirQualityCategory.category(for: 0), .good)
         XCTAssertEqual(CanvasAirQualityCategory.category(for: 50), .good)

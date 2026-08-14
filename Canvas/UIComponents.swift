@@ -104,6 +104,9 @@ struct ClockOverlayView: View {
                 Text(date, style: .time)
                     .font(.system(size: clockSize, weight: (settings.clockWeight ?? .semibold).fontWeight, design: (settings.clockFont ?? .system).design))
                     .fontWidth((settings.clockWidth ?? .standard).fontWidth)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .allowsTightening(true)
                     .foregroundStyle(color)
                     .textStroke(color: strokeColor, width: strokeWidth, enabled: strokeEnabled)
                     .opacity(textOpacity)
@@ -315,6 +318,14 @@ struct WeatherOverlayWidget: View {
 
     private var weatherSize: CGFloat { CGFloat(settings.effectiveWeatherSize) }
 
+    /// The row uses this conservative width before SwiftUI renders the
+    /// widget. It intentionally reflects expanded metrics so the clock is
+    /// never measured against the compact loading state and then clipped when
+    /// live weather arrives.
+    var preferredWidth: CGFloat {
+        snapshot.map(widgetWidth(for:)) ?? 258 * min(max(weatherSize / 22, 0.72), 1.65)
+    }
+
     private struct Metric: Identifiable {
         let id: String
         let icon: String
@@ -488,6 +499,54 @@ struct WeatherOverlayWidget: View {
         let base = hasExpandedDetails ? 350.0 : 258.0
         let scale = min(max(weatherSize / 22, 0.72), 1.65)
         return base * scale
+    }
+}
+
+/// Shared clock/weather composition for the live frame and Settings preview.
+/// It keeps the requested side-by-side treatment whenever the real content
+/// fits, then moves the weather below the clock in a narrow portrait proposal
+/// instead of allowing the digital time to be compressed out of the canvas.
+struct WeatherClockRow: View {
+    let date: Date
+    let settings: OverlaySettings
+    let mediaImage: UIImage?
+    let weather: WeatherOverlayWidget
+    let canvasWidth: CGFloat
+
+    private var clockSize: CGFloat { CGFloat(settings.clockSize ?? max(settings.fontSize, 64)) }
+    private var shouldStack: Bool {
+        !WeatherClockLayoutPolicy.horizontalRowFits(
+            canvasWidth: canvasWidth,
+            clockWidth: clockSize * 4.6,
+            weatherWidth: weather.preferredWidth
+        )
+    }
+
+    var body: some View {
+        Group {
+            if shouldStack {
+                VStack(alignment: .leading, spacing: 10) {
+                    ClockOverlayView(date: date, settings: settings, mediaImage: mediaImage)
+                        .accessibilityIdentifier("canvas.clock.overlay")
+                    Rectangle()
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: 48, height: 1)
+                        .accessibilityHidden(true)
+                    weather
+                }
+            } else {
+                HStack(alignment: .center, spacing: WeatherClockLayoutPolicy.horizontalSpacing) {
+                    ClockOverlayView(date: date, settings: settings, mediaImage: mediaImage)
+                        .accessibilityIdentifier("canvas.clock.overlay")
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: WeatherClockLayoutPolicy.dividerWidth, height: min(max(clockSize * 0.78, 54), 132))
+                        .accessibilityHidden(true)
+                    weather
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

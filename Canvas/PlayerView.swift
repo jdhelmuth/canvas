@@ -344,7 +344,9 @@ struct PlayerView: View {
         presentedFrame = frame
         transitionProgress = 0
 
-        let duration = activeTransitionStyle == .cut ? 0 : max(0, store.settings.transitionDuration)
+        let duration = activeTransitionStyle == .cut
+            ? 0
+            : PlaybackTimingPolicy.normalizedTransitionDuration(store.settings.transitionDuration)
         guard duration > 0 else {
             finishFrameTransition()
             return
@@ -390,7 +392,7 @@ struct PlayerView: View {
         }.foregroundStyle(.white).transition(.opacity)
     }
 
-    private func overlay(in _: CGSize) -> some View {
+    private func overlay(in size: CGSize) -> some View {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
         let items = overlayItems(for: settings)
@@ -405,7 +407,7 @@ struct PlayerView: View {
                     ForEach(items) { item in
                         if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
                             if item == .clock, pairsClockAndWeather {
-                                clockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text)
+                                clockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasWidth: size.width)
                             } else {
                                 overlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                             }
@@ -441,18 +443,25 @@ struct PlayerView: View {
     private func clockAndWeatherRow(
         date: Date,
         settings: OverlaySettings,
-        textOpacity: Double
+        textOpacity: Double,
+        canvasWidth: CGFloat
     ) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            ClockOverlayView(date: date, settings: settings, mediaImage: model.currentImage)
-                .accessibilityIdentifier("canvas.clock.overlay")
-            RoundedRectangle(cornerRadius: 1)
-                .fill(Color.white.opacity(0.22))
-                .frame(width: 1, height: min(max(CGFloat(settings.clockSize ?? 72) * 0.78, 54), 132))
-                .accessibilityHidden(true)
-            weatherWidget(settings: settings, textOpacity: textOpacity)
-        }
-        .accessibilityElement(children: .contain)
+        WeatherClockRow(
+            date: date,
+            settings: settings,
+            mediaImage: model.currentImage,
+            weather: WeatherOverlayWidget(
+                snapshot: store.weather.snapshot,
+                status: store.weather.status,
+                isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
+                settings: settings,
+                mediaImage: model.currentImage,
+                textOpacity: textOpacity,
+                attributionURL: store.weather.attributionURL,
+                attributionMarkURL: store.weather.attributionMarkURL
+            ),
+            canvasWidth: canvasWidth
+        )
     }
 
     private func overlayItems(for settings: OverlaySettings) -> [OverlayStackItem] {

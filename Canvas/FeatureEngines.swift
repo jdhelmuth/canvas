@@ -115,6 +115,62 @@ enum ControlsAutoHidePolicy {
     }
 }
 
+/// Keeps persisted timing values from turning a frame into a zero-duration
+/// loop. Photo and Live Photo durations are always positive; video keeps its
+/// existing zero-value "unlimited" meaning. The timer uses these same rules
+/// at runtime so a legacy or externally edited settings record cannot make
+/// the slideshow advance continuously.
+enum PlaybackTimingPolicy {
+    static let defaultPhotoDuration: Double = 10
+    static let defaultLivePhotoDuration: Double = 10
+    static let defaultVideoDuration: Double = 60
+    static let defaultTransitionDuration: Double = 1
+    static let minimumDuration: Double = 1
+
+    static func normalizedPhotoDuration(_ value: Double) -> Double {
+        normalizedPositive(value, fallback: defaultPhotoDuration)
+    }
+
+    static func normalizedLivePhotoDuration(_ value: Double) -> Double {
+        normalizedPositive(value, fallback: defaultLivePhotoDuration)
+    }
+
+    static func normalizedVideoDuration(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultVideoDuration }
+        guard value > 0 else { return 0 }
+        return max(value, minimumDuration)
+    }
+
+    static func normalizedTransitionDuration(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultTransitionDuration }
+        return max(0, value)
+    }
+
+    static func duration(
+        for kind: MediaKind,
+        settings: CanvasSettings,
+        mediaDuration: Double
+    ) -> Double {
+        switch kind {
+        case .video:
+            let validMediaDuration = mediaDuration.isFinite && mediaDuration > 0 ? mediaDuration : 0
+            if (settings.playFullVideo || settings.videoDuration <= 0), validMediaDuration > 0 {
+                return validMediaDuration
+            }
+            return max(normalizedVideoDuration(settings.videoDuration), minimumDuration)
+        case .livePhoto:
+            return normalizedLivePhotoDuration(settings.livePhotoDuration)
+        case .photo:
+            return normalizedPhotoDuration(settings.photoDuration)
+        }
+    }
+
+    private static func normalizedPositive(_ value: Double, fallback: Double) -> Double {
+        guard value.isFinite, value > 0 else { return fallback }
+        return max(value, minimumDuration)
+    }
+}
+
 enum CaptureDateOverlayPolicy {
     static func visibleDates(_ dates: [Date?], enabled: Bool) -> [Date?] {
         enabled ? dates : dates.map { _ in nil }
@@ -361,15 +417,32 @@ enum OverlayStackOrder {
 }
 
 /// The clock remains the anchor of the overlay stack. When both clock and
-/// weather are enabled, weather moves into a single visual row to the clock's
-/// right instead of becoming another line above or below it.
+/// weather are enabled, the surfaces share one composition. The composition
+/// stays side by side when it fits and stacks in a narrow portrait canvas.
 enum WeatherClockLayoutPolicy {
+    static let horizontalSpacing: CGFloat = 14
+    static let dividerWidth: CGFloat = 1
+    static let overlayPadding: CGFloat = 24 + 14
+
     static func pairsClockAndWeather(showTime: Bool, showWeather: Bool) -> Bool {
         showTime && showWeather
     }
 
     static func shouldRenderStandalone(_ item: OverlayStackItem, paired: Bool) -> Bool {
         !(paired && item == .weather)
+    }
+
+    static func availableHorizontalWidth(canvasWidth: CGFloat) -> CGFloat {
+        max(0, canvasWidth - overlayPadding * 2)
+    }
+
+    static func horizontalRowWidth(clockWidth: CGFloat, weatherWidth: CGFloat) -> CGFloat {
+        max(0, clockWidth) + max(0, weatherWidth) + dividerWidth + horizontalSpacing * 2
+    }
+
+    static func horizontalRowFits(canvasWidth: CGFloat, clockWidth: CGFloat, weatherWidth: CGFloat) -> Bool {
+        horizontalRowWidth(clockWidth: clockWidth, weatherWidth: weatherWidth)
+            <= availableHorizontalWidth(canvasWidth: canvasWidth)
     }
 }
 

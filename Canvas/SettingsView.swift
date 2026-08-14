@@ -922,7 +922,7 @@ private struct ClockOverlayPreview: View {
     }
 
     @ViewBuilder
-    private func previewOverlay(date: Date, size _: CGSize) -> some View {
+    private func previewOverlay(date: Date, size: CGSize) -> some View {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
         let items = OverlayStackOrder.items(
@@ -946,7 +946,7 @@ private struct ClockOverlayPreview: View {
                 ForEach(items) { item in
                     if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
                         if item == .clock, pairsClockAndWeather {
-                            previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text)
+                            previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasWidth: size.width)
                         } else {
                             previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                         }
@@ -987,18 +987,25 @@ private struct ClockOverlayPreview: View {
     private func previewClockAndWeatherRow(
         date: Date,
         settings: OverlaySettings,
-        textOpacity: Double
+        textOpacity: Double,
+        canvasWidth: CGFloat
     ) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            ClockOverlayView(date: date, settings: settings, mediaImage: previewImages.first)
-                .accessibilityIdentifier("canvas.clock.overlay")
-            RoundedRectangle(cornerRadius: 1)
-                .fill(Color.white.opacity(0.22))
-                .frame(width: 1, height: min(max(CGFloat(settings.clockSize ?? 72) * 0.78, 54), 132))
-                .accessibilityHidden(true)
-            previewWeatherWidget(settings: settings, textOpacity: textOpacity)
-        }
-        .accessibilityElement(children: .contain)
+        WeatherClockRow(
+            date: date,
+            settings: settings,
+            mediaImage: previewImages.first,
+            weather: WeatherOverlayWidget(
+                snapshot: store.weather.snapshot,
+                status: store.weather.status,
+                isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
+                settings: settings,
+                mediaImage: previewImages.first,
+                textOpacity: textOpacity,
+                attributionURL: store.weather.attributionURL,
+                attributionMarkURL: store.weather.attributionMarkURL
+            ),
+            canvasWidth: canvasWidth
+        )
     }
 
     @ViewBuilder
