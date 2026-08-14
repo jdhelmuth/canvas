@@ -456,9 +456,7 @@ struct PlayerView: View {
                 isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
                 settings: settings,
                 mediaImage: model.currentImage,
-                textOpacity: textOpacity,
-                attributionURL: store.weather.attributionURL,
-                attributionMarkURL: store.weather.attributionMarkURL
+                textOpacity: textOpacity
             ),
             canvasWidth: canvasWidth
         )
@@ -540,9 +538,7 @@ struct PlayerView: View {
             isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
             settings: settings,
             mediaImage: model.currentImage,
-            textOpacity: textOpacity,
-            attributionURL: store.weather.attributionURL,
-            attributionMarkURL: store.weather.attributionMarkURL
+            textOpacity: textOpacity
         )
     }
     private func alignment(for position: OverlayPosition) -> Alignment { switch position { case .topLeading: .topLeading; case .topTrailing: .topTrailing; case .bottomLeading: .bottomLeading; case .bottomTrailing: .bottomTrailing; case .center: .center } }

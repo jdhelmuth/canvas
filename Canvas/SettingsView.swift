@@ -1000,9 +1000,7 @@ private struct ClockOverlayPreview: View {
                 isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
                 settings: settings,
                 mediaImage: previewImages.first,
-                textOpacity: textOpacity,
-                attributionURL: store.weather.attributionURL,
-                attributionMarkURL: store.weather.attributionMarkURL
+                textOpacity: textOpacity
             ),
             canvasWidth: canvasWidth
         )
@@ -1053,9 +1051,7 @@ private struct ClockOverlayPreview: View {
             isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
             settings: settings,
             mediaImage: previewImages.first,
-            textOpacity: textOpacity,
-            attributionURL: store.weather.attributionURL,
-            attributionMarkURL: store.weather.attributionMarkURL
+            textOpacity: textOpacity
         )
     }
 

@@ -313,8 +313,6 @@ struct WeatherOverlayWidget: View {
     let settings: OverlaySettings
     let mediaImage: UIImage?
     let textOpacity: Double
-    let attributionURL: URL?
-    let attributionMarkURL: URL?
 
     private var weatherSize: CGFloat { CGFloat(settings.effectiveWeatherSize) }
 
@@ -373,18 +371,6 @@ struct WeatherOverlayWidget: View {
                         .accessibilityLabel("Next hour, \(temperature), \(condition)")
                     }
 
-                    // Attribution remains available for current weather data.
-                    // The stale-data label belongs to the persisted service
-                    // state, not to this compact live card, so it is never
-                    // rendered as a footer or moved to another row.
-                    HStack(spacing: 2) {
-                        Spacer(minLength: 0)
-                        WeatherLegalLink(destination: attributionURL, markURL: attributionMarkURL)
-                        if settings.effectiveWeatherShowAirQuality, snapshot.airQualityIndex != nil {
-                            AirQualityLegalLink()
-                        }
-                    }
-                    .frame(height: 18)
                 }
                 .frame(width: widgetWidth(for: snapshot), alignment: .leading)
                 .accessibilityElement(children: .contain)
