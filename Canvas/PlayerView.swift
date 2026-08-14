@@ -407,7 +407,7 @@ struct PlayerView: View {
                     ForEach(items) { item in
                         if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
                             if item == .clock, pairsClockAndWeather {
-                                clockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasWidth: size.width)
+                                clockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
                             } else {
                                 overlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                             }
@@ -444,7 +444,7 @@ struct PlayerView: View {
         date: Date,
         settings: OverlaySettings,
         textOpacity: Double,
-        canvasWidth: CGFloat
+        canvasSize: CGSize
     ) -> some View {
         WeatherClockRow(
             date: date,
@@ -458,7 +458,7 @@ struct PlayerView: View {
                 mediaImage: model.currentImage,
                 textOpacity: textOpacity
             ),
-            canvasWidth: canvasWidth
+            canvasSize: canvasSize
         )
     }
 

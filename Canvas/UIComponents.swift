@@ -316,14 +316,6 @@ struct WeatherOverlayWidget: View {
 
     private var weatherSize: CGFloat { CGFloat(settings.effectiveWeatherSize) }
 
-    /// The row uses this conservative width before SwiftUI renders the
-    /// widget. It intentionally reflects expanded metrics so the clock is
-    /// never measured against the compact loading state and then clipped when
-    /// live weather arrives.
-    var preferredWidth: CGFloat {
-        snapshot.map(widgetWidth(for:)) ?? 258 * min(max(weatherSize / 22, 0.72), 1.65)
-    }
-
     private struct Metric: Identifiable {
         let id: String
         let icon: String
@@ -487,24 +479,17 @@ struct WeatherOverlayWidget: View {
 }
 
 /// Shared clock/weather composition for the live frame and Settings preview.
-/// It keeps the requested side-by-side treatment whenever the real content
-/// fits, then moves the weather below the clock in a narrow portrait proposal
-/// instead of allowing the digital time to be compressed out of the canvas.
+/// Landscape keeps the requested side-by-side treatment; portrait moves the
+/// weather below the clock so the digital time has the full canvas width.
 struct WeatherClockRow: View {
     let date: Date
     let settings: OverlaySettings
     let mediaImage: UIImage?
     let weather: WeatherOverlayWidget
-    let canvasWidth: CGFloat
+    let canvasSize: CGSize
 
     private var clockSize: CGFloat { CGFloat(settings.clockSize ?? max(settings.fontSize, 64)) }
-    private var shouldStack: Bool {
-        !WeatherClockLayoutPolicy.horizontalRowFits(
-            canvasWidth: canvasWidth,
-            clockWidth: clockSize * 4.6,
-            weatherWidth: weather.preferredWidth
-        )
-    }
+    private var shouldStack: Bool { WeatherClockLayoutPolicy.stacksClockAndWeather(for: canvasSize) }
 
     var body: some View {
         Group {

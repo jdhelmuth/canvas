@@ -946,7 +946,7 @@ private struct ClockOverlayPreview: View {
                 ForEach(items) { item in
                     if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
                         if item == .clock, pairsClockAndWeather {
-                            previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasWidth: size.width)
+                            previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
                         } else {
                             previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                         }
@@ -988,7 +988,7 @@ private struct ClockOverlayPreview: View {
         date: Date,
         settings: OverlaySettings,
         textOpacity: Double,
-        canvasWidth: CGFloat
+        canvasSize: CGSize
     ) -> some View {
         WeatherClockRow(
             date: date,
@@ -1002,7 +1002,7 @@ private struct ClockOverlayPreview: View {
                 mediaImage: previewImages.first,
                 textOpacity: textOpacity
             ),
-            canvasWidth: canvasWidth
+            canvasSize: canvasSize
         )
     }
 

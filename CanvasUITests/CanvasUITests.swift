@@ -93,7 +93,34 @@ final class CanvasUITests: XCTestCase {
         add(attachment)
     }
 
-    func testWeatherWidgetIsPositionedToTheRightOfClock() {
+    func testWeatherWidgetIsPositionedToTheRightOfClock() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let window = app.windows.firstMatch
+        guard window.waitForExistence(timeout: 5), window.frame.width > window.frame.height else {
+            throw XCTSkip("The simulator did not expose a landscape app window for this UI run.")
+        }
+
+        let clock = app.otherElements["canvas.clock.overlay"]
+        let weather = app.otherElements["canvas.weather.overlay"]
+        XCTAssertTrue(clock.waitForExistence(timeout: 5))
+        XCTAssertTrue(weather.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(weather.frame.minX, clock.frame.midX)
+        XCTAssertLessThanOrEqual(weather.frame.maxX, window.frame.maxX)
+        XCTAssertFalse(app.staticTexts["Last known"].exists)
+        XCTAssertEqual(weather.descendants(matching: .button).count, 0)
+        XCTAssertEqual(weather.descendants(matching: .link).count, 0)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Clock and weather overlay"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testWeatherWidgetIsBelowClockInPortrait() {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame"]
         app.launch()
@@ -102,15 +129,8 @@ final class CanvasUITests: XCTestCase {
         let weather = app.otherElements["canvas.weather.overlay"]
         XCTAssertTrue(clock.waitForExistence(timeout: 5))
         XCTAssertTrue(weather.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(weather.frame.minX, clock.frame.midX)
-        XCTAssertLessThanOrEqual(weather.frame.maxX, app.windows.firstMatch.frame.maxX)
-        XCTAssertFalse(app.staticTexts["Last known"].exists)
-        XCTAssertEqual(weather.descendants(matching: .button).count, 0)
-        XCTAssertEqual(weather.descendants(matching: .link).count, 0)
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "Clock and weather overlay"
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        XCTAssertGreaterThan(weather.frame.minY, clock.frame.maxY)
+        XCTAssertEqual(weather.frame.minX, clock.frame.minX, accuracy: 12)
     }
 
     func testEmptyHomeStateIsCenteredAndActionable() {

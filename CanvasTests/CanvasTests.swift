@@ -646,25 +646,23 @@ final class CanvasTests: XCTestCase {
         XCTAssertTrue(WeatherClockLayoutPolicy.shouldRenderStandalone(.weather, paired: false))
     }
 
-    func testClockWeatherRowStacksWhenPortraitWidthCannotHoldBothIntrinsicSurfaces() {
-        XCTAssertTrue(
-            WeatherClockLayoutPolicy.horizontalRowFits(
-                canvasWidth: 1024,
-                clockWidth: 280,
-                weatherWidth: 350
-            )
-        )
+    func testClockWeatherRowFollowsCanvasOrientation() {
         XCTAssertFalse(
-            WeatherClockLayoutPolicy.horizontalRowFits(
-                canvasWidth: 834,
-                clockWidth: 828,
-                weatherWidth: 350
+            WeatherClockLayoutPolicy.stacksClockAndWeather(
+                for: CGSize(width: 1366, height: 1024)
             )
         )
-        XCTAssertEqual(
-            WeatherClockLayoutPolicy.horizontalRowWidth(clockWidth: 280, weatherWidth: 350),
-            659,
-            accuracy: 0.001
+        XCTAssertTrue(
+            WeatherClockLayoutPolicy.stacksClockAndWeather(
+                for: CGSize(width: 1024, height: 1366)
+            )
+        )
+        // A narrow landscape canvas remains horizontal; stacking is reserved
+        // for portrait orientation rather than an arbitrary width threshold.
+        XCTAssertFalse(
+            WeatherClockLayoutPolicy.stacksClockAndWeather(
+                for: CGSize(width: 1024, height: 834)
+            )
         )
         XCTAssertFalse(WeatherOverlayFooterPolicy.rendersCompactVisualFooter)
     }

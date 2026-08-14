@@ -421,12 +421,11 @@ enum OverlayStackOrder {
 }
 
 /// The clock remains the anchor of the overlay stack. When both clock and
-/// weather are enabled, the surfaces share one composition. The composition
-/// stays side by side when it fits and stacks in a narrow portrait canvas.
+/// weather are enabled, the surfaces share one composition. Landscape keeps
+/// them side by side, while portrait places weather below the clock.
 enum WeatherClockLayoutPolicy {
     static let horizontalSpacing: CGFloat = 14
     static let dividerWidth: CGFloat = 1
-    static let overlayPadding: CGFloat = 24 + 14
 
     static func pairsClockAndWeather(showTime: Bool, showWeather: Bool) -> Bool {
         showTime && showWeather
@@ -436,17 +435,8 @@ enum WeatherClockLayoutPolicy {
         !(paired && item == .weather)
     }
 
-    static func availableHorizontalWidth(canvasWidth: CGFloat) -> CGFloat {
-        max(0, canvasWidth - overlayPadding * 2)
-    }
-
-    static func horizontalRowWidth(clockWidth: CGFloat, weatherWidth: CGFloat) -> CGFloat {
-        max(0, clockWidth) + max(0, weatherWidth) + dividerWidth + horizontalSpacing * 2
-    }
-
-    static func horizontalRowFits(canvasWidth: CGFloat, clockWidth: CGFloat, weatherWidth: CGFloat) -> Bool {
-        horizontalRowWidth(clockWidth: clockWidth, weatherWidth: weatherWidth)
-            <= availableHorizontalWidth(canvasWidth: canvasWidth)
+    static func stacksClockAndWeather(for canvasSize: CGSize) -> Bool {
+        canvasSize.height > canvasSize.width
     }
 }
 
