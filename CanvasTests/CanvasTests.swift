@@ -769,6 +769,23 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(OpenMeteoAirQualityProvider.coordinateString(-79.98214), "-79.98")
     }
 
+    func testAirNowAQIDecodingAndSecureProxyURL() throws {
+        let data = Data(#"{"source":"AirNow","preliminary":true,"aqi":77,"category":"Moderate"}"#.utf8)
+        let decoded = try JSONDecoder().decode(AirNowAirQualityResponse.self, from: data)
+        XCTAssertEqual(decoded.aqi, 77)
+
+        let url = try XCTUnwrap(
+            AirNowAirQualityProvider.requestURL(
+                baseURL: URL(string: "https://myclimateiq.com")!,
+                latitude: 40.44672,
+                longitude: -79.98214
+            )
+        )
+        XCTAssertEqual(url.host, "myclimateiq.com")
+        XCTAssertEqual(url.path, "/api/air-quality")
+        XCTAssertEqual(url.query, "latitude=40.45&longitude=-79.98")
+    }
+
     func testAmbientStationSettingsDefaultToWeatherKitAndNormalizeMAC() throws {
         let encoded = try JSONEncoder().encode(CanvasSettings())
         let decoded = try JSONDecoder().decode(CanvasSettings.self, from: encoded)

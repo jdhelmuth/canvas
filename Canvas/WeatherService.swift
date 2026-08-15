@@ -791,6 +791,70 @@ protocol CanvasAirQualityProviding: Sendable {
     func currentUSAirQualityIndex(for location: CLLocation) async throws -> Int?
 }
 
+struct AirNowAirQualityResponse: Decodable, Sendable {
+    let aqi: Int?
+}
+
+/// AirNow is accessed through ClimateIQ's public, read-only API. The AirNow
+/// feed and any server-side caching stay off-device, so the public app carries
+/// no provider credential and does not expose a third-party endpoint directly.
+struct AirNowAirQualityProvider: CanvasAirQualityProviding {
+    static let defaultBaseURL = URL(string: "https://myclimateiq.com")!
+
+    let baseURL: URL
+    let session: URLSession
+
+    init(baseURL: URL = Self.defaultBaseURL, session: URLSession = .shared) {
+        self.baseURL = baseURL
+        self.session = session
+    }
+
+    func currentUSAirQualityIndex(for location: CLLocation) async throws -> Int? {
+        guard let url = Self.requestURL(
+            baseURL: baseURL,
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude
+        ) else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            return nil
+        }
+        guard let value = try JSONDecoder().decode(AirNowAirQualityResponse.self, from: data).aqi else {
+            return nil
+        }
+        return min(max(value, 0), 500)
+    }
+
+    static func requestURL(
+        baseURL: URL = defaultBaseURL,
+        latitude: CLLocationDegrees,
+        longitude: CLLocationDegrees
+    ) -> URL? {
+        guard let endpoint = URL(string: "api/air-quality", relativeTo: baseURL)?.absoluteURL,
+              var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+        else {
+            return nil
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "latitude", value: coordinateString(latitude)),
+            URLQueryItem(name: "longitude", value: coordinateString(longitude)),
+        ]
+        return components.url
+    }
+
+    static func coordinateString(_ value: CLLocationDegrees) -> String {
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+}
+
 struct OpenMeteoAirQualityResponse: Decodable, Sendable {
     struct Current: Decodable, Sendable {
         let usAQI: Double?
@@ -803,10 +867,8 @@ struct OpenMeteoAirQualityResponse: Decodable, Sendable {
     let current: Current?
 }
 
-/// AQI is not exposed by WeatherKit's native or REST datasets. Canvas requests
-/// only Open-Meteo's consolidated current US AQI, using coordinates rounded to
-/// roughly one-kilometer precision to match the app's low-accuracy location
-/// request and the much coarser underlying CAMS forecast grid.
+/// Optional legacy provider retained for compatibility with older integrations
+/// and tests. The public Canvas configuration uses AirNowAirQualityProvider.
 struct OpenMeteoAirQualityProvider: CanvasAirQualityProviding {
     func currentUSAirQualityIndex(for location: CLLocation) async throws -> Int? {
         var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")!
@@ -875,7 +937,7 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
 
     init(
         weatherProvider: CanvasWeatherProviding = ConfiguredCanvasWeatherProvider(),
-        airQualityProvider: CanvasAirQualityProviding = OpenMeteoAirQualityProvider(),
+        airQualityProvider: CanvasAirQualityProviding = AirNowAirQualityProvider(),
         autoRequestLocation: Bool = true,
         initialLocation: CLLocation? = nil,
         ambientPollingInterval: TimeInterval = CanvasAmbientRefreshPolicy.pollingInterval,
@@ -1127,6 +1189,7 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         let source = activeWeatherSource ?? configurationProvider().source
         let provider = weatherProvider
         let airQualityProvider = airQualityProvider
+        let previousAirQualityIndex = snapshot?.airQualityIndex
         isUsingCachedSnapshot = snapshot != nil
         refreshInFlight = true
         isLoading = true
@@ -1139,7 +1202,13 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
                 let result = try await Self.withTimeout {
                     async let airQualityIndex = try? await airQualityProvider.currentUSAirQualityIndex(for: location)
                     var result = try await provider.currentWeather(for: location)
-                    result = result.addingAirQualityIndex(await airQualityIndex)
+                    if let airQualityIndex = await airQualityIndex {
+                        result = result.addingAirQualityIndex(airQualityIndex)
+                    } else if let previousAirQualityIndex {
+                        // Preserve the last known official value if the weather
+                        // refresh succeeds while the AQI service is unavailable.
+                        result = result.addingAirQualityIndex(previousAirQualityIndex)
+                    }
                     return result
                 }
                 guard !Task.isCancelled else { return }
