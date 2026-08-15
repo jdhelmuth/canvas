@@ -189,24 +189,59 @@ struct GoogleAlbumRecord: Codable, Hashable, Identifiable {
 enum GoogleApplePhotosMirrorIdentity {
     static let filenamePrefix = "canvas-google-"
 
+    /// A short hash of the stable Canvas album ID lets a marker recover a
+    /// newly-created collection after a crash without treating the same media
+    /// in a differently named import as proof that the collections are equal.
+    /// Older WIP builds emitted content-only markers, so parsing remains
+    /// backward compatible with that format.
+    static func ownerToken(for canvasAlbumID: String) -> String {
+        String(SHA256.hash(data: Data(canvasAlbumID.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
+    }
+
     static func canonicalContentHash(_ contentHash: String) -> String {
         let hex = contentHash.lowercased().filter { $0.isHexDigit }
         if hex.count == 64 { return hex }
         return SHA256.hash(data: Data(contentHash.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    static func markerFilename(contentHash: String, originalFilename: String) -> String {
+    static func markerFilename(contentHash: String, originalFilename: String, canvasAlbumID: String? = nil) -> String {
         let pathExtension = (originalFilename as NSString).pathExtension.lowercased()
         let stableHash = canonicalContentHash(contentHash)
-        return filenamePrefix + stableHash + (pathExtension.isEmpty ? "" : ".\(pathExtension)")
+        let owner = canvasAlbumID.map { "\(ownerToken(for: $0))-" } ?? ""
+        return filenamePrefix + owner + stableHash + (pathExtension.isEmpty ? "" : ".\(pathExtension)")
     }
 
     static func contentHash(fromMarkerFilename filename: String) -> String? {
         let basename = (filename as NSString).deletingPathExtension.lowercased()
         guard basename.hasPrefix(filenamePrefix) else { return nil }
-        let hash = String(basename.dropFirst(filenamePrefix.count))
+        let value = String(basename.dropFirst(filenamePrefix.count))
+        let components = value.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        let hash: String
+        switch components.count {
+        case 1:
+            hash = components[0]
+        case 2:
+            guard components[0].count == 16,
+                  components[0].allSatisfy(\.isHexDigit) else { return nil }
+            hash = components[1]
+        default:
+            return nil
+        }
         guard hash.count == 64, hash.allSatisfy(\.isHexDigit) else { return nil }
         return hash
+    }
+
+    static func ownerToken(fromMarkerFilename filename: String) -> String? {
+        let basename = (filename as NSString).deletingPathExtension.lowercased()
+        guard basename.hasPrefix(filenamePrefix) else { return nil }
+        let value = String(basename.dropFirst(filenamePrefix.count))
+        let components = value.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+        guard components.count == 2,
+              components[0].count == 16,
+              components[0].allSatisfy(\.isHexDigit),
+              components[1].count == 64,
+              components[1].allSatisfy(\.isHexDigit) else { return nil }
+        return components[0]
     }
 }
 
@@ -346,6 +381,38 @@ struct GoogleAlbumDeletionPlan: Equatable {
     }
 }
 
+/// A failed album-metadata commit is a no-op for both local records and any
+/// in-flight Picker retry. Only a successful commit authorizes cleanup or
+/// discarding the pending session.
+struct GoogleAlbumDeletionCommitDecision: Equatable {
+    let albums: [GoogleAlbumRecord]
+    let removableRelativePaths: Set<String>
+    let discardPendingImport: Bool
+}
+
+enum GoogleAlbumDeletionCommitPolicy {
+    static func decide(
+        albumID: String,
+        from albums: [GoogleAlbumRecord],
+        pendingAlbumID: String?,
+        persistenceSucceeded: Bool
+    ) -> GoogleAlbumDeletionCommitDecision? {
+        guard let plan = GoogleAlbumDeletionPlan.removing(albumID: albumID, from: albums) else { return nil }
+        guard persistenceSucceeded else {
+            return GoogleAlbumDeletionCommitDecision(
+                albums: albums,
+                removableRelativePaths: [],
+                discardPendingImport: false
+            )
+        }
+        return GoogleAlbumDeletionCommitDecision(
+            albums: plan.remainingAlbums,
+            removableRelativePaths: plan.removableRelativePaths,
+            discardPendingImport: pendingAlbumID == albumID
+        )
+    }
+}
+
 /// Computes which files can be removed when an existing Google album is
 /// refreshed.  A downloaded item may be referenced by more than one saved
 /// Canvas album, so replacing one album must never remove a path still owned by
@@ -372,6 +439,18 @@ enum GoogleAlbumMediaCleanup {
                 .flatMap { $0.element.items.map(\.relativePath) }
         )
         return oldPaths.subtracting(incomingPaths).subtracting(otherAlbumPaths)
+    }
+
+    /// Content-versioned downloads can outlive a record when a previous
+    /// refresh committed new metadata and the process was killed before its
+    /// old file cleanup ran. The media root is Canvas-owned, so a caller can
+    /// safely remove every stored path that is not in the current reference
+    /// set after a successful local metadata commit.
+    static func unreferencedStoredPaths(
+        storedRelativePaths: Set<String>,
+        referencedPaths: Set<String>
+    ) -> Set<String> {
+        storedRelativePaths.subtracting(referencedPaths)
     }
 }
 

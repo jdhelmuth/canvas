@@ -7,14 +7,19 @@ the Apple Photos features.
 
 ## Information Canvas accesses
 
-- Canvas reads only the Apple Photos albums and media that you authorize. It
-  does not edit, delete, or upload Apple Photos items.
+- Canvas reads only the Apple Photos albums and media that you authorize. For
+  an explicit Google Photos import, Full Photos access also permits Canvas to
+  add a non-destructive copy to a verified Canvas-owned Apple Photos album.
+  Canvas never deletes or replaces Apple Photos assets or albums and never
+  adopts an existing album solely because its title matches.
 - Canvas stores settings, exclusions, imported local audio, and selected
   Google Photos media on the iPad in its app container.
 - If you explicitly use Google Photos, Canvas opens Google’s supported Picker
   flow. Google handles that authorization and selection. Canvas stores OAuth
   tokens in the iPad Keychain and downloads only the media you select for local
-  playback. Google Photos is optional; Apple Photos remains usable without it.
+  playback. Limited or denied Photos access does not discard a local Google
+  import; it leaves the optional Apple Photos copy pending until Full Access
+  is granted. Google Photos is optional; Apple Photos remains usable without it.
 - Canvas may display location metadata already present in an authorized photo.
   When you opt into current weather, Canvas requests When In Use location
   permission and sends the current coordinates to Apple's WeatherKit to obtain
@@ -34,6 +39,8 @@ Canvas data stays in the app’s local container. Disconnect Google Photos from
 Canvas to remove its saved authorization. Deleting Canvas removes its local
 settings, exclusions, imported audio, downloaded Google Photos media, and
 stored tokens; it does not remove anything from Apple Photos or Google Photos.
+Deleting a saved Canvas Google copy also does not remove its Apple Photos
+album or assets.
 
 ## Third parties
 

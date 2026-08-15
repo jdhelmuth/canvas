@@ -607,7 +607,7 @@ struct SettingsView: View {
     private var privacySection: some View {
         Section("Storage & Privacy") {
             Label("Private by default", systemImage: "lock.shield.fill")
-            Text("Canvas stores preferences and exclusions locally. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. With Full Photos access, Canvas also makes non-destructive Apple Photos copies in a named album; those assets also appear in All Photos. Canvas never deletes or replaces Apple Photos assets. WeatherKit sends location to Apple; Ambient sends your personal API key and station identifier to ClimateIQ's secure proxy, while the shared application key stays server-side. AQI uses an approximately one-kilometer location with Open-Meteo. Canvas has no analytics, ads, or tracking.")
+            Text("Canvas stores preferences and exclusions locally. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. With Full Photos access, Canvas makes non-destructive Apple Photos copies only in a verified Canvas-owned album; those assets also appear in All Photos. Canvas never adopts an unverified same-title album, deletes Apple Photos assets, or deletes Apple Photos albums. WeatherKit sends location to Apple; Ambient sends your personal API key and station identifier to ClimateIQ's secure proxy, while the shared application key stays server-side. AQI uses an approximately one-kilometer location with Open-Meteo. Canvas has no analytics, ads, or tracking.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

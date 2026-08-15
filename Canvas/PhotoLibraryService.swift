@@ -21,8 +21,8 @@ enum PhotoAuthorizationState: Equatable {
     var canManageGoogleMirrorAlbums: Bool { self == .authorized }
     var explanation: String? {
         switch self {
-        case .limited: "Photos access is limited. Canvas can only show the items you selected in Photos; choose More Photos in Settings for a complete frame."
-        case .denied: "Photos access is off. Enable it in Settings to choose albums and start a frame."
+        case .limited: "Photos access is limited. Canvas can browse the items you selected in Photos, but Full Access is required to create or reuse the dedicated Apple Photos album for a Google import."
+        case .denied: "Photos access is off. Enable it in Settings to choose albums or mirror a saved Google import into its dedicated Apple Photos album."
         case .restricted: "Photos access is restricted by this device or account."
         default: nil
         }
@@ -105,6 +105,7 @@ enum GooglePhotosMirrorAlbumResolution: Equatable {
     case create
     case failRemoved
     case failAmbiguous
+    case failOwnershipUnverified
 }
 
 enum GooglePhotosMirrorAlbumResolutionPolicy {
@@ -112,17 +113,19 @@ enum GooglePhotosMirrorAlbumResolutionPolicy {
         persistedAlbumID: String?,
         persistedAlbumRemoved: Bool,
         persistedAlbumAccessible: Bool,
+        markerVerifiedAlbumIDs: [String],
         exactEditableAlbumIDs: [String]
     ) -> GooglePhotosMirrorAlbumResolution {
         if persistedAlbumRemoved { return .failRemoved }
         if let persistedAlbumID, !persistedAlbumID.isEmpty {
             if persistedAlbumAccessible { return .reuse(persistedAlbumID) }
-            if exactEditableAlbumIDs.count > 1 { return .failAmbiguous }
-            if let only = exactEditableAlbumIDs.first { return .reuse(only) }
+            if markerVerifiedAlbumIDs.count > 1 { return .failAmbiguous }
+            if let recovered = markerVerifiedAlbumIDs.first { return .reuse(recovered) }
             return .failRemoved
         }
-        if exactEditableAlbumIDs.count > 1 { return .failAmbiguous }
-        if let only = exactEditableAlbumIDs.first { return .reuse(only) }
+        if markerVerifiedAlbumIDs.count > 1 { return .failAmbiguous }
+        if let verified = markerVerifiedAlbumIDs.first { return .reuse(verified) }
+        if !exactEditableAlbumIDs.isEmpty { return .failOwnershipUnverified }
         return .create
     }
 }
@@ -130,6 +133,10 @@ enum GooglePhotosMirrorAlbumResolutionPolicy {
 struct GooglePhotosMirrorAssetReconciliation {
     let entriesByGoogleID: [String: GooglePhotosMirrorAssetEntry]
     let recordsNeedingCreationByHash: [String: [GoogleMediaRecord]]
+    /// Existing PHAssets found in another Canvas-owned mirror can be added to
+    /// the current album. The Google ID mapping is retained so a failed
+    /// membership write can remain pending without creating a duplicate asset.
+    let assetIDsToAddToTargetByGoogleID: [String: String]
     let alreadyMirroredCount: Int
 }
 
@@ -139,6 +146,10 @@ enum GooglePhotosMirrorAssetReconciliationPolicy {
         persistedEntries: [String: GooglePhotosMirrorAssetEntry],
         accessibleAssetIDs: Set<String>,
         recoveredAssetIDsByContentHash: [String: String],
+        sharedAssetIDsByGoogleID: [String: String] = [:],
+        sharedAssetIDsByContentHash: [String: String] = [:],
+        assetIDsInTargetAlbum: Set<String>? = nil,
+        assetIDsAlreadyInTargetAlbum: Set<String> = [],
         verifiedAt: Date
     ) -> GooglePhotosMirrorAssetReconciliation {
         let recordIDs = Set(records.map(\.googleID))
@@ -154,6 +165,13 @@ enum GooglePhotosMirrorAssetReconciliationPolicy {
                 } else {
                     entry.state = .removedByUser
                 }
+            } else if let assetIDsInTargetAlbum,
+                      !assetIDsInTargetAlbum.contains(entry.appleAssetID) {
+                // The PHAsset still exists in All Photos, but the person
+                // removed it from this Canvas-managed album. Preserve that
+                // intent so a new Google ID with the same bytes cannot add it
+                // back through cross-album deduplication.
+                entry.state = .removedByUser
             }
             entry.lastVerifiedAt = verifiedAt
             entries[googleID] = entry
@@ -170,6 +188,7 @@ enum GooglePhotosMirrorAssetReconciliationPolicy {
 
         var alreadyMirroredCount = 0
         var needsCreation: [String: [GoogleMediaRecord]] = [:]
+        var assetIDsToAddToTargetByGoogleID: [String: String] = [:]
         for record in records {
             if let persisted = entries[record.googleID] {
                 if persisted.state == .active { alreadyMirroredCount += 1 }
@@ -188,7 +207,9 @@ enum GooglePhotosMirrorAssetReconciliationPolicy {
                     state: .removedByUser,
                     lastVerifiedAt: verifiedAt
                 )
-            } else if let assetID = assetIDByHash[hash] {
+            } else if let assetID = sharedAssetIDsByGoogleID[record.googleID]
+                        ?? assetIDByHash[hash]
+                        ?? sharedAssetIDsByContentHash[hash] {
                 entries[record.googleID] = GooglePhotosMirrorAssetEntry(
                     contentHash: hash,
                     appleAssetID: assetID,
@@ -197,6 +218,9 @@ enum GooglePhotosMirrorAssetReconciliationPolicy {
                     lastVerifiedAt: verifiedAt
                 )
                 alreadyMirroredCount += 1
+                if !assetIDsAlreadyInTargetAlbum.contains(assetID) {
+                    assetIDsToAddToTargetByGoogleID[record.googleID] = assetID
+                }
             } else {
                 needsCreation[hash, default: []].append(record)
             }
@@ -204,6 +228,7 @@ enum GooglePhotosMirrorAssetReconciliationPolicy {
         return GooglePhotosMirrorAssetReconciliation(
             entriesByGoogleID: entries,
             recordsNeedingCreationByHash: needsCreation,
+            assetIDsToAddToTargetByGoogleID: assetIDsToAddToTargetByGoogleID,
             alreadyMirroredCount: alreadyMirroredCount
         )
     }
@@ -252,6 +277,7 @@ enum GoogleApplePhotosMirrorError: LocalizedError {
     case fullAccessRequired
     case managedAlbumRemoved
     case ambiguousRecovery
+    case ownershipUnverified
     case albumCreationFailed
     case photoLibraryChangeFailed(String)
 
@@ -263,6 +289,8 @@ enum GoogleApplePhotosMirrorError: LocalizedError {
             "The Apple Photos album previously created by Canvas was removed. Canvas preserved that deletion and did not create another album automatically."
         case .ambiguousRecovery:
             "Canvas found more than one editable Apple Photos album with the saved name and stopped rather than choosing a destination incorrectly. Rename or remove the extra album, then retry."
+        case .ownershipUnverified:
+            "Canvas found an Apple Photos album with the saved name, but it was not created by Canvas. Canvas did not adopt it or add anything to it; rename that album or choose a different Canvas album name, then retry."
         case .albumCreationFailed:
             "Apple Photos did not create the dedicated album. No existing user album was changed."
         case .photoLibraryChangeFailed(let message):
@@ -412,34 +440,6 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         return output
     }
 
-    /// Returns an Apple album only for a near-exact metadata match. Partial overlap stays visible
-    /// as a Google album while queue-level identity matching removes duplicated media.
-    func bestMatchingAlbum(for googleItems: [GoogleMediaRecord]) -> String? {
-        guard authorization.canRead, !googleItems.isEmpty else { return nil }
-        let googleKeys = Set(googleItems.map { item in
-            let base = (item.filename as NSString).deletingPathExtension.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            let timestamp = item.creationDate.map { Int($0.timeIntervalSince1970.rounded()) } ?? 0
-            return "\(item.kind.rawValue)|\(base)|\(timestamp)|\(item.pixelWidth)x\(item.pixelHeight)"
-        })
-        var best: (id: String, score: Double)?
-        for album in albums where album.source == .applePhotos {
-            guard let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album.id], options: nil).firstObject else { continue }
-            let fetch = PHAsset.fetchAssets(in: collection, options: nil)
-            guard fetch.count == googleItems.count else { continue }
-            var keys = Set<String>()
-            fetch.enumerateObjects { asset, _, _ in
-                let kind: MediaKind = asset.mediaType == .video ? .video : (asset.mediaSubtypes.contains(.photoLive) ? .livePhoto : .photo)
-                let filename = asset.value(forKey: "filename") as? String ?? ""
-                let base = (filename as NSString).deletingPathExtension.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                let timestamp = asset.creationDate.map { Int($0.timeIntervalSince1970.rounded()) } ?? 0
-                keys.insert("\(kind.rawValue)|\(base)|\(timestamp)|\(asset.pixelWidth)x\(asset.pixelHeight)")
-            }
-            let score = Double(keys.intersection(googleKeys).count) / Double(max(1, googleKeys.count))
-            if score >= 0.98, score > (best?.score ?? 0) { best = (album.id, score) }
-        }
-        return best?.id
-    }
-
     func descriptors(for assets: [PHAsset], albumTitle: String? = nil) -> [MediaDescriptor] {
         assets.map { asset in
             let kind: MediaKind = asset.mediaType == .video ? .video : (asset.mediaSubtypes.contains(.photoLive) ? .livePhoto : .photo)
@@ -571,15 +571,6 @@ final class GooglePhotosMirrorService {
     ) async throws -> GoogleApplePhotosMirrorResult {
         if let loadError = indexStore.loadError { throw loadError }
         var index = indexStore.index
-        if index.albumsByCanvasID[canvasAlbumID] == nil {
-            let priorEntries = index.albumsByCanvasID.filter {
-                $0.key != canvasAlbumID && $0.value.title.googleMirrorTitleKey == title.googleMirrorTitleKey
-            }
-            if priorEntries.count == 1, let prior = priorEntries.first {
-                index.albumsByCanvasID[canvasAlbumID] = prior.value
-                index.albumsByCanvasID.removeValue(forKey: prior.key)
-            }
-        }
         var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         if status == .notDetermined {
             status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
@@ -605,26 +596,20 @@ final class GooglePhotosMirrorService {
         let now = Date()
         var entry = index.albumsByCanvasID[canvasAlbumID]
 
-        // If a Canvas-local Google album was removed and later re-created with
-        // the same display name, migrate one unambiguous Canvas-owned mirror
-        // entry. The separate index deliberately survives local cleanup.
-        if entry == nil {
-            let candidates = index.albumsByCanvasID.filter {
-                $0.key != canvasAlbumID && $0.value.title.googleMirrorTitleKey == title.googleMirrorTitleKey
-            }
-            if candidates.count == 1, let candidate = candidates.first {
-                entry = candidate.value
-                index.albumsByCanvasID.removeValue(forKey: candidate.key)
-            }
-        }
-
         let persistedAlbumID = entry?.appleAlbumID
         let persistedAlbum = persistedAlbumID.flatMap(editableUserAlbum(identifier:))
-        let exactMatches = persistedAlbum == nil ? editableUserAlbums(named: title) : []
+        let exactMatches = editableUserAlbums(named: title)
+        let markerMatches = markerVerifiedAlbums(
+            canvasAlbumID: canvasAlbumID,
+            title: title,
+            records: records,
+            persistedEntry: entry
+        )
         let resolution = GooglePhotosMirrorAlbumResolutionPolicy.resolve(
             persistedAlbumID: persistedAlbumID,
             persistedAlbumRemoved: entry?.albumRemovedByUser == true,
             persistedAlbumAccessible: persistedAlbum != nil,
+            markerVerifiedAlbumIDs: markerMatches.map(\.localIdentifier),
             exactEditableAlbumIDs: exactMatches.map(\.localIdentifier)
         )
         var album: PHAssetCollection?
@@ -632,7 +617,8 @@ final class GooglePhotosMirrorService {
         case .reuse(let identifier):
             album = persistedAlbum?.localIdentifier == identifier
                 ? persistedAlbum
-                : exactMatches.first(where: { $0.localIdentifier == identifier })
+                : (exactMatches.first(where: { $0.localIdentifier == identifier })
+                    ?? markerMatches.first(where: { $0.localIdentifier == identifier }))
             if let album, entry?.appleAlbumID != album.localIdentifier {
                 entry = GooglePhotosMirrorAlbumEntry(
                     title: title,
@@ -668,6 +654,20 @@ final class GooglePhotosMirrorService {
             index.albumsByCanvasID[canvasAlbumID] = ambiguousEntry
             try indexStore.persist(index)
             throw GoogleApplePhotosMirrorError.ambiguousRecovery
+        case .failOwnershipUnverified:
+            var unverifiedEntry = entry ?? GooglePhotosMirrorAlbumEntry(
+                title: title,
+                appleAlbumID: "",
+                albumRemovedByUser: false,
+                pendingReason: nil,
+                assetsByGoogleID: [:],
+                updatedAt: now
+            )
+            unverifiedEntry.pendingReason = "An existing Apple Photos album has this name, but Canvas could not verify that it owns it."
+            unverifiedEntry.updatedAt = now
+            index.albumsByCanvasID[canvasAlbumID] = unverifiedEntry
+            try indexStore.persist(index)
+            throw GoogleApplePhotosMirrorError.ownershipUnverified
         }
 
         var workingEntry = entry ?? GooglePhotosMirrorAlbumEntry(
@@ -682,18 +682,31 @@ final class GooglePhotosMirrorService {
         workingEntry.pendingReason = nil
         workingEntry.updatedAt = now
 
-        let persistedAssetIDs = Set(workingEntry.assetsByGoogleID.values.map(\.appleAssetID))
-        let accessibleAssetIDs = accessibleAssets(identifiers: persistedAssetIDs)
+        let targetRecoveredAssetIDsByContentHash = album.map(recoveredAssetIDsByContentHash(in:)) ?? [:]
+        let allPersistedAssetIDs = Set(index.albumsByCanvasID.values.flatMap { entry in
+            entry.assetsByGoogleID.values.compactMap { asset in
+                asset.state == .active && !asset.appleAssetID.isEmpty ? asset.appleAssetID : nil
+            }
+        })
+        let accessibleAssetIDs = accessibleAssets(identifiers: allPersistedAssetIDs)
+        let sharedMappings = sharedMirrorAssetMappings(
+            in: index,
+            excludingCanvasAlbumID: canvasAlbumID,
+            accessibleAssetIDs: accessibleAssetIDs
+        )
         var failedGoogleIDs = Set<String>()
         let reconciliation = GooglePhotosMirrorAssetReconciliationPolicy.reconcile(
             records: records,
             persistedEntries: workingEntry.assetsByGoogleID,
             accessibleAssetIDs: accessibleAssetIDs,
-            recoveredAssetIDsByContentHash: album.map(recoveredAssetIDsByContentHash(in:)) ?? [:],
+            recoveredAssetIDsByContentHash: targetRecoveredAssetIDsByContentHash,
+            sharedAssetIDsByGoogleID: sharedMappings.byGoogleID,
+            sharedAssetIDsByContentHash: sharedMappings.byContentHash,
+            assetIDsInTargetAlbum: album.map(assetIDs(in:)),
+            assetIDsAlreadyInTargetAlbum: Set(targetRecoveredAssetIDsByContentHash.values),
             verifiedAt: now
         )
         workingEntry.assetsByGoogleID = reconciliation.entriesByGoogleID
-        let alreadyMirroredCount = reconciliation.alreadyMirroredCount
         let recordsNeedingCreationByHash = reconciliation.recordsNeedingCreationByHash
 
         var candidates: [GoogleApplePhotosMirrorCandidate] = []
@@ -710,7 +723,8 @@ final class GooglePhotosMirrorService {
                 sourceURL: sourceURL,
                 markerFilename: GoogleApplePhotosMirrorIdentity.markerFilename(
                     contentHash: sourceRecord.contentHash,
-                    originalFilename: sourceRecord.filename
+                    originalFilename: sourceRecord.filename,
+                    canvasAlbumID: canvasAlbumID
                 )
             )
             candidates.append(candidate)
@@ -719,6 +733,7 @@ final class GooglePhotosMirrorService {
 
         var addedAssetIDsByCandidateID: [String: String] = [:]
         var newlyCreatedAppleAssetIDs = Set<String>()
+        var sharedAssetIDsAlreadyAddedToAlbum = Set<String>()
         if album == nil {
             // The first valid asset and album are committed together, closing
             // the crash window where an untracked empty album could be created.
@@ -735,24 +750,62 @@ final class GooglePhotosMirrorService {
                     failedGoogleIDs.formUnion(googleIDsByCandidateID[candidate.record.googleID] ?? [candidate.record.googleID])
                 }
             }
+            if album == nil, !reconciliation.assetIDsToAddToTargetByGoogleID.isEmpty {
+                let existingIDs = Set(reconciliation.assetIDsToAddToTargetByGoogleID.values)
+                let existingAssets = fetchAssets(identifiers: existingIDs)
+                guard existingAssets.count == existingIDs.count else {
+                    failedGoogleIDs.formUnion(reconciliation.assetIDsToAddToTargetByGoogleID.keys)
+                    for googleID in reconciliation.assetIDsToAddToTargetByGoogleID.keys {
+                        workingEntry.assetsByGoogleID.removeValue(forKey: googleID)
+                    }
+                    throw GoogleApplePhotosMirrorError.albumCreationFailed
+                }
+                do {
+                    album = try await createAlbum(named: title, adding: existingAssets)
+                    sharedAssetIDsAlreadyAddedToAlbum = existingIDs
+                } catch {
+                    failedGoogleIDs.formUnion(reconciliation.assetIDsToAddToTargetByGoogleID.keys)
+                    for googleID in reconciliation.assetIDsToAddToTargetByGoogleID.keys {
+                        workingEntry.assetsByGoogleID.removeValue(forKey: googleID)
+                    }
+                    throw GoogleApplePhotosMirrorError.albumCreationFailed
+                }
+            }
             guard let album else { throw GoogleApplePhotosMirrorError.albumCreationFailed }
             workingEntry.appleAlbumID = album.localIdentifier
             applyCreatedMappings(
                 addedAssetIDsByCandidateID,
                 candidatesToGoogleIDs: googleIDsByCandidateID,
                 records: records,
+                canvasAlbumID: canvasAlbumID,
                 entry: &workingEntry,
                 verifiedAt: now
             )
-            index.albumsByCanvasID[canvasAlbumID] = workingEntry
-            try indexStore.persist(index)
         } else if workingEntry.appleAlbumID.isEmpty {
             workingEntry.appleAlbumID = album!.localIdentifier
-            index.albumsByCanvasID[canvasAlbumID] = workingEntry
-            try indexStore.persist(index)
         }
 
         guard let resolvedAlbum = album else { throw GoogleApplePhotosMirrorError.albumCreationFailed }
+        var alreadyMirroredCount = reconciliation.alreadyMirroredCount
+        let sharedMappingsToAdd = reconciliation.assetIDsToAddToTargetByGoogleID
+            .filter { !sharedAssetIDsAlreadyAddedToAlbum.contains($0.value) }
+        if !sharedMappingsToAdd.isEmpty {
+            let membership = await addExistingAssetsResiliently(
+                identifiers: Set(sharedMappingsToAdd.values),
+                to: resolvedAlbum
+            )
+            sharedAssetIDsAlreadyAddedToAlbum.formUnion(membership.addedAssetIDs)
+            let failedSharedGoogleIDs = Set(sharedMappingsToAdd.compactMap { googleID, assetID in
+                membership.failedAssetIDs.contains(assetID) ? googleID : nil
+            })
+            if !failedSharedGoogleIDs.isEmpty {
+                failedGoogleIDs.formUnion(failedSharedGoogleIDs)
+                alreadyMirroredCount -= failedSharedGoogleIDs.count
+                for googleID in failedSharedGoogleIDs {
+                    workingEntry.assetsByGoogleID.removeValue(forKey: googleID)
+                }
+            }
+        }
         index.albumsByCanvasID[canvasAlbumID] = workingEntry
         try indexStore.persist(index)
         for start in stride(from: 0, to: candidates.count, by: Self.batchSize) {
@@ -765,6 +818,7 @@ final class GooglePhotosMirrorService {
                 batchResult.assetIDsByGoogleID,
                 candidatesToGoogleIDs: googleIDsByCandidateID,
                 records: records,
+                canvasAlbumID: canvasAlbumID,
                 entry: &workingEntry,
                 verifiedAt: Date()
             )
@@ -798,6 +852,7 @@ final class GooglePhotosMirrorService {
         _ created: [String: String],
         candidatesToGoogleIDs: [String: [String]],
         records: [GoogleMediaRecord],
+        canvasAlbumID: String,
         entry: inout GooglePhotosMirrorAlbumEntry,
         verifiedAt: Date
     ) {
@@ -810,7 +865,8 @@ final class GooglePhotosMirrorService {
                     appleAssetID: appleAssetID,
                     markerFilename: GoogleApplePhotosMirrorIdentity.markerFilename(
                         contentHash: record.contentHash,
-                        originalFilename: record.filename
+                        originalFilename: record.filename,
+                        canvasAlbumID: canvasAlbumID
                     ),
                     state: .active,
                     lastVerifiedAt: verifiedAt
@@ -818,6 +874,91 @@ final class GooglePhotosMirrorService {
             }
         }
         entry.updatedAt = verifiedAt
+    }
+
+    private func sharedMirrorAssetMappings(
+        in index: GooglePhotosMirrorIndex,
+        excludingCanvasAlbumID: String,
+        accessibleAssetIDs: Set<String>
+    ) -> (byGoogleID: [String: String], byContentHash: [String: String]) {
+        var byGoogleID: [String: String] = [:]
+        var byContentHash: [String: String] = [:]
+        for (canvasID, albumEntry) in index.albumsByCanvasID where canvasID != excludingCanvasAlbumID {
+            for (googleID, assetEntry) in albumEntry.assetsByGoogleID
+            where assetEntry.state == .active && accessibleAssetIDs.contains(assetEntry.appleAssetID) {
+                byGoogleID[googleID] = assetEntry.appleAssetID
+                byContentHash[GoogleApplePhotosMirrorIdentity.canonicalContentHash(assetEntry.contentHash)] = assetEntry.appleAssetID
+            }
+            guard let album = readableAlbum(identifier: albumEntry.appleAlbumID) else { continue }
+            for (hash, assetID) in recoveredAssetIDsByContentHash(in: album) {
+                byContentHash[hash] = assetID
+            }
+        }
+        return (byGoogleID, byContentHash)
+    }
+
+    private func readableAlbum(identifier: String) -> PHAssetCollection? {
+        guard !identifier.isEmpty,
+              let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [identifier], options: nil).firstObject,
+              album.assetCollectionType == .album,
+              album.assetCollectionSubtype != .albumCloudShared else { return nil }
+        return album
+    }
+
+    private func assetIDs(in album: PHAssetCollection) -> Set<String> {
+        let fetch = PHAsset.fetchAssets(in: album, options: nil)
+        var result = Set<String>()
+        fetch.enumerateObjects { asset, _, _ in result.insert(asset.localIdentifier) }
+        return result
+    }
+
+    private func fetchAssets(identifiers: Set<String>) -> [PHAsset] {
+        guard !identifiers.isEmpty else { return [] }
+        let fetch = PHAsset.fetchAssets(withLocalIdentifiers: Array(identifiers), options: nil)
+        var result: [PHAsset] = []
+        fetch.enumerateObjects { asset, _, _ in result.append(asset) }
+        return result
+    }
+
+    private func addExistingAssetsResiliently(
+        identifiers: Set<String>,
+        to album: PHAssetCollection
+    ) async -> (addedAssetIDs: Set<String>, failedAssetIDs: Set<String>) {
+        guard !identifiers.isEmpty else { return ([], []) }
+        do {
+            try await addExistingAssets(identifiers: identifiers, to: album)
+            return (identifiers, [])
+        } catch {
+            guard identifiers.count > 1 else { return ([], identifiers) }
+            let values = Array(identifiers)
+            let midpoint = values.count / 2
+            let first = await addExistingAssetsResiliently(
+                identifiers: Set(values[..<midpoint]),
+                to: album
+            )
+            let second = await addExistingAssetsResiliently(
+                identifiers: Set(values[midpoint...]),
+                to: album
+            )
+            return (
+                first.addedAssetIDs.union(second.addedAssetIDs),
+                first.failedAssetIDs.union(second.failedAssetIDs)
+            )
+        }
+    }
+
+    private func addExistingAssets(identifiers: Set<String>, to album: PHAssetCollection) async throws {
+        let assets = fetchAssets(identifiers: identifiers)
+        guard assets.count == identifiers.count else {
+            throw GoogleApplePhotosMirrorError.photoLibraryChangeFailed("One or more existing Apple Photos assets are no longer available.")
+        }
+        let alreadyMembers = assetIDs(in: album)
+        let toAdd = assets.filter { !alreadyMembers.contains($0.localIdentifier) }
+        guard !toAdd.isEmpty else { return }
+        try await performChanges {
+            guard let request = PHAssetCollectionChangeRequest(for: album) else { return }
+            request.addAssets(toAdd as NSArray)
+        }
     }
 
     private func editableUserAlbum(identifier: String) -> PHAssetCollection? {
@@ -830,15 +971,64 @@ final class GooglePhotosMirrorService {
     }
 
     private func editableUserAlbums(named title: String) -> [PHAssetCollection] {
+        editableUserAlbums().filter { $0.localizedTitle?.googleMirrorTitleKey == title.googleMirrorTitleKey }
+    }
+
+    private func editableUserAlbums() -> [PHAssetCollection] {
         let fetch = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
         var matches: [PHAssetCollection] = []
         fetch.enumerateObjects { album, _, _ in
             guard album.assetCollectionSubtype != .albumCloudShared,
-                  album.canPerform(.addContent),
-                  album.localizedTitle?.googleMirrorTitleKey == title.googleMirrorTitleKey else { return }
+                  album.canPerform(.addContent) else { return }
             matches.append(album)
         }
         return matches
+    }
+
+    /// A title is only a search hint. Ownership is established by a persisted
+    /// local identifier or by a Canvas resource marker in the collection.
+    /// Without the new per-Canvas-album owner token, marker recovery is
+    /// intentionally limited to same-title collections so a one-item overlap
+    /// cannot collapse a differently named Google import into an older Apple
+    /// album.
+    private func markerVerifiedAlbums(
+        canvasAlbumID: String,
+        title: String,
+        records: [GoogleMediaRecord],
+        persistedEntry: GooglePhotosMirrorAlbumEntry?
+    ) -> [PHAssetCollection] {
+        let expectedHashes = Set(records.map { GoogleApplePhotosMirrorIdentity.canonicalContentHash($0.contentHash) })
+            .union(persistedEntry?.assetsByGoogleID.values.map { GoogleApplePhotosMirrorIdentity.canonicalContentHash($0.contentHash) } ?? [])
+        guard !expectedHashes.isEmpty else { return [] }
+        let expectedOwnerToken = GoogleApplePhotosMirrorIdentity.ownerToken(for: canvasAlbumID)
+        let titleScopedAlbumIDs = Set(editableUserAlbums(named: title).map(\.localIdentifier))
+        // A new owner-token marker is enough to recover a Canvas-created
+        // collection after a crash or an index-write failure, even if the
+        // person renamed that collection. Preserved WIP markers contain only a
+        // content hash, so they remain title-scoped and can never bridge a
+        // differently named import.
+        let candidates = editableUserAlbums()
+        return candidates.filter { album in
+            let fetch = PHAsset.fetchAssets(in: album, options: nil)
+            var verified = false
+            fetch.enumerateObjects { asset, _, stop in
+                for resource in PHAssetResource.assetResources(for: asset) {
+                    guard let hash = GoogleApplePhotosMirrorIdentity.contentHash(fromMarkerFilename: resource.originalFilename),
+                          expectedHashes.contains(hash) else { continue }
+                    if let markerOwner = GoogleApplePhotosMirrorIdentity.ownerToken(fromMarkerFilename: resource.originalFilename) {
+                        guard markerOwner == expectedOwnerToken else { continue }
+                    } else {
+                        // A legacy content-only marker remains recoverable
+                        // only under the same-title search scope above.
+                        guard titleScopedAlbumIDs.contains(album.localIdentifier) else { continue }
+                    }
+                    verified = true
+                    stop.pointee = true
+                    break
+                }
+            }
+            return verified
+        }
     }
 
     private func accessibleAssets(identifiers: Set<String>) -> Set<String> {
@@ -880,6 +1070,26 @@ final class GooglePhotosMirrorService {
               let album = editableUserAlbum(identifier: albumID),
               !snapshot.assets.isEmpty else { throw GoogleApplePhotosMirrorError.albumCreationFailed }
         return (album, snapshot.assets)
+    }
+
+    private func createAlbum(
+        named title: String,
+        adding existingAssets: [PHAsset]
+    ) async throws -> PHAssetCollection {
+        guard !existingAssets.isEmpty else { throw GoogleApplePhotosMirrorError.albumCreationFailed }
+        let box = PhotoKitPlaceholderBox()
+        try await performChanges {
+            let albumRequest = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: title)
+            let placeholder = albumRequest.placeholderForCreatedAssetCollection
+            box.setAlbumIdentifier(placeholder.localIdentifier)
+            albumRequest.addAssets(existingAssets as NSArray)
+        }
+        let snapshot = box.snapshot
+        guard let albumID = snapshot.albumID,
+              let album = editableUserAlbum(identifier: albumID) else {
+            throw GoogleApplePhotosMirrorError.albumCreationFailed
+        }
+        return album
     }
 
     private func createResiliently(

@@ -25,9 +25,9 @@
 	<key>GooglePhotosClientID</key>
 	<string>$(GOOGLE_PHOTOS_CLIENT_ID)</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Canvas adds non-destructive copies of your selected Google Photos to a named Apple Photos album for organization and offline access.</string>
+	<string>Canvas adds non-destructive copies of your selected Google Photos to a verified Canvas-owned Apple Photos album for organization and offline access. Canvas never deletes or replaces Apple Photos assets.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Canvas needs access to display chosen albums and safely create or reuse a named album for Google Photos you explicitly import.</string>
+	<string>Canvas needs access to display chosen albums and safely create or reuse a verified Canvas-owned album for Google Photos you explicitly import.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Canvas uses your location only to show local weather and air quality when you turn on the weather overlay.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

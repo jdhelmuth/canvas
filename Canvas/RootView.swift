@@ -1,5 +1,6 @@
 import SwiftUI
 import SafariServices
+import UIKit
 
 struct RootView: View {
     @EnvironmentObject private var store: AppStore
@@ -768,8 +769,14 @@ struct GooglePhotosImportView: View {
                             Label("Open Google Photos", systemImage: "photo.badge.plus")
                         }
                         .disabled(isBusy)
-                        Text("Canvas cannot change what Google’s Picker shows. It starts with recent items—not an album list—so search for the album title, select up to 2,000 items, and tap Done. Use this same saved album name in another session to add another batch. With Full Photos access, Canvas also creates or reuses one named Apple Photos album and adds only new copies there.")
+                        Text("Canvas cannot change what Google’s Picker shows. It starts with recent items—not an album list—so search for the album title, select up to 2,000 items, and tap Done. Use this same saved album name in another session to add another batch. With Full Photos access, Canvas creates or reuses only a verified Canvas-owned Apple Photos album and adds non-destructive copies there.")
                             .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let persistenceError = store.googlePhotos.albumPersistenceError {
+                        Text(persistenceError.localizedDescription)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("google-album-persistence-error")
                     }
                 }
                 if let summary = store.googlePhotos.lastImportSummary {
@@ -822,7 +829,7 @@ struct GooglePhotosImportView: View {
                     }
                 }
                 Section("Shared albums and contributions") {
-                    Text("For photos added by someone else, first open the shared album in Google Photos while signed in to this account and choose Save photos to save all shared items to this account’s library. Saving only the album to Albums does not save its contents.")
+                    Text("Google’s Picker does not tell Canvas the source album, owner, or contributor. If a shared album contains photos added by someone else that Google does not return, open it in Google Photos while signed in to this account and choose Save all to library. Saving only the album to Albums does not save its contents.")
                         .accessibilityIdentifier("google-shared-contributor-guidance")
                         .font(.footnote).foregroundStyle(.secondary)
                     Text("Return to Canvas and start a new Picker session. Each session adds new items and refreshes matching Google IDs while previously saved Canvas items stay. Canvas cannot automatically follow later Google album changes, and Google limits a Picker session to 2,000 items.")
@@ -831,12 +838,14 @@ struct GooglePhotosImportView: View {
                     Link("Google shared-album help", destination: URL(string: "https://support.google.com/photos/answer/6131416")!)
                 }
                 Section("Apple Photos copy") {
-                    Text("After Canvas saves a Google selection locally, Full Photos access lets it add non-duplicate copies to one Apple Photos album with the saved name. Apple Photos necessarily shows those same assets in All Photos too. Canvas never deletes or replaces Apple Photos assets, even if you delete the saved Canvas album or disconnect Google.")
+                    Text("After Canvas saves a Google selection locally, Full Photos access lets it add non-duplicate copies to one verified Canvas-owned Apple Photos album with the saved name. Canvas never adopts an unverified user album just because its title matches. Apple Photos necessarily shows those same assets in All Photos too. Canvas never deletes or replaces Apple Photos assets, even if you delete the saved Canvas album or disconnect Google.")
                         .accessibilityIdentifier("google-apple-photos-mirror-guidance")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("Limited Photos access is not enough to safely find and verify a reusable named album. Choose Full Access in Settings, then use Retry Apple Photos album—no new Google selection is needed.")
+                    Text("Limited or denied Photos access keeps the local Google import intact but leaves Apple mirroring pending. In Settings, open Canvas → Photos → Full Access, then use Retry Apple Photos album—no new Google selection is needed.")
                         .accessibilityIdentifier("google-apple-full-access-guidance")
                         .font(.footnote).foregroundStyle(.secondary)
+                    Button("Open Photos Settings") { openPhotosSettings() }
+                        .accessibilityIdentifier("open-photos-settings")
                 }
                 if !store.googlePhotos.configurationAvailable {
                     Section("One-time developer setup") {
@@ -1041,6 +1050,10 @@ struct GooglePhotosImportView: View {
             await store.googlePhotos.connect()
             pickerTask = nil
         }
+    }
+    private func openPhotosSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
     private func cancelPicker() {
         pickerTask?.cancel()

@@ -12,14 +12,14 @@
     <p>Canvas is a private iPad photo frame. No account or login is required for the Apple Photos workflow.</p>
     <h2>What Canvas accesses</h2>
     <ul>
-      <li>Only the Apple Photos albums and media you authorize. Canvas does not edit, delete, or upload Apple Photos items.</li>
+      <li>Only the Apple Photos albums and media you authorize. For an explicit Google Photos import, Full Photos access also lets Canvas add a non-destructive copy to a verified Canvas-owned Apple Photos album. Canvas never adopts an existing album solely because its title matches and never deletes or replaces Apple Photos assets or albums.</li>
       <li>Local settings, exclusions, imported audio, and selected Google Photos media in the app container.</li>
-      <li>Optional Google Photos Picker authorization and the media you explicitly select. OAuth tokens stay in the iPad Keychain.</li>
+      <li>Optional Google Photos Picker authorization and the media you explicitly select. OAuth tokens stay in the iPad Keychain. Limited or denied Photos access keeps a local Google import intact and leaves its Apple Photos copy pending until Full Access is granted.</li>
       <li>Photo location metadata already present in an authorized photo. When you opt into current weather, Canvas requests When In Use location permission and sends the current coordinates to Apple's WeatherKit. For AQI, Canvas rounds coordinates to two decimal places (approximately one-kilometer precision) before sending them to Open-Meteo, whose air-quality forecast is based on Copernicus Atmosphere Monitoring Service (CAMS) data. The last combined weather snapshot is stored locally for an explicitly labelled offline fallback.</li>
     </ul>
     <p>Canvas has no Canvas-operated media server and includes no analytics, advertising, tracking, or data brokerage.</p>
     <h2>Storage and deletion</h2>
-    <p>Disconnect Google Photos to remove its saved authorization. Deleting Canvas removes its local settings, exclusions, imported audio, downloaded Google Photos media, and stored tokens; it does not remove Apple Photos or Google Photos items.</p>
+    <p>Disconnect Google Photos to remove its saved authorization. Deleting Canvas removes its local settings, exclusions, imported audio, downloaded Google Photos media, and stored tokens; it does not remove Apple Photos or Google Photos items. Deleting a saved Canvas Google copy does not remove its Apple Photos album or assets.</p>
     <h2>Third parties</h2>
     <p>Apple system frameworks provide Photos, media playback, Keychain, local storage, and WeatherKit. Google receives information necessary for the optional Google Photos Picker and OAuth flow when you choose that feature. Open-Meteo receives the approximate coordinates needed for optional AQI data; its free API may retain technical logs, including those coordinates, for up to 90 days.</p>
     <h2>Contact</h2>

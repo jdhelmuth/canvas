@@ -211,7 +211,7 @@ final class CanvasUITests: XCTestCase {
         for _ in 0..<6 where !contributorGuidance.exists || !additiveGuidance.exists { app.swipeUp() }
         XCTAssertTrue(contributorGuidance.waitForExistence(timeout: 3))
         XCTAssertTrue(additiveGuidance.waitForExistence(timeout: 3))
-        XCTAssertTrue(contributorGuidance.label.contains("Save photos"))
+        XCTAssertTrue(contributorGuidance.label.contains("Save all"))
         XCTAssertTrue(additiveGuidance.label.contains("previously saved Canvas items stay"))
         XCTAssertTrue(additiveGuidance.label.contains("2,000 items"))
 
