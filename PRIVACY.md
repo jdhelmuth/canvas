@@ -27,8 +27,8 @@ the Apple Photos features.
   places (approximately one-kilometer precision) and sends that approximate
   location to Open-Meteo, whose air-quality forecast is based on Copernicus
   Atmosphere Monitoring Service (CAMS) data. Canvas stores only the last
-  combined weather snapshot locally so it can label it as last known when the
-  network or service is unavailable.
+  combined weather snapshot locally so it can continue showing the latest
+  available weather while the network or service is unavailable.
 
 Canvas does not operate a server for your media, and does not include
 analytics, advertising, tracking, or data brokerage.
