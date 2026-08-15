@@ -309,7 +309,6 @@ struct WeatherConditionGlyph: View {
 struct WeatherOverlayWidget: View {
     let snapshot: CanvasWeatherSnapshot?
     let status: WeatherOverlayStatus
-    let isUsingCachedSnapshot: Bool
     let settings: OverlaySettings
     let mediaImage: UIImage?
     let textOpacity: Double
@@ -377,7 +376,6 @@ struct WeatherOverlayWidget: View {
     }
 
     private func conditions(_ snapshot: CanvasWeatherSnapshot) -> some View {
-        let conditionText = isUsingCachedSnapshot ? "\(snapshot.condition) · Last known" : snapshot.condition
         return HStack(spacing: 10) {
             WeatherConditionGlyph(
                 symbolName: snapshot.symbolName,
@@ -388,14 +386,14 @@ struct WeatherOverlayWidget: View {
                     .font(.system(size: min(max(24, weatherSize * 1.28), 58), weight: .medium, design: .rounded))
                     .fontWidth(.condensed)
                     .overlayTextStroke(settings: settings, mediaImage: mediaImage, opacity: textOpacity)
-                Text(conditionText)
+                Text(snapshot.condition)
                     .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
                     .foregroundStyle(.white.opacity(textOpacity * 0.78))
                     .lineLimit(1)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(snapshot.temperature), \(conditionText)")
+        .accessibilityLabel("\(snapshot.temperature), \(snapshot.condition)")
     }
 
     private func metrics(for snapshot: CanvasWeatherSnapshot) -> [Metric] {
@@ -580,29 +578,15 @@ struct AirQualityLegalLink: View {
 struct WeatherDataAttributionView: View {
     let weatherDestination: URL?
     let weatherMarkURL: URL?
-    var includesOpenMeteoConditions = false
-
-    private static let openMeteoWeatherDestination = URL(string: "https://open-meteo.com/en/docs")!
 
     var body: some View {
         HStack(spacing: 6) {
             WeatherLegalLink(destination: weatherDestination, markURL: weatherMarkURL)
-            Link(
-                destination: includesOpenMeteoConditions
-                    ? Self.openMeteoWeatherDestination
-                    : AirQualityLegalLink.destination
-            ) {
-                Label(
-                    includesOpenMeteoConditions ? "Weather & AQI: Open-Meteo · CAMS" : "AQI: Open-Meteo · CAMS",
-                    systemImage: includesOpenMeteoConditions ? "cloud.sun" : "aqi.medium"
-                )
+            Link(destination: AirQualityLegalLink.destination) {
+                Label("AQI: Open-Meteo · CAMS", systemImage: "aqi.medium")
                     .font(.caption)
             }
-            .accessibilityLabel(
-                includesOpenMeteoConditions
-                    ? "Weather conditions and air quality data from Open-Meteo and the Copernicus Atmosphere Monitoring Service"
-                    : "Air quality data from Open-Meteo and the Copernicus Atmosphere Monitoring Service"
-            )
+            .accessibilityLabel("Air quality data from Open-Meteo and the Copernicus Atmosphere Monitoring Service")
         }
     }
 }

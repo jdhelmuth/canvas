@@ -147,21 +147,9 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         )
     }
 
-    /// Current conditions should not continue to look live after the provider
-    /// has stopped refreshing. WeatherKit and Ambient are polled below this
-    /// threshold during normal foreground playback.
-    var isStale: Bool { Date().timeIntervalSince(updatedAt) > 45 * 60 }
-
     var conditionsText: String { "\(temperature) · \(condition)" }
 
-    /// A stale or explicitly cached snapshot is labelled so it can never look
-    /// like a fresh current observation.
-    var displayText: String { displayText(isUsingCachedSnapshot: false) }
-
-    func displayText(isUsingCachedSnapshot: Bool) -> String {
-        let suffix = (isStale || isUsingCachedSnapshot) ? " · Last known" : ""
-        return "\(conditionsText)\(suffix)"
-    }
+    var displayText: String { conditionsText }
 
     func applying(condition: CanvasWeatherCondition) -> Self {
         Self(
@@ -338,105 +326,23 @@ struct CanvasWeatherCondition: Equatable, Sendable {
     let text: String
 }
 
-/// Open-Meteo exposes the WMO present-weather codes needed for fog and cloud
-/// cover. This enriches an Ambient station reading because Ambient's sensor
-/// payload contains measurements, not a sky-condition observation.
-enum OpenMeteoConditionPolicy {
-    static func condition(for weatherCode: Int, isDay: Bool) -> CanvasWeatherCondition {
-        let clearSymbol = isDay ? "sun.max.fill" : "moon.stars.fill"
-        let mostlyClearSymbol = isDay ? "sun.min.fill" : "moon.stars.fill"
-        switch weatherCode {
-        case 0:
-            return CanvasWeatherCondition(symbolName: clearSymbol, text: "Clear")
-        case 1:
-            return CanvasWeatherCondition(symbolName: mostlyClearSymbol, text: "Mostly clear")
-        case 2:
-            return CanvasWeatherCondition(
-                symbolName: isDay ? "cloud.sun.fill" : "cloud.moon.fill",
-                text: "Partly cloudy"
-            )
-        case 3:
-            return CanvasWeatherCondition(symbolName: "cloud.fill", text: "Overcast")
-        case 45, 48:
-            return CanvasWeatherCondition(symbolName: "cloud.fog.fill", text: weatherCode == 48 ? "Rime fog" : "Fog")
-        case 51...57:
-            return CanvasWeatherCondition(symbolName: "cloud.drizzle.fill", text: "Drizzle")
-        case 61...65, 80...82:
-            return CanvasWeatherCondition(
-                symbolName: weatherCode == 65 ? "cloud.heavyrain.fill" : "cloud.rain.fill",
-                text: weatherCode >= 80 ? "Showers" : "Rain"
-            )
-        case 66, 67:
-            return CanvasWeatherCondition(symbolName: "cloud.sleet.fill", text: "Freezing rain")
-        case 71...77, 85, 86:
-            return CanvasWeatherCondition(symbolName: "cloud.snow.fill", text: "Snow")
-        case 95...99:
-            return CanvasWeatherCondition(symbolName: "cloud.bolt.rain.fill", text: "Thunderstorm")
-        default:
-            return CanvasWeatherCondition(symbolName: "cloud.fill", text: "Conditions unavailable")
-        }
-    }
-}
-
-struct OpenMeteoCurrentWeatherResponse: Decodable, Sendable {
-    struct Current: Decodable, Sendable {
-        let weatherCode: Int?
-        let isDay: Int?
-
-        private enum CodingKeys: String, CodingKey {
-            case weatherCode = "weather_code"
-            case isDay = "is_day"
-        }
-    }
-
-    let current: Current?
-}
-
 protocol CanvasCurrentConditionProviding {
     func currentCondition(for location: CLLocation) async throws -> CanvasWeatherCondition
 }
 
-struct OpenMeteoCurrentConditionProvider: CanvasCurrentConditionProviding {
-    let session: URLSession
-
-    init(session: URLSession = .shared) {
-        self.session = session
-    }
-
+/// WeatherKit owns the condition description and symbol used by both weather
+/// sources. Ambient still supplies the station measurements below.
+struct WeatherKitCurrentConditionProvider: CanvasCurrentConditionProviding {
     func currentCondition(for location: CLLocation) async throws -> CanvasWeatherCondition {
-        guard let url = Self.requestURL(for: location) else {
-            throw OpenMeteoCurrentConditionError.invalidResponse
-        }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 8
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw OpenMeteoCurrentConditionError.invalidResponse
-        }
-        guard
-            let current = try JSONDecoder().decode(OpenMeteoCurrentWeatherResponse.self, from: data).current,
-            let weatherCode = current.weatherCode
-        else {
-            throw OpenMeteoCurrentConditionError.invalidResponse
-        }
-        return OpenMeteoConditionPolicy.condition(for: weatherCode, isDay: current.isDay == 1)
+        let current = try await WeatherKit.WeatherService.shared.weather(
+            for: location,
+            including: .current
+        )
+        return CanvasWeatherCondition(
+            symbolName: current.symbolName,
+            text: current.condition.description
+        )
     }
-
-    static func requestURL(for location: CLLocation) -> URL? {
-        var components = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
-        components?.queryItems = [
-            URLQueryItem(name: "latitude", value: OpenMeteoAirQualityProvider.coordinateString(location.coordinate.latitude)),
-            URLQueryItem(name: "longitude", value: OpenMeteoAirQualityProvider.coordinateString(location.coordinate.longitude)),
-            URLQueryItem(name: "current", value: "weather_code,is_day"),
-            URLQueryItem(name: "forecast_days", value: "1"),
-            URLQueryItem(name: "timezone", value: "auto")
-        ]
-        return components?.url
-    }
-}
-
-private enum OpenMeteoCurrentConditionError: Error {
-    case invalidResponse
 }
 
 protocol CanvasWeatherProviding {
@@ -589,9 +495,8 @@ struct CanvasAmbientCurrentResponse: Decodable, Sendable, Equatable {
     let reading: CanvasAmbientReading?
 }
 
-/// Ambient stations report measurements rather than a forecast condition. The
-/// overlay uses those measurements to create a small, honest observation
-/// glyph, while the existing WeatherKit path remains unchanged.
+/// Ambient stations report measurements rather than a condition. WeatherKit
+/// supplies the current condition glyph and description for both sources.
 struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
     let apiKey: String
     let deviceMAC: String?
@@ -606,7 +511,7 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
         baseURL: URL = URL(string: "https://myclimateiq.com")!,
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
-        conditionProvider: CanvasCurrentConditionProviding = OpenMeteoCurrentConditionProvider()
+        conditionProvider: CanvasCurrentConditionProviding = WeatherKitCurrentConditionProvider()
     ) {
         self.apiKey = apiKey
         self.deviceMAC = deviceMAC
@@ -655,9 +560,8 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
         var result = Self.result(from: reading)
         // Ambient provides station measurements but no sky condition. Keep
         // the station's temperature/rain readings and enrich only the glyph
-        // and condition text from a current weather-code provider. If that
-        // secondary lookup is unavailable, the neutral station fallback stays
-        // honest instead of inventing Clear.
+        // and condition text from WeatherKit. If that lookup is unavailable,
+        // the station fallback stays honest instead of inventing Clear.
         if let condition = try? await conditionProvider.currentCondition(for: location) {
             result = CanvasWeatherProviderResult(
                 snapshot: result.snapshot.applying(condition: condition),

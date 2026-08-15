@@ -668,7 +668,7 @@ final class CanvasTests: XCTestCase {
         let migratedText = try XCTUnwrap(String(data: migratedJSON, encoding: .utf8))
 
         XCTAssertEqual(snapshot.symbolName, "cloud.sun.fill")
-        XCTAssertEqual(snapshot.displayText, "72.0°F · Partly Cloudy · Last known")
+        XCTAssertEqual(snapshot.displayText, "72.0°F · Partly Cloudy")
         XCTAssertFalse(migratedText.contains("WeatherKit Sources"))
         XCTAssertFalse(migratedText.contains("Weather Station Data"))
     }
@@ -809,25 +809,7 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(snapshot.condition, "Conditions unavailable")
     }
 
-    func testOpenMeteoConditionMappingIncludesFogAndCloudCover() {
-        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 45, isDay: true), CanvasWeatherCondition(symbolName: "cloud.fog.fill", text: "Fog"))
-        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 3, isDay: true), CanvasWeatherCondition(symbolName: "cloud.fill", text: "Overcast"))
-        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 2, isDay: true), CanvasWeatherCondition(symbolName: "cloud.sun.fill", text: "Partly cloudy"))
-        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 0, isDay: false), CanvasWeatherCondition(symbolName: "moon.stars.fill", text: "Clear"))
-    }
-
-    func testOpenMeteoCurrentConditionRequestUsesCurrentWeatherCode() throws {
-        let url = try XCTUnwrap(
-            OpenMeteoCurrentConditionProvider.requestURL(
-                for: CLLocation(latitude: 40.44672, longitude: -79.98214)
-            )
-        )
-        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
-        XCTAssertEqual(components.queryItems?.first(where: { $0.name == "current" })?.value, "weather_code,is_day")
-        XCTAssertEqual(components.queryItems?.first(where: { $0.name == "timezone" })?.value, "auto")
-    }
-
-    func testCachedWeatherIsExplicitlyLabeledLastKnown() {
+    func testCachedWeatherDisplayOmitsCacheQualifier() {
         let snapshot = CanvasWeatherSnapshot(
             symbolName: "sun.max.fill",
             condition: "Clear",
@@ -835,7 +817,7 @@ final class CanvasTests: XCTestCase {
             updatedAt: .now
         )
 
-        XCTAssertEqual(snapshot.displayText(isUsingCachedSnapshot: true), "72.0°F · Clear · Last known")
+        XCTAssertEqual(snapshot.displayText, "72.0°F · Clear")
     }
 
     func testAmbientStationChoicesUseFriendlyLabelsWithoutShowingIdentifiers() throws {

@@ -453,7 +453,6 @@ struct PlayerView: View {
             weather: WeatherOverlayWidget(
                 snapshot: store.weather.snapshot,
                 status: store.weather.status,
-                isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
                 settings: settings,
                 mediaImage: model.currentImage,
                 textOpacity: textOpacity
@@ -535,7 +534,6 @@ struct PlayerView: View {
         WeatherOverlayWidget(
             snapshot: store.weather.snapshot,
             status: store.weather.status,
-            isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot,
             settings: settings,
             mediaImage: model.currentImage,
             textOpacity: textOpacity
