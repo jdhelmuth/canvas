@@ -46,6 +46,10 @@ enum FrameLaunchPolicy {
     static func hasPlayableMedia(_ items: [CanvasMediaItem]) -> Bool {
         !MediaIdentityMatcher.deduplicated(items).isEmpty
     }
+
+    static func canStart(isPresented: Bool, isStarting: Bool) -> Bool {
+        !isPresented && !isStarting
+    }
 }
 
 /// Describes the source used for the frame's behind-media treatment. Keeping
@@ -112,6 +116,62 @@ enum ControlsAutoHidePolicy {
 
     static func isExpired(now: Date, startedAt: Date, delay: Double) -> Bool {
         delay > 0 && now.timeIntervalSince(startedAt) >= delay
+    }
+}
+
+/// Keeps persisted timing values from turning a frame into a zero-duration
+/// loop. Photo and Live Photo durations are always positive; video keeps its
+/// existing zero-value "unlimited" meaning. The timer uses these same rules
+/// at runtime so a legacy or externally edited settings record cannot make
+/// the slideshow advance continuously.
+enum PlaybackTimingPolicy {
+    static let defaultPhotoDuration: Double = 10
+    static let defaultLivePhotoDuration: Double = 10
+    static let defaultVideoDuration: Double = 60
+    static let defaultTransitionDuration: Double = 1
+    static let minimumDuration: Double = 1
+
+    static func normalizedPhotoDuration(_ value: Double) -> Double {
+        normalizedPositive(value, fallback: defaultPhotoDuration)
+    }
+
+    static func normalizedLivePhotoDuration(_ value: Double) -> Double {
+        normalizedPositive(value, fallback: defaultLivePhotoDuration)
+    }
+
+    static func normalizedVideoDuration(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultVideoDuration }
+        guard value > 0 else { return 0 }
+        return max(value, minimumDuration)
+    }
+
+    static func normalizedTransitionDuration(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultTransitionDuration }
+        return max(0, value)
+    }
+
+    static func duration(
+        for kind: MediaKind,
+        settings: CanvasSettings,
+        mediaDuration: Double
+    ) -> Double {
+        switch kind {
+        case .video:
+            let validMediaDuration = mediaDuration.isFinite && mediaDuration > 0 ? mediaDuration : 0
+            if (settings.playFullVideo || settings.videoDuration <= 0), validMediaDuration > 0 {
+                return validMediaDuration
+            }
+            return max(normalizedVideoDuration(settings.videoDuration), minimumDuration)
+        case .livePhoto:
+            return normalizedLivePhotoDuration(settings.livePhotoDuration)
+        case .photo:
+            return normalizedPhotoDuration(settings.photoDuration)
+        }
+    }
+
+    private static func normalizedPositive(_ value: Double, fallback: Double) -> Double {
+        guard value.isFinite, value > 0 else { return fallback }
+        return max(value, minimumDuration)
     }
 }
 
@@ -361,9 +421,12 @@ enum OverlayStackOrder {
 }
 
 /// The clock remains the anchor of the overlay stack. When both clock and
-/// weather are enabled, weather moves into a single visual row to the clock's
-/// right instead of becoming another line above or below it.
+/// weather are enabled, the surfaces share one composition. Landscape keeps
+/// them side by side, while portrait places weather below the clock.
 enum WeatherClockLayoutPolicy {
+    static let horizontalSpacing: CGFloat = 14
+    static let dividerWidth: CGFloat = 1
+
     static func pairsClockAndWeather(showTime: Bool, showWeather: Bool) -> Bool {
         showTime && showWeather
     }
@@ -371,6 +434,17 @@ enum WeatherClockLayoutPolicy {
     static func shouldRenderStandalone(_ item: OverlayStackItem, paired: Bool) -> Bool {
         !(paired && item == .weather)
     }
+
+    static func stacksClockAndWeather(for canvasSize: CGSize) -> Bool {
+        canvasSize.height > canvasSize.width
+    }
+}
+
+/// The compact live weather card has no stale-data footer. Current weather
+/// content remains in the card, while attribution and actionable status stay
+/// on their dedicated non-stale surfaces.
+enum WeatherOverlayFooterPolicy {
+    static let rendersCompactVisualFooter = false
 }
 
 enum CanvasAirQualityCategory: String, CaseIterable, Sendable {
@@ -689,6 +763,38 @@ enum PlaybackAdvancePolicy {
         shuffleEachLoop: Bool
     ) -> Bool {
         shuffleEachLoop && targetIndex == nil && direction > 0 && currentIndex == 0
+    }
+}
+
+/// Keeps a provider refresh from turning a stable frame into a new session.
+/// Queue positions are disposable; media identifiers and the currently
+/// displayed group are the durable playback identity.
+enum PlaybackQueueIdentity {
+    static func index(
+        for assetID: String?,
+        in queue: [CanvasMediaItem],
+        fallbackIndex: Int
+    ) -> Int {
+        guard !queue.isEmpty else { return 0 }
+        if let assetID, let index = queue.firstIndex(where: { $0.id == assetID }) {
+            return index
+        }
+        return min(max(fallbackIndex, 0), queue.count - 1)
+    }
+
+    static func canPreserveDisplayedFrame(
+        currentAssetID: String?,
+        queueCurrentAssetID: String?,
+        displayedGroupIDs: [String],
+        candidateQueue: [CanvasMediaItem],
+        forceReload: Bool
+    ) -> Bool {
+        guard !forceReload,
+              let currentAssetID,
+              currentAssetID == queueCurrentAssetID,
+              !displayedGroupIDs.isEmpty else { return false }
+        let candidateIDs = Set(candidateQueue.map(\.id))
+        return displayedGroupIDs.allSatisfy(candidateIDs.contains)
     }
 }
 

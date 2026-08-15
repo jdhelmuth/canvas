@@ -104,6 +104,9 @@ struct ClockOverlayView: View {
                 Text(date, style: .time)
                     .font(.system(size: clockSize, weight: (settings.clockWeight ?? .semibold).fontWeight, design: (settings.clockFont ?? .system).design))
                     .fontWidth((settings.clockWidth ?? .standard).fontWidth)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .allowsTightening(true)
                     .foregroundStyle(color)
                     .textStroke(color: strokeColor, width: strokeWidth, enabled: strokeEnabled)
                     .opacity(textOpacity)
@@ -310,8 +313,6 @@ struct WeatherOverlayWidget: View {
     let settings: OverlaySettings
     let mediaImage: UIImage?
     let textOpacity: Double
-    let attributionURL: URL?
-    let attributionMarkURL: URL?
 
     private var weatherSize: CGFloat { CGFloat(settings.effectiveWeatherSize) }
 
@@ -362,20 +363,6 @@ struct WeatherOverlayWidget: View {
                         .accessibilityLabel("Next hour, \(temperature), \(condition)")
                     }
 
-                    HStack(spacing: 2) {
-                        if isUsingCachedSnapshot || snapshot.isStale {
-                            Label("Last known", systemImage: "clock.arrow.circlepath")
-                                .font(.system(size: max(10, weatherSize * 0.42), weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(textOpacity * 0.7))
-                                .accessibilityLabel("Last known weather")
-                        }
-                        Spacer(minLength: 0)
-                        WeatherLegalLink(destination: attributionURL, markURL: attributionMarkURL)
-                        if settings.effectiveWeatherShowAirQuality, snapshot.airQualityIndex != nil {
-                            AirQualityLegalLink()
-                        }
-                    }
-                    .frame(height: 18)
                 }
                 .frame(width: widgetWidth(for: snapshot), alignment: .leading)
                 .accessibilityElement(children: .contain)
@@ -488,6 +475,47 @@ struct WeatherOverlayWidget: View {
         let base = hasExpandedDetails ? 350.0 : 258.0
         let scale = min(max(weatherSize / 22, 0.72), 1.65)
         return base * scale
+    }
+}
+
+/// Shared clock/weather composition for the live frame and Settings preview.
+/// Landscape keeps the requested side-by-side treatment; portrait moves the
+/// weather below the clock so the digital time has the full canvas width.
+struct WeatherClockRow: View {
+    let date: Date
+    let settings: OverlaySettings
+    let mediaImage: UIImage?
+    let weather: WeatherOverlayWidget
+    let canvasSize: CGSize
+
+    private var clockSize: CGFloat { CGFloat(settings.clockSize ?? max(settings.fontSize, 64)) }
+    private var shouldStack: Bool { WeatherClockLayoutPolicy.stacksClockAndWeather(for: canvasSize) }
+
+    var body: some View {
+        Group {
+            if shouldStack {
+                VStack(alignment: .leading, spacing: 10) {
+                    ClockOverlayView(date: date, settings: settings, mediaImage: mediaImage)
+                        .accessibilityIdentifier("canvas.clock.overlay")
+                    Rectangle()
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: 48, height: 1)
+                        .accessibilityHidden(true)
+                    weather
+                }
+            } else {
+                HStack(alignment: .center, spacing: WeatherClockLayoutPolicy.horizontalSpacing) {
+                    ClockOverlayView(date: date, settings: settings, mediaImage: mediaImage)
+                        .accessibilityIdentifier("canvas.clock.overlay")
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.white.opacity(0.22))
+                        .frame(width: WeatherClockLayoutPolicy.dividerWidth, height: min(max(clockSize * 0.78, 54), 132))
+                        .accessibilityHidden(true)
+                    weather
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

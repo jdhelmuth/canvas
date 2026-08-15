@@ -23,6 +23,64 @@ struct QueueBuilder {
         return repeatEnabled ? output : Array(output.prefix(output.count))
     }
 
+    /// Refreshes the media backing a queue without treating a provider
+    /// notification as a new slideshow session. Existing identifiers keep
+    /// their playback order; newly discovered media is appended in the
+    /// configured order. A settings-driven rebuild should continue to call
+    /// `build` so an intentional shuffle or filter change can take effect.
+    static func refresh(
+        _ existingQueue: [CanvasMediaItem],
+        with assets: [CanvasMediaItem],
+        mode: QueueMode,
+        repeatEnabled: Bool,
+        previousIDs: [String] = [],
+        recentAvoidance: Int = 0,
+        shuffleSeed: Int = 0
+    ) -> [CanvasMediaItem] {
+        guard !assets.isEmpty else { return [] }
+        guard !existingQueue.isEmpty else {
+            return build(
+                assets,
+                mode: mode,
+                repeatEnabled: repeatEnabled,
+                previousIDs: previousIDs,
+                recentAvoidance: recentAvoidance,
+                shuffleSeed: shuffleSeed
+            )
+        }
+
+        var latestByID: [String: CanvasMediaItem] = [:]
+        latestByID.reserveCapacity(assets.count)
+        for asset in assets {
+            latestByID[asset.id] = asset
+        }
+
+        let surviving = existingQueue.compactMap { latestByID[$0.id] }
+        guard !surviving.isEmpty else {
+            return build(
+                assets,
+                mode: mode,
+                repeatEnabled: repeatEnabled,
+                previousIDs: previousIDs,
+                recentAvoidance: recentAvoidance,
+                shuffleSeed: shuffleSeed
+            )
+        }
+
+        let survivingIDs = Set(surviving.map(\.id))
+        let additions = assets.filter { !survivingIDs.contains($0.id) }
+        guard !additions.isEmpty else { return surviving }
+
+        return surviving + build(
+            additions,
+            mode: mode,
+            repeatEnabled: true,
+            previousIDs: previousIDs,
+            recentAvoidance: recentAvoidance,
+            shuffleSeed: shuffleSeed
+        )
+    }
+
     /// Shuffle the complete selected-media pool while preventing a large
     /// album from crowding out smaller selected albums. Each library bucket
     /// contributes randomized items in small orientation runs, and the run

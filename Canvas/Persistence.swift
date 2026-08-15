@@ -38,8 +38,14 @@ final class SettingsStore: ObservableObject {
             if decoded.overlays.migrateLegacySharedStroke() {
                 migrated = true
             }
+            if decoded.normalizePlaybackTiming() {
+                migrated = true
+            }
             for index in decoded.presets.indices {
                 if decoded.presets[index].settings.overlays.migrateLegacySharedStroke() {
+                    migrated = true
+                }
+                if decoded.presets[index].settings.normalizePlaybackTiming() {
                     migrated = true
                 }
             }
@@ -76,6 +82,7 @@ final class SettingsStore: ObservableObject {
     func update(_ mutate: (inout CanvasSettings) -> Void) {
         var snapshot = settings
         mutate(&snapshot)
+        snapshot.normalizePlaybackTiming()
         settings = snapshot
     }
 }

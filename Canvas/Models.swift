@@ -809,6 +809,19 @@ struct CanvasSettings: Codable, Equatable {
     var effectiveAutomaticNightDimmingEnabled: Bool { automaticNightDimmingEnabled ?? true }
     var effectiveNightDimmingStartMinutes: Int { min(max(nightDimmingStartMinutes ?? 22 * 60, 0), 24 * 60 - 1) }
     var effectiveNightDimmingStopMinutes: Int { min(max(nightDimmingStopMinutes ?? 7 * 60, 0), 24 * 60 - 1) }
+
+    /// Repairs timing values written by older builds or by an interrupted
+    /// text edit. A zero photo duration is not a valid user-facing option and
+    /// would otherwise make PlaybackViewModel advance once per timer tick.
+    @discardableResult
+    mutating func normalizePlaybackTiming() -> Bool {
+        let before = self
+        photoDuration = PlaybackTimingPolicy.normalizedPhotoDuration(photoDuration)
+        livePhotoDuration = PlaybackTimingPolicy.normalizedLivePhotoDuration(livePhotoDuration)
+        videoDuration = PlaybackTimingPolicy.normalizedVideoDuration(videoDuration)
+        transitionDuration = PlaybackTimingPolicy.normalizedTransitionDuration(transitionDuration)
+        return before != self
+    }
 }
 
 struct OverlaySettings: Codable, Equatable {
