@@ -101,6 +101,7 @@ final class AppStore: ObservableObject {
     private var settingsSubscription: AnyCancellable?
     private var librarySubscription: AnyCancellable?
     private var googlePhotosSubscription: AnyCancellable?
+    private var powerSubscription: AnyCancellable?
     private var weatherSubscription: AnyCancellable?
 
     var settings: CanvasSettings { settingsStore.settings }
@@ -172,6 +173,9 @@ final class AppStore: ObservableObject {
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }
         googlePhotosSubscription = googlePhotos.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+        }
+        powerSubscription = power.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }
         weatherSubscription = weather.objectWillChange.sink { [weak self] _ in

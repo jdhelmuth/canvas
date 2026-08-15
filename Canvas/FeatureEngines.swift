@@ -754,15 +754,18 @@ enum PlaybackAdvancePolicy {
         )
     }
 
-    /// A swipe supplies an explicit displayed-group target. It must not be
-    /// treated as the automatic end-of-loop transition that may reshuffle.
+    /// A forward transition to index zero is the start of a new complete
+    /// playback cycle, whether the target came from the raw queue resolver or
+    /// the displayed-group resolver. The latter used to be excluded because
+    /// it supplies an explicit target, which meant still-photo loops never
+    /// actually reshuffled.
     static func shouldShuffleAfterAdvance(
         direction: Int,
         targetIndex: Int?,
         currentIndex: Int,
         shuffleEachLoop: Bool
     ) -> Bool {
-        shuffleEachLoop && targetIndex == nil && direction > 0 && currentIndex == 0
+        shuffleEachLoop && direction > 0 && currentIndex == 0 && (targetIndex == nil || targetIndex == 0)
     }
 }
 
@@ -1381,13 +1384,50 @@ enum NightDimmingPolicy {
     }
 }
 
+/// Keeps the battery label and symbol aligned with the same normalized device
+/// reading. In particular, a fully charged device must not fall through to the
+/// older fixed `battery.75percent` symbol.
+enum BatteryOverlayPolicy {
+    static func percentage(for level: Float) -> Int? {
+        guard level.isFinite, level >= 0 else { return nil }
+        return min(max(Int((level * 100).rounded()), 0), 100)
+    }
+
+    static func label(for level: Float) -> String {
+        guard let percentage = percentage(for: level) else { return "—" }
+        return "\(percentage)%"
+    }
+
+    static func symbol(for level: Float, isCharging: Bool) -> String {
+        guard let percentage = percentage(for: level) else {
+            return isCharging ? "bolt.fill" : "battery.0percent"
+        }
+        if percentage >= 100 { return "battery.100percent" }
+        if isCharging { return "bolt.fill" }
+        switch percentage {
+        case 75...: return "battery.75percent"
+        case 50...: return "battery.50percent"
+        case 25...: return "battery.25percent"
+        default: return "battery.0percent"
+        }
+    }
+}
+
 @MainActor
 final class PowerService: ObservableObject {
     @Published private(set) var batteryLevel: Float = -1
     @Published private(set) var isCharging = false
     private var priorBrightness: CGFloat?
     init() { UIDevice.current.isBatteryMonitoringEnabled = true; refresh() }
-    func refresh() { batteryLevel = UIDevice.current.batteryLevel; isCharging = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full }
+    func refresh() {
+        let state = UIDevice.current.batteryState
+        let level = UIDevice.current.batteryLevel
+        // iPadOS can report a full state while the floating level is just below
+        // one. Promote that state so the display and power gate agree that the
+        // device is at 100%.
+        batteryLevel = state == .full ? 1 : level
+        isCharging = state == .charging || state == .full
+    }
     func beginPlayback(keepAwake: Bool) {
         if priorBrightness == nil { priorBrightness = UIScreen.main.brightness }
         // Re-apply the setting on every update. Calling this with false must

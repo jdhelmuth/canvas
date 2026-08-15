@@ -521,8 +521,8 @@ struct PlayerView: View {
                 .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
         case .battery:
             Label(
-                "\(Int(UIDevice.current.batteryLevel * 100))%",
-                systemImage: UIDevice.current.batteryState == .charging ? "bolt.fill" : "battery.75percent"
+                BatteryOverlayPolicy.label(for: store.power.batteryLevel),
+                systemImage: BatteryOverlayPolicy.symbol(for: store.power.batteryLevel, isCharging: store.power.isCharging)
             )
             .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
             .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)

@@ -139,7 +139,9 @@ struct SettingsView: View {
             Picker("Queue", selection: binding(\.queueMode)) { ForEach(QueueMode.allCases) { Text($0.title).tag($0) } }
             Toggle("Repeat", isOn: binding(\.repeatEnabled))
             Toggle("Reshuffle each loop", isOn: binding(\.shuffleEachLoop))
-            Stepper("Avoid last \(store.settings.recentAvoidance) items", value: binding(\.recentAvoidance), in: 0...20)
+            Text("Canvas shows every selected item once before repeating. Reshuffling changes the order only after the full set has been shown.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -446,7 +448,8 @@ struct SettingsView: View {
                     .accessibilityHint("Adjust weather independently from the clock and date text.")
                     WeatherDataAttributionView(
                         weatherDestination: store.weather.attributionURL,
-                        weatherMarkURL: store.weather.attributionMarkURL
+                        weatherMarkURL: store.weather.attributionMarkURL,
+                        includesOpenMeteoConditions: store.settings.effectiveWeatherSource == .ambientStation
                     )
                 }
                 Toggle("Always visible", isOn: binding(\.overlays.alwaysVisible))
@@ -482,7 +485,7 @@ struct SettingsView: View {
             if let snapshot = store.weather.snapshot {
                 HStack(spacing: 8) {
                     WeatherConditionGlyph(symbolName: snapshot.symbolName, diameter: 30)
-                    Text(snapshot.displayText)
+                    Text(snapshot.displayText(isUsingCachedSnapshot: store.weather.isUsingCachedSnapshot))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -607,7 +610,7 @@ struct SettingsView: View {
     private var privacySection: some View {
         Section("Storage & Privacy") {
             Label("Private by default", systemImage: "lock.shield.fill")
-            Text("Canvas stores preferences and exclusions locally. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. With Full Photos access, Canvas makes non-destructive Apple Photos copies only in a verified Canvas-owned album; those assets also appear in All Photos. Canvas never adopts an unverified same-title album, deletes Apple Photos assets, or deletes Apple Photos albums. WeatherKit sends location to Apple; Ambient sends your personal API key and station identifier to ClimateIQ's secure proxy, while the shared application key stays server-side. AQI uses an approximately one-kilometer location with Open-Meteo. Canvas has no analytics, ads, or tracking.")
+            Text("Canvas stores preferences and exclusions locally. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. With Full Photos access, Canvas makes non-destructive Apple Photos copies only in a verified Canvas-owned album; those assets also appear in All Photos. Canvas never adopts an unverified same-title album, deletes Apple Photos assets, or deletes Apple Photos albums. WeatherKit sends location to Apple; Ambient sends your personal API key and station identifier to ClimateIQ's secure proxy, while the shared application key stays server-side. Ambient sky conditions use Open-Meteo current weather codes when available, and AQI uses an approximately one-kilometer location with Open-Meteo. Canvas has no analytics, ads, or tracking.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

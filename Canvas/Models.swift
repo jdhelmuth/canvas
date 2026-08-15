@@ -739,6 +739,9 @@ struct CanvasSettings: Codable, Equatable {
     var queueMode: QueueMode = .shuffle
     var repeatEnabled = true
     var shuffleEachLoop = false
+    /// Retained for settings written by older builds. Playback now completes
+    /// the entire selected-media cycle before repeating, so this legacy value
+    /// is no longer exposed or used as a fixed recent-item cap.
     var recentAvoidance = 0
     var photoDuration: Double = 10
     var livePhotoDuration: Double = 10

@@ -69,6 +69,72 @@ final class CanvasTests: XCTestCase {
         XCTAssertNotEqual(first, second)
     }
 
+    func testQueueBuilderDeduplicatesRepeatedAssetIDsWithinACycle() {
+        let first = CanvasMediaItem(
+            id: "apple:duplicate",
+            source: .applePhotos,
+            kind: .photo,
+            creationDate: nil,
+            filename: "first.jpg",
+            isFavorite: false,
+            pixelWidth: 1600,
+            pixelHeight: 900,
+            albumTitle: "Family",
+            appleAsset: nil,
+            localURL: nil,
+            contentHash: nil
+        )
+        let replacement = CanvasMediaItem(
+            id: first.id,
+            source: first.source,
+            kind: first.kind,
+            creationDate: first.creationDate,
+            filename: "replacement.jpg",
+            isFavorite: first.isFavorite,
+            pixelWidth: first.pixelWidth,
+            pixelHeight: first.pixelHeight,
+            albumTitle: first.albumTitle,
+            appleAsset: nil,
+            localURL: nil,
+            contentHash: nil
+        )
+
+        let queue = QueueBuilder.build([first, replacement], mode: .shuffle, repeatEnabled: true, shuffleSeed: 42)
+
+        XCTAssertEqual(queue.map(\.id), [first.id])
+        XCTAssertEqual(queue.first?.filename, first.filename)
+    }
+
+    func testNextCycleIncludesEveryItemOnceAndMovesOutgoingGroupAwayFromBoundary() {
+        let assets = (0..<8).map { index in
+            CanvasMediaItem(
+                id: "apple:cycle-\(index)",
+                source: .applePhotos,
+                kind: .photo,
+                creationDate: nil,
+                filename: "cycle-\(index).jpg",
+                isFavorite: false,
+                pixelWidth: 1600,
+                pixelHeight: 900,
+                albumTitle: "Family",
+                appleAsset: nil,
+                localURL: nil,
+                contentHash: nil
+            )
+        }
+        let next = QueueBuilder.buildNextCycle(
+            assets,
+            mode: .shuffle,
+            previousIDs: [assets[6].id, assets[7].id],
+            shuffleSeed: 42
+        )
+
+        XCTAssertEqual(next.count, assets.count)
+        XCTAssertEqual(Set(next.map(\.id)), Set(assets.map(\.id)))
+        XCTAssertEqual(Set(next.map(\.id)).count, next.count)
+        XCTAssertFalse([assets[6].id, assets[7].id].contains(next[0].id))
+    }
+
     func testProviderRefreshPreservesStartedQueueAndAdvancesPastFirstItemOnce() {
         let assets = (0..<4).map { index in
             CanvasMediaItem(
@@ -733,6 +799,45 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(snapshot.lowTemperature, "61.0°F")
     }
 
+    func testAmbientReadingNeverInventsClearWhenSkyConditionIsUnavailable() throws {
+        let data = Data(#"{"reading":{"tempF":64,"humidityPercent":96,"uvIndex":4,"hourlyRainIn":0,"asOf":"2026-08-15T15:00:00.000Z"}}"#.utf8)
+        let response = try JSONDecoder().decode(CanvasAmbientCurrentResponse.self, from: data)
+        let reading = try XCTUnwrap(response.reading)
+        let snapshot = AmbientWeatherCanvasProvider.snapshot(from: reading)
+
+        XCTAssertEqual(snapshot.symbolName, "cloud.fill")
+        XCTAssertEqual(snapshot.condition, "Conditions unavailable")
+    }
+
+    func testOpenMeteoConditionMappingIncludesFogAndCloudCover() {
+        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 45, isDay: true), CanvasWeatherCondition(symbolName: "cloud.fog.fill", text: "Fog"))
+        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 3, isDay: true), CanvasWeatherCondition(symbolName: "cloud.fill", text: "Overcast"))
+        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 2, isDay: true), CanvasWeatherCondition(symbolName: "cloud.sun.fill", text: "Partly cloudy"))
+        XCTAssertEqual(OpenMeteoConditionPolicy.condition(for: 0, isDay: false), CanvasWeatherCondition(symbolName: "moon.stars.fill", text: "Clear"))
+    }
+
+    func testOpenMeteoCurrentConditionRequestUsesCurrentWeatherCode() throws {
+        let url = try XCTUnwrap(
+            OpenMeteoCurrentConditionProvider.requestURL(
+                for: CLLocation(latitude: 40.44672, longitude: -79.98214)
+            )
+        )
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.queryItems?.first(where: { $0.name == "current" })?.value, "weather_code,is_day")
+        XCTAssertEqual(components.queryItems?.first(where: { $0.name == "timezone" })?.value, "auto")
+    }
+
+    func testCachedWeatherIsExplicitlyLabeledLastKnown() {
+        let snapshot = CanvasWeatherSnapshot(
+            symbolName: "sun.max.fill",
+            condition: "Clear",
+            temperature: "72°F",
+            updatedAt: .now
+        )
+
+        XCTAssertEqual(snapshot.displayText(isUsingCachedSnapshot: true), "72.0°F · Clear · Last known")
+    }
+
     func testAmbientStationChoicesUseFriendlyLabelsWithoutShowingIdentifiers() throws {
         let data = Data(#"{"devices":[{"macAddress":"00:10:FA:AA:BB:CC","name":"Backyard","location":"Pittsburgh"},{"macAddress":"00:10:FA:DD:EE:FF","name":"","location":""}]}"#.utf8)
         let response = try JSONDecoder().decode(CanvasAmbientDeviceResponse.self, from: data)
@@ -977,6 +1082,14 @@ final class CanvasTests: XCTestCase {
                 shuffleEachLoop: true
             )
         )
+        XCTAssertTrue(
+            PlaybackAdvancePolicy.shouldShuffleAfterAdvance(
+                direction: 1,
+                targetIndex: 0,
+                currentIndex: 0,
+                shuffleEachLoop: true
+            )
+        )
         XCTAssertTrue(PlaybackMediaSurfacePolicy.usesSingleTile(for: .livePhoto))
         XCTAssertTrue(PlaybackMediaSurfacePolicy.usesSingleTile(for: .video))
         XCTAssertFalse(PlaybackMediaSurfacePolicy.usesSingleTile(for: .photo))
@@ -1098,6 +1211,20 @@ final class CanvasTests: XCTestCase {
             ),
             [.clock, .date, .battery]
         )
+    }
+
+    func testBatteryOverlayUsesFullSymbolAtFullCharge() {
+        XCTAssertEqual(BatteryOverlayPolicy.percentage(for: 1), 100)
+        XCTAssertEqual(BatteryOverlayPolicy.label(for: 1), "100%")
+        XCTAssertEqual(BatteryOverlayPolicy.symbol(for: 1, isCharging: false), "battery.100percent")
+        XCTAssertEqual(BatteryOverlayPolicy.symbol(for: 0.999, isCharging: true), "battery.100percent")
+    }
+
+    func testBatteryOverlayRoundsLevelsAndHandlesUnavailableSimulatorReading() {
+        XCTAssertEqual(BatteryOverlayPolicy.label(for: 0.996), "100%")
+        XCTAssertEqual(BatteryOverlayPolicy.symbol(for: 0.75, isCharging: false), "battery.75percent")
+        XCTAssertEqual(BatteryOverlayPolicy.symbol(for: 0.5, isCharging: false), "battery.50percent")
+        XCTAssertEqual(BatteryOverlayPolicy.label(for: -1), "—")
     }
 
     func testCaptureDateTileFramesStayInsideFinalSingleAndPairedCanvas() {

@@ -286,6 +286,7 @@ final class PlaybackViewModel: ObservableObject {
             cancelTimer()
             return false
         }
+        let recentlyDisplayedIDs = displayedFrame?.layoutAssets.map(\.id) ?? currentAsset.map { [$0.id] } ?? []
         let transitionSeed = UInt64.random(in: UInt64.min...UInt64.max)
         currentIndex = nextIndex
         if PlaybackAdvancePolicy.shouldShuffleAfterAdvance(
@@ -294,14 +295,13 @@ final class PlaybackViewModel: ObservableObject {
             currentIndex: currentIndex,
             shuffleEachLoop: settings.shuffleEachLoop
         ) {
-            queue = QueueBuilder.build(
+            queue = QueueBuilder.buildNextCycle(
                 queue,
                 mode: settings.queueMode,
-                repeatEnabled: true,
-                previousIDs: previousIDs,
-                recentAvoidance: settings.recentAvoidance,
+                previousIDs: recentlyDisplayedIDs,
                 shuffleSeed: Int.random(in: Int.min...Int.max)
             )
+            currentIndex = 0
         }
         navigationHistory.append(currentPosition)
         scheduleLoad(

@@ -2,17 +2,18 @@ import Foundation
 
 struct QueueBuilder {
     static func build(_ assets: [CanvasMediaItem], mode: QueueMode, repeatEnabled: Bool, previousIDs: [String] = [], recentAvoidance: Int = 0, shuffleSeed: Int = 0) -> [CanvasMediaItem] {
-        guard !assets.isEmpty else { return [] }
+        let uniqueAssets = deduplicatedByID(assets)
+        guard !uniqueAssets.isEmpty else { return [] }
         var output: [CanvasMediaItem]
         switch mode {
         case .shuffle:
-            var generator = SeededGenerator(seed: UInt64(bitPattern: Int64(shuffleSeed)) ^ UInt64(assets.count))
-            output = shuffledAcrossLibraries(assets, using: &generator)
-        case .albumOrder: output = assets
-        case .oldestFirst: output = assets.sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
-        case .newestFirst: output = assets.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
-        case .filename: output = assets.sorted { $0.filename.localizedCaseInsensitiveCompare($1.filename) == .orderedAscending }
-        case .favoritesFirst: output = assets.sorted { $0.isFavorite && !$1.isFavorite }
+            var generator = SeededGenerator(seed: UInt64(bitPattern: Int64(shuffleSeed)) ^ UInt64(uniqueAssets.count))
+            output = shuffledAcrossLibraries(uniqueAssets, using: &generator)
+        case .albumOrder: output = uniqueAssets
+        case .oldestFirst: output = uniqueAssets.sorted { ($0.creationDate ?? .distantPast) < ($1.creationDate ?? .distantPast) }
+        case .newestFirst: output = uniqueAssets.sorted { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
+        case .filename: output = uniqueAssets.sorted { $0.filename.localizedCaseInsensitiveCompare($1.filename) == .orderedAscending }
+        case .favoritesFirst: output = uniqueAssets.sorted { $0.isFavorite && !$1.isFavorite }
         }
         if recentAvoidance > 0 && output.count > recentAvoidance {
             let recent = Set(previousIDs.suffix(recentAvoidance))
@@ -21,6 +22,40 @@ struct QueueBuilder {
             output = preferred + held
         }
         return repeatEnabled ? output : Array(output.prefix(output.count))
+    }
+
+    /// Builds the next complete playback cycle. A cycle always contains each
+    /// available media identifier exactly once; reshuffling changes only the
+    /// order between cycles, never the number of times an item appears inside
+    /// one cycle. The recently displayed group is moved away from the cycle
+    /// boundary when there are enough other items to do so.
+    static func buildNextCycle(
+        _ assets: [CanvasMediaItem],
+        mode: QueueMode,
+        previousIDs: [String] = [],
+        shuffleSeed: Int = 0
+    ) -> [CanvasMediaItem] {
+        let next = build(
+            assets,
+            mode: mode,
+            repeatEnabled: true,
+            shuffleSeed: shuffleSeed
+        )
+        guard next.count > 1, !previousIDs.isEmpty else { return next }
+
+        let previous = Set(previousIDs)
+        if let firstUnseenIndex = next.firstIndex(where: { !previous.contains($0.id) }) {
+            return rotated(next, startingAt: firstUnseenIndex)
+        }
+
+        // Every available item may have been in the outgoing displayed group
+        // for a very small library. A repeat is unavoidable in that case, but
+        // still avoid repeating the last tile when another choice exists.
+        if let lastID = previousIDs.last,
+           let firstDifferentIndex = next.firstIndex(where: { $0.id != lastID }) {
+            return rotated(next, startingAt: firstDifferentIndex)
+        }
+        return next
     }
 
     /// Refreshes the media backing a queue without treating a provider
@@ -55,7 +90,7 @@ struct QueueBuilder {
             latestByID[asset.id] = asset
         }
 
-        let surviving = existingQueue.compactMap { latestByID[$0.id] }
+        let surviving = deduplicatedByID(existingQueue.compactMap { latestByID[$0.id] })
         guard !surviving.isEmpty else {
             return build(
                 assets,
@@ -154,6 +189,16 @@ struct QueueBuilder {
     private static func libraryKey(for asset: CanvasMediaItem) -> String {
         "\(asset.source.rawValue)|\(asset.libraryID ?? asset.albumTitle)"
     }
+
+    private static func deduplicatedByID(_ assets: [CanvasMediaItem]) -> [CanvasMediaItem] {
+        var seen = Set<String>()
+        return assets.filter { seen.insert($0.id).inserted }
+    }
+
+    private static func rotated(_ assets: [CanvasMediaItem], startingAt index: Int) -> [CanvasMediaItem] {
+        guard assets.indices.contains(index), index > 0 else { return assets }
+        return Array(assets[index...]) + Array(assets[..<index])
+    }
 }
 
 @MainActor
@@ -173,7 +218,16 @@ final class QueueService: ObservableObject {
         guard !assets.isEmpty else { return }
         if index + 1 < assets.count { index += 1; return }
         guard repeatEnabled else { exhausted = true; return }
-        if reshuffle, let settings { assets = QueueBuilder.build(assets, mode: settings.queueMode, repeatEnabled: true, shuffleSeed: Int.random(in: Int.min...Int.max)); index = 0 }
+        if reshuffle, let settings {
+            let previousID = current?.id
+            assets = QueueBuilder.buildNextCycle(
+                assets,
+                mode: settings.queueMode,
+                previousIDs: previousID.map { [$0] } ?? [],
+                shuffleSeed: Int.random(in: Int.min...Int.max)
+            )
+            index = 0
+        }
         else { index = 0 }
     }
     func previous() { guard !assets.isEmpty else { return }; index = index > 0 ? index - 1 : assets.count - 1 }
