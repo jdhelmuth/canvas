@@ -321,6 +321,7 @@ struct WeatherOverlayWidget: View {
         let text: String
         let accessibilityText: String
         var tint: Color = .white.opacity(0.82)
+        var background: Color = .white.opacity(0.09)
     }
 
     var body: some View {
@@ -405,7 +406,8 @@ struct WeatherOverlayWidget: View {
                 icon: "aqi.medium",
                 text: "AQI \(value)",
                 accessibilityText: "Air quality index \(value), \(category.title)",
-                tint: category.tint
+                tint: .white,
+                background: category.tint.opacity(0.78)
             ))
         }
         if settings.effectiveWeatherShowFeelsLike, let value = snapshot.apparentTemperature {
@@ -464,7 +466,7 @@ struct WeatherOverlayWidget: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.09), in: Capsule())
+        .background(metric.background, in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(metric.accessibilityText)
     }
@@ -526,7 +528,7 @@ private extension CanvasAirQualityCategory {
         case .unhealthySensitive: .orange
         case .unhealthy: .red
         case .veryUnhealthy: .purple
-        case .hazardous: .pink
+        case .hazardous: Color(red: 0.494, green: 0, blue: 0.137)
         }
     }
 }
@@ -561,7 +563,7 @@ struct WeatherLegalLink: View {
 }
 
 struct AirQualityLegalLink: View {
-    static let destination = URL(string: "https://open-meteo.com/en/docs/air-quality-api")!
+    static let destination = URL(string: "https://www.airnow.gov/")!
 
     var body: some View {
         Link(destination: Self.destination) {
@@ -583,10 +585,10 @@ struct WeatherDataAttributionView: View {
         HStack(spacing: 6) {
             WeatherLegalLink(destination: weatherDestination, markURL: weatherMarkURL)
             Link(destination: AirQualityLegalLink.destination) {
-                Label("AQI: Open-Meteo · CAMS", systemImage: "aqi.medium")
+                Label("AQI: AirNow · preliminary", systemImage: "aqi.medium")
                     .font(.caption)
             }
-            .accessibilityLabel("Air quality data from Open-Meteo and the Copernicus Atmosphere Monitoring Service")
+            .accessibilityLabel("Preliminary air quality data from AirNow")
         }
     }
 }
