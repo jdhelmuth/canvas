@@ -25,8 +25,9 @@ the Apple Photos features.
   permission and sends the current coordinates to Apple's WeatherKit to obtain
   local conditions. For AQI, Canvas rounds the coordinates to two decimal
   places (approximately one-kilometer precision) and sends that approximate
-  location to Open-Meteo, whose air-quality forecast is based on Copernicus
-  Atmosphere Monitoring Service (CAMS) data. Canvas stores only the last
+  location to ClimateIQ's secure public API. ClimateIQ uses it to select the
+  nearest active U.S. monitoring site from AirNow's preliminary observations;
+  no AirNow credential is shipped in Canvas. Canvas stores only the last
   combined weather snapshot locally so it can continue showing the latest
   available weather while the network or service is unavailable.
 
@@ -47,9 +48,9 @@ album or assets.
 Apple system frameworks provide Photos, media playback, Keychain, local
 storage, and WeatherKit. Google receives information necessary for the
 optional Google Photos Picker and OAuth flow when you choose that feature.
-Open-Meteo receives the approximate coordinates needed for optional AQI data;
-its free API may retain technical logs, including those coordinates, for up to
-90 days. Canvas does not send your media to any Canvas-operated service.
+ClimateIQ receives the approximate coordinates needed to select the nearest
+AirNow monitoring site and fetches AirNow's public data server-side. Canvas
+does not send your media to any Canvas-operated service or directly to AirNow.
 
 ## Contact
 
