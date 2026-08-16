@@ -137,6 +137,10 @@ final class AppStore: ObservableObject {
             settingsStore.settings.overlays.weatherShowHumidity = true
             settingsStore.settings.overlays.weatherShowWind = true
             settingsStore.settings.overlays.weatherShowUVIndex = true
+            settingsStore.settings.overlays.weatherShowDewPoint = true
+            settingsStore.settings.overlays.weatherShowPressure = true
+            settingsStore.settings.overlays.weatherShowRainRate = true
+            settingsStore.settings.overlays.weatherShowSolarRadiation = true
             settingsStore.settings.overlays.weatherShowPrecipitationChance = true
             settingsStore.settings.overlays.weatherShowDailyHighLow = true
             settingsStore.settings.overlays.weatherShowSunriseSunset = true

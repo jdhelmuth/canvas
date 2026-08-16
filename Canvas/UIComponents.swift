@@ -443,6 +443,18 @@ struct WeatherOverlayWidget: View {
         if settings.effectiveWeatherShowUVIndex, let value = snapshot.uvIndex {
             result.append(Metric(id: "uv", icon: "sun.max.fill", text: "UV \(value)", accessibilityText: "UV index \(value)", tint: .yellow))
         }
+        if settings.effectiveWeatherShowDewPoint, let value = snapshot.dewPoint {
+            result.append(Metric(id: "dew-point", icon: "thermometer.medium", text: "Dew \(value)", accessibilityText: "Dew point \(value)", tint: .cyan))
+        }
+        if settings.effectiveWeatherShowPressure, let value = snapshot.pressure {
+            result.append(Metric(id: "pressure", icon: "gauge.with.dots.needle.33percent", text: value, accessibilityText: "Pressure \(value)", tint: .orange))
+        }
+        if settings.effectiveWeatherShowRainRate, let value = snapshot.rainRate {
+            result.append(Metric(id: "rain-rate", icon: "cloud.rain.fill", text: value, accessibilityText: "Rain rate \(value)", tint: .blue))
+        }
+        if settings.effectiveWeatherShowSolarRadiation, let value = snapshot.solarRadiation {
+            result.append(Metric(id: "solar-radiation", icon: "sun.max.fill", text: value, accessibilityText: "Solar radiation \(value)", tint: .yellow))
+        }
         if settings.effectiveWeatherShowPrecipitationChance, let value = snapshot.precipitationChancePercent {
             result.append(Metric(id: "precipitation", icon: "umbrella.fill", text: "\(value)%", accessibilityText: "Precipitation chance \(value) percent", tint: .blue))
         }

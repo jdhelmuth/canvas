@@ -408,7 +408,7 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
                     weatherStatusRow
-                    Text("The minimal layout shows current conditions and AQI. Add only the details you want to see at a glance.")
+                    Text("The minimal layout shows current conditions and AQI. Ambient values take priority; Apple Weather fills only categories the station does not provide.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Toggle(
@@ -427,15 +427,16 @@ struct SettingsView: View {
                     Toggle("Wind", isOn: optionalOverlayBinding(\.weatherShowWind, default: false))
                     Toggle("UV index", isOn: optionalOverlayBinding(\.weatherShowUVIndex, default: false))
                     if store.settings.effectiveWeatherSource == .ambientStation {
+                        Toggle("Dew point", isOn: optionalOverlayBinding(\.weatherShowDewPoint, default: false))
+                        Toggle("Pressure", isOn: optionalOverlayBinding(\.weatherShowPressure, default: false))
+                        Toggle("Rain rate", isOn: optionalOverlayBinding(\.weatherShowRainRate, default: false))
+                        Toggle("Solar radiation", isOn: optionalOverlayBinding(\.weatherShowSolarRadiation, default: false))
                         Toggle("Rain today", isOn: optionalOverlayBinding(\.weatherShowRainToday, default: false))
-                    } else {
-                        Toggle("Precipitation chance", isOn: optionalOverlayBinding(\.weatherShowPrecipitationChance, default: false))
                     }
+                    Toggle("Precipitation chance", isOn: optionalOverlayBinding(\.weatherShowPrecipitationChance, default: false))
                     Toggle("Today's high & low", isOn: optionalOverlayBinding(\.weatherShowDailyHighLow, default: false))
-                    if store.settings.effectiveWeatherSource == .weatherKit {
-                        Toggle("Sunrise & sunset", isOn: optionalOverlayBinding(\.weatherShowSunriseSunset, default: false))
-                        Toggle("Next-hour outlook", isOn: optionalOverlayBinding(\.weatherShowNextHour, default: false))
-                    }
+                    Toggle("Sunrise & sunset", isOn: optionalOverlayBinding(\.weatherShowSunriseSunset, default: false))
+                    Toggle("Next-hour outlook", isOn: optionalOverlayBinding(\.weatherShowNextHour, default: false))
                     InlineSliderRow(
                         title: "Weather size",
                         value: optionalOverlayBinding(

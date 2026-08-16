@@ -541,6 +541,31 @@ final class CanvasTests: XCTestCase {
     }
 
     @MainActor
+    func testAmbientSourceIgnoresPreProviderSnapshotCache() throws {
+        let defaults = try makeTestDefaults()
+        defaults.set(
+            Data(#"{"symbolName":"cloud.sun.fill","condition":"Partly Cloudy","temperature":"70.3°F","apparentTemperature":"71.8°F","updatedAt":0}"#.utf8),
+            forKey: "canvas.weather.snapshot.v3"
+        )
+        defaults.set(CanvasWeatherSource.ambientStation.rawValue, forKey: "canvas.weather.snapshot-source.v3")
+
+        let configuration = CanvasWeatherConfiguration(
+            source: .ambientStation,
+            ambientDeviceMAC: "00:10:FA:AA:BB:CC",
+            ambientAPIKey: "test-api-key"
+        )
+        let service = CanvasWeatherService(
+            weatherProvider: TestWeatherProvider(results: [makeResult(temperature: "70.3°F")]),
+            airQualityProvider: TestAirQualityProvider(),
+            autoRequestLocation: false,
+            defaults: defaults,
+            configurationProvider: { configuration }
+        )
+
+        XCTAssertNil(service.snapshot)
+    }
+
+    @MainActor
     func testAmbientRefreshPolicyUsesDocumentedCadenceAndSourceTimestamps() {
         XCTAssertEqual(CanvasAmbientRefreshPolicy.upstreamUpdateFloor, 60)
         XCTAssertEqual(CanvasAmbientRefreshPolicy.pollingInterval, 60)
@@ -799,21 +824,29 @@ final class CanvasTests: XCTestCase {
     }
 
     func testAmbientReadingDecodingAndObservationGlyphMapping() throws {
-        let data = Data(#"{"reading":{"tempF":72.4,"apparentTempF":70.1,"humidityPercent":48,"windMph":8.2,"windGustMph":12.3,"windDirectionDeg":315,"pressureInHg":29.9,"uvIndex":0,"hourlyRainIn":0.2,"rainTodayIn":0.4,"highF":78,"lowF":61,"asOf":"2026-08-12T20:00:00.000Z"}}"#.utf8)
+        let data = Data(#"{"reading":{"tempF":70.3,"apparentTempF":70.3,"humidityPercent":96,"windMph":1.8,"windGustMph":2.3,"windDirectionDeg":157,"pressureInHg":29.9,"uvIndex":0,"hourlyRainIn":0.2,"dewPointF":69.3,"solarRadiationWm2":13.73,"rainTodayIn":0.4,"highF":78,"lowF":61,"asOf":"2026-08-12T20:00:00.000Z"}}"#.utf8)
         let response = try JSONDecoder().decode(CanvasAmbientCurrentResponse.self, from: data)
         let reading = try XCTUnwrap(response.reading)
         let snapshot = AmbientWeatherCanvasProvider.snapshot(from: reading)
 
         XCTAssertEqual(snapshot.symbolName, "cloud.rain.fill")
         XCTAssertEqual(snapshot.condition, "Rain")
-        XCTAssertEqual(snapshot.temperature, "72.4°F")
-        XCTAssertEqual(snapshot.apparentTemperature, "70.1°F")
-        XCTAssertEqual(snapshot.humidityPercent, 48)
-        XCTAssertTrue(snapshot.wind?.contains("NW") == true)
-        XCTAssertTrue(snapshot.wind?.contains("8") == true)
+        XCTAssertEqual(snapshot.temperature, "70.3°F")
+        XCTAssertEqual(snapshot.apparentTemperature, "70.3°F")
+        XCTAssertEqual(snapshot.humidityPercent, 96)
+        XCTAssertTrue(snapshot.wind?.contains("SE") == true)
+        XCTAssertTrue(snapshot.wind?.contains("2") == true)
+        XCTAssertTrue(snapshot.wind?.contains("G") == true)
+        XCTAssertEqual(snapshot.dewPoint, "69.3°F")
+        XCTAssertEqual(snapshot.pressure, "29.90 inHg")
+        XCTAssertEqual(snapshot.rainRate, "0.20 in/hr")
+        XCTAssertEqual(snapshot.solarRadiation, "13.73 W/m²")
         XCTAssertEqual(snapshot.rainToday, "0.40 in")
         XCTAssertEqual(snapshot.highTemperature, "78.0°F")
         XCTAssertEqual(snapshot.lowTemperature, "61.0°F")
+        XCTAssertNil(snapshot.precipitationChancePercent)
+        XCTAssertNil(snapshot.sunrise)
+        XCTAssertNil(snapshot.nextHourCondition)
     }
 
     func testAmbientReadingNeverInventsClearWhenSkyConditionIsUnavailable() throws {
@@ -824,6 +857,66 @@ final class CanvasTests: XCTestCase {
 
         XCTAssertEqual(snapshot.symbolName, "cloud.fill")
         XCTAssertEqual(snapshot.condition, "Conditions unavailable")
+    }
+
+    func testAmbientValuesWinWhileWeatherKitFillsMissingCategories() {
+        let ambient = CanvasWeatherSnapshot(
+            symbolName: "cloud.rain.fill",
+            condition: "Rain",
+            temperature: "70.3°F",
+            apparentTemperature: "70.3°F",
+            humidityPercent: 96,
+            wind: "SE 2 mph · G 2 mph",
+            uvIndex: 0,
+            dewPoint: "69.3°F",
+            pressure: "29.90 inHg",
+            rainRate: "0.20 in/hr",
+            solarRadiation: "13.73 W/m²",
+            rainToday: "0.40 in",
+            highTemperature: "78°F",
+            lowTemperature: "61°F",
+            updatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let weatherKit = CanvasWeatherSnapshot(
+            symbolName: "cloud.sun.fill",
+            condition: "Partly Cloudy",
+            temperature: "71.8°F",
+            apparentTemperature: "71.8°F",
+            humidityPercent: 50,
+            wind: "NW 8 mph",
+            uvIndex: 4,
+            precipitationChancePercent: 12,
+            highTemperature: "81°F",
+            lowTemperature: "60°F",
+            sunrise: "6:22 AM",
+            sunset: "8:13 PM",
+            nextHourSymbolName: "sun.max.fill",
+            nextHourTemperature: "74°F",
+            nextHourCondition: "Mostly Sunny",
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let merged = ambient.fillingMissingFields(from: weatherKit)
+
+        XCTAssertEqual(merged.symbolName, "cloud.sun.fill")
+        XCTAssertEqual(merged.condition, "Partly Cloudy")
+        XCTAssertEqual(merged.temperature, "70.3°F")
+        XCTAssertEqual(merged.apparentTemperature, "70.3°F")
+        XCTAssertEqual(merged.humidityPercent, 96)
+        XCTAssertEqual(merged.wind, "SE 2 mph · G 2 mph")
+        XCTAssertEqual(merged.uvIndex, 0)
+        XCTAssertEqual(merged.dewPoint, "69.3°F")
+        XCTAssertEqual(merged.pressure, "29.90 inHg")
+        XCTAssertEqual(merged.rainRate, "0.20 in/hr")
+        XCTAssertEqual(merged.solarRadiation, "13.73 W/m²")
+        XCTAssertEqual(merged.rainToday, "0.40 in")
+        XCTAssertEqual(merged.highTemperature, "78.0°F")
+        XCTAssertEqual(merged.lowTemperature, "61.0°F")
+        XCTAssertEqual(merged.precipitationChancePercent, 12)
+        XCTAssertEqual(merged.sunrise, "6:22 AM")
+        XCTAssertEqual(merged.sunset, "8:13 PM")
+        XCTAssertEqual(merged.nextHourCondition, "Mostly Sunny")
+        XCTAssertEqual(merged.updatedAt, Date(timeIntervalSince1970: 100))
     }
 
     func testCachedWeatherDisplayOmitsCacheQualifier() {

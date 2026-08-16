@@ -50,6 +50,10 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
     let humidityPercent: Int?
     let wind: String?
     let uvIndex: Int?
+    let dewPoint: String?
+    let pressure: String?
+    let rainRate: String?
+    let solarRadiation: String?
     let precipitationChancePercent: Int?
     let rainToday: String?
     let highTemperature: String?
@@ -70,6 +74,10 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         humidityPercent: Int? = nil,
         wind: String? = nil,
         uvIndex: Int? = nil,
+        dewPoint: String? = nil,
+        pressure: String? = nil,
+        rainRate: String? = nil,
+        solarRadiation: String? = nil,
         precipitationChancePercent: Int? = nil,
         rainToday: String? = nil,
         highTemperature: String? = nil,
@@ -89,6 +97,10 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         self.humidityPercent = humidityPercent
         self.wind = wind
         self.uvIndex = uvIndex
+        self.dewPoint = CanvasWeatherTemperatureFormatter.normalized(dewPoint)
+        self.pressure = pressure
+        self.rainRate = rainRate
+        self.solarRadiation = solarRadiation
         self.precipitationChancePercent = precipitationChancePercent
         self.rainToday = rainToday
         self.highTemperature = CanvasWeatherTemperatureFormatter.normalized(highTemperature)
@@ -110,6 +122,10 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         case humidityPercent
         case wind
         case uvIndex
+        case dewPoint
+        case pressure
+        case rainRate
+        case solarRadiation
         case precipitationChancePercent
         case rainToday
         case highTemperature
@@ -133,6 +149,10 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
             humidityPercent: try container.decodeIfPresent(Int.self, forKey: .humidityPercent),
             wind: try container.decodeIfPresent(String.self, forKey: .wind),
             uvIndex: try container.decodeIfPresent(Int.self, forKey: .uvIndex),
+            dewPoint: try container.decodeIfPresent(String.self, forKey: .dewPoint),
+            pressure: try container.decodeIfPresent(String.self, forKey: .pressure),
+            rainRate: try container.decodeIfPresent(String.self, forKey: .rainRate),
+            solarRadiation: try container.decodeIfPresent(String.self, forKey: .solarRadiation),
             precipitationChancePercent: try container.decodeIfPresent(Int.self, forKey: .precipitationChancePercent),
             rainToday: try container.decodeIfPresent(String.self, forKey: .rainToday),
             highTemperature: try container.decodeIfPresent(String.self, forKey: .highTemperature),
@@ -151,26 +171,35 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
 
     var displayText: String { conditionsText }
 
-    func applying(condition: CanvasWeatherCondition) -> Self {
+    /// Fills only fields that are absent from an Ambient station reading.
+    /// Ambient remains authoritative for every value it supplied, including
+    /// values that disagree with WeatherKit. The station does not report a
+    /// sky-condition description, so the WeatherKit condition and symbol are
+    /// used when that optional enrichment succeeds.
+    func fillingMissingFields(from fallback: Self) -> Self {
         Self(
-            symbolName: condition.symbolName,
-            condition: condition.text,
-            temperature: temperature,
-            apparentTemperature: apparentTemperature,
-            humidityPercent: humidityPercent,
-            wind: wind,
-            uvIndex: uvIndex,
-            precipitationChancePercent: precipitationChancePercent,
-            rainToday: rainToday,
-            highTemperature: highTemperature,
-            lowTemperature: lowTemperature,
-            sunrise: sunrise,
-            sunset: sunset,
-            nextHourSymbolName: nextHourSymbolName,
-            nextHourTemperature: nextHourTemperature,
-            nextHourCondition: nextHourCondition,
+            symbolName: fallback.symbolName,
+            condition: fallback.condition,
+            temperature: temperature == "—" ? fallback.temperature : temperature,
+            apparentTemperature: apparentTemperature ?? fallback.apparentTemperature,
+            humidityPercent: humidityPercent ?? fallback.humidityPercent,
+            wind: wind ?? fallback.wind,
+            uvIndex: uvIndex ?? fallback.uvIndex,
+            dewPoint: dewPoint ?? fallback.dewPoint,
+            pressure: pressure ?? fallback.pressure,
+            rainRate: rainRate ?? fallback.rainRate,
+            solarRadiation: solarRadiation ?? fallback.solarRadiation,
+            precipitationChancePercent: precipitationChancePercent ?? fallback.precipitationChancePercent,
+            rainToday: rainToday ?? fallback.rainToday,
+            highTemperature: highTemperature ?? fallback.highTemperature,
+            lowTemperature: lowTemperature ?? fallback.lowTemperature,
+            sunrise: sunrise ?? fallback.sunrise,
+            sunset: sunset ?? fallback.sunset,
+            nextHourSymbolName: nextHourSymbolName ?? fallback.nextHourSymbolName,
+            nextHourTemperature: nextHourTemperature ?? fallback.nextHourTemperature,
+            nextHourCondition: nextHourCondition ?? fallback.nextHourCondition,
             airQualityIndex: airQualityIndex,
-            updatedAt: updatedAt
+            updatedAt: updatedAt == .distantPast ? fallback.updatedAt : updatedAt
         )
     }
 
@@ -183,6 +212,10 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
             humidityPercent: humidityPercent,
             wind: wind,
             uvIndex: uvIndex,
+            dewPoint: dewPoint,
+            pressure: pressure,
+            rainRate: rainRate,
+            solarRadiation: solarRadiation,
             precipitationChancePercent: precipitationChancePercent,
             rainToday: rainToday,
             highTemperature: highTemperature,
@@ -272,7 +305,7 @@ enum WeatherOverlayStatus: Equatable, Sendable {
         case .locating:
             "Finding the iPad's current location."
         case .fetching:
-            "Loading current weather from WeatherKit."
+            "Loading current weather."
         case .live:
             "Current weather is available."
         case .networkUnavailable:
@@ -317,30 +350,6 @@ struct CanvasWeatherProviderResult: Sendable {
             snapshot: snapshot.addingAirQualityIndex(value),
             attributionURL: attributionURL,
             attributionMarkURL: attributionMarkURL
-        )
-    }
-}
-
-struct CanvasWeatherCondition: Equatable, Sendable {
-    let symbolName: String
-    let text: String
-}
-
-protocol CanvasCurrentConditionProviding {
-    func currentCondition(for location: CLLocation) async throws -> CanvasWeatherCondition
-}
-
-/// WeatherKit owns the condition description and symbol used by both weather
-/// sources. Ambient still supplies the station measurements below.
-struct WeatherKitCurrentConditionProvider: CanvasCurrentConditionProviding {
-    func currentCondition(for location: CLLocation) async throws -> CanvasWeatherCondition {
-        let current = try await WeatherKit.WeatherService.shared.weather(
-            for: location,
-            including: .current
-        )
-        return CanvasWeatherCondition(
-            symbolName: current.symbolName,
-            text: current.condition.description
         )
     }
 }
@@ -485,6 +494,8 @@ struct CanvasAmbientReading: Decodable, Sendable, Equatable {
     let pressureInHg: Double?
     let uvIndex: Double?
     let hourlyRainIn: Double?
+    let dewPointF: Double?
+    let solarRadiationWm2: Double?
     let rainTodayIn: Double?
     let highF: Double?
     let lowF: Double?
@@ -495,15 +506,15 @@ struct CanvasAmbientCurrentResponse: Decodable, Sendable, Equatable {
     let reading: CanvasAmbientReading?
 }
 
-/// Ambient stations report measurements rather than a condition. WeatherKit
-/// supplies the current condition glyph and description for both sources.
+/// Ambient stations own every measurement they provide. WeatherKit is used as
+/// a best-effort field-level fallback for categories the station does not
+/// report, such as sky condition, precipitation chance, and sun/outlook data.
 struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
     let apiKey: String
     let deviceMAC: String?
     let baseURL: URL
     let session: URLSession
     let defaults: UserDefaults
-    let conditionProvider: CanvasCurrentConditionProviding
 
     init(
         apiKey: String,
@@ -511,15 +522,17 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
         baseURL: URL = URL(string: "https://myclimateiq.com")!,
         session: URLSession = .shared,
         defaults: UserDefaults = .standard,
-        conditionProvider: CanvasCurrentConditionProviding = WeatherKitCurrentConditionProvider()
+        weatherKitFallback: CanvasWeatherProviding = WeatherKitCanvasWeatherProvider()
     ) {
         self.apiKey = apiKey
         self.deviceMAC = deviceMAC
         self.baseURL = baseURL
         self.session = session
         self.defaults = defaults
-        self.conditionProvider = conditionProvider
+        self.weatherKitFallback = weatherKitFallback
     }
+
+    let weatherKitFallback: CanvasWeatherProviding
 
     func currentWeather(for location: CLLocation) async throws -> CanvasWeatherProviderResult {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -552,24 +565,24 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
             throw CanvasAmbientWeatherProviderError.serverUnavailable
         }
         guard let payload = try? JSONDecoder().decode(CanvasAmbientCurrentResponse.self, from: data),
-              let reading = payload.reading,
-              reading.tempF != nil else {
+              let reading = payload.reading else {
             throw CanvasAmbientWeatherProviderError.noReading
         }
 
-        var result = Self.result(from: reading)
-        // Ambient provides station measurements but no sky condition. Keep
-        // the station's temperature/rain readings and enrich only the glyph
-        // and condition text from WeatherKit. If that lookup is unavailable,
-        // the station fallback stays honest instead of inventing Clear.
-        if let condition = try? await conditionProvider.currentCondition(for: location) {
-            result = CanvasWeatherProviderResult(
-                snapshot: result.snapshot.applying(condition: condition),
-                attributionURL: result.attributionURL,
-                attributionMarkURL: result.attributionMarkURL
-            )
+        let ambientResult = Self.result(from: reading)
+        guard let fallback = try? await weatherKitFallback.currentWeather(for: location) else {
+            // A WeatherKit failure must never hide a valid station reading.
+            return ambientResult
         }
-        return result
+
+        return CanvasWeatherProviderResult(
+            snapshot: ambientResult.snapshot.fillingMissingFields(from: fallback.snapshot),
+            // Ambient remains the selected source and supplies the majority
+            // of the displayed measurements, so keep its attribution as the
+            // primary source link.
+            attributionURL: ambientResult.attributionURL,
+            attributionMarkURL: ambientResult.attributionMarkURL
+        )
     }
 
     /// Returns the stations available to the current Ambient account. This is
@@ -656,8 +669,12 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
             temperature: temperature(reading.tempF) ?? "—",
             apparentTemperature: temperature(reading.apparentTempF),
             humidityPercent: reading.humidityPercent.map { Int($0.rounded()) },
-            wind: wind(reading.windMph, direction: reading.windDirectionDeg),
+            wind: wind(reading.windMph, gust: reading.windGustMph, direction: reading.windDirectionDeg),
             uvIndex: reading.uvIndex.map { Int($0.rounded()) },
+            dewPoint: temperature(reading.dewPointF),
+            pressure: pressure(reading.pressureInHg),
+            rainRate: rainfallRate(reading.hourlyRainIn),
+            solarRadiation: solarRadiation(reading.solarRadiationWm2),
             rainToday: rainfall(reading.rainTodayIn),
             highTemperature: temperature(reading.highF),
             lowTemperature: temperature(reading.lowF),
@@ -673,17 +690,45 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
         )
     }
 
-    private static func wind(_ speed: Double?, direction: Double?) -> String? {
-        guard let speed else { return nil }
+    private static func wind(_ speed: Double?, gust: Double?, direction: Double?) -> String? {
+        guard speed != nil || gust != nil else { return nil }
         let formatter = MeasurementFormatter()
         formatter.locale = .current
         formatter.unitOptions = .naturalScale
         formatter.numberFormatter.maximumFractionDigits = 0
-        let speedText = formatter.string(from: Measurement(value: speed, unit: UnitSpeed.milesPerHour))
-        if let direction {
-            return "\(compass(direction)) \(speedText)"
+        let speedText = speed.map { formatter.string(from: Measurement(value: $0, unit: UnitSpeed.milesPerHour)) }
+        let gustText = gust.map { formatter.string(from: Measurement(value: $0, unit: UnitSpeed.milesPerHour)) }
+        let directionText = direction.map(compass)
+
+        switch (speedText, gustText, directionText) {
+        case let (speed?, gust?, direction?):
+            return "\(direction) \(speed) · G \(gust)"
+        case let (speed?, gust?, nil):
+            return "\(speed) · G \(gust)"
+        case let (speed?, nil, direction?):
+            return "\(direction) \(speed)"
+        case let (speed?, nil, nil):
+            return speed
+        case let (nil, gust?, _):
+            return "G \(gust)"
+        default:
+            return nil
         }
-        return speedText
+    }
+
+    private static func pressure(_ value: Double?) -> String? {
+        guard let value else { return nil }
+        return String(format: "%.2f inHg", value)
+    }
+
+    private static func rainfallRate(_ value: Double?) -> String? {
+        guard let value else { return nil }
+        return String(format: "%.2f in/hr", max(0, value))
+    }
+
+    private static func solarRadiation(_ value: Double?) -> String? {
+        guard let value else { return nil }
+        return String(format: "%.2f W/m²", max(0, value))
     }
 
     private static func rainfall(_ value: Double?) -> String? {
@@ -908,10 +953,13 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     @Published private(set) var status: WeatherOverlayStatus = .disabled
     @Published private(set) var isUsingCachedSnapshot = false
 
-    private static let snapshotCacheKey = "canvas.weather.snapshot.v1"
-    private static let snapshotSourceCacheKey = "canvas.weather.snapshot-source.v1"
-    private static let attributionURLCacheKey = "canvas.weather.attribution-url.v1"
-    private static let attributionMarkURLCacheKey = "canvas.weather.attribution-mark-url.v1"
+    // v4 drops snapshots written before Ambient field-level WeatherKit
+    // fallback was added. That prevents a station-only snapshot from
+    // surviving as the new merged request starts.
+    private static let snapshotCacheKey = "canvas.weather.snapshot.v4"
+    private static let snapshotSourceCacheKey = "canvas.weather.snapshot-source.v4"
+    private static let attributionURLCacheKey = "canvas.weather.attribution-url.v4"
+    private static let attributionMarkURLCacheKey = "canvas.weather.attribution-mark-url.v4"
     private static let requestTimeoutNanoseconds: UInt64 = 20_000_000_000
     private static let weatherKitPollingInterval: TimeInterval = 15 * 60
 
