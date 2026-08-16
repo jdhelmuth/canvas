@@ -1002,7 +1002,7 @@ private struct ClockOverlayPreview: View {
                     textOpacity: opacity.text
                 )
                 .padding(.trailing, 18)
-                .padding(.vertical, 18)
+                .padding(.vertical, 20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
         }

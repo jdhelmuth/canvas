@@ -136,6 +136,7 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(scale.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(scale.frame.midX, window.frame.midX)
         XCTAssertLessThanOrEqual(scale.frame.maxX, window.frame.maxX)
+        XCTAssertGreaterThan(scale.frame.height, window.frame.height * 0.75)
     }
 
     func testWeatherWidgetIsBelowClockInPortrait() {

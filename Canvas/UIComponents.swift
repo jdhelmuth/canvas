@@ -512,103 +512,101 @@ struct WeatherOverlayWidget: View {
     }
 }
 
-/// A compact, color-only reference that keeps the current dew point visible
+/// A quiet, color-only reference that keeps the current dew point visible
 /// without adding another labeled weather card to the clock composition.
 struct DewPointScaleView: View {
     let snapshot: CanvasWeatherSnapshot?
     let textOpacity: Double
 
     private let scaleWidth: CGFloat = 126
-    private let scaleHeight: CGFloat = 216
     private let barWidth: CGFloat = 18
     private let barX: CGFloat = 48
+    private let chartOpacity: Double = 0.68
 
     var body: some View {
         if let snapshot, let dewPointF = snapshot.dewPointF, dewPointF.isFinite {
-            VStack(spacing: 4) {
-                Text("DEW POINT")
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .tracking(1.1)
-                    .foregroundStyle(.white.opacity(textOpacity * 0.82))
+            GeometryReader { canvasProxy in
+                VStack(spacing: 4) {
+                    Text("DEW POINT")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .tracking(1.1)
+                        .foregroundStyle(.white.opacity(textOpacity * 0.68))
 
-                GeometryReader { proxy in
-                    let height = max(proxy.size.height, 1)
-                    let markerY = DewPointScalePolicy.yPosition(forFahrenheit: dewPointF, height: height)
+                    GeometryReader { proxy in
+                        let height = max(proxy.size.height, 1)
+                        let markerY = min(
+                            max(DewPointScalePolicy.yPosition(forFahrenheit: dewPointF, height: height), 10),
+                            max(height - 10, 10)
+                        )
 
-                    ZStack(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
-                            .fill(Color.black.opacity(0.26))
-                            .frame(width: barWidth, height: height)
-                            .offset(x: barX)
-
-                        VStack(spacing: 0) {
-                            ForEach(Array(DewPointComfortBand.allCases.reversed())) { band in
-                                band.tint
-                                    .opacity(0.9)
-                                    .frame(
-                                        width: barWidth,
-                                        height: height * CGFloat(band.spanFahrenheit / DewPointScalePolicy.spanFahrenheit)
-                                    )
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous))
-                        .frame(width: barWidth, height: height)
-                        .offset(x: barX)
-
-                        RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
-                            .stroke(.white.opacity(0.38), lineWidth: 1)
-                            .frame(width: barWidth, height: height)
-                            .offset(x: barX)
-
-                        ForEach(DewPointScalePolicy.tickValuesFahrenheit, id: \.self) { value in
-                            HStack(spacing: 4) {
-                                Text(tickLabel(forFahrenheit: value))
-                                    .font(.system(size: 9, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.white.opacity(textOpacity * 0.9))
-                                    .frame(width: 36, alignment: .trailing)
-                                Rectangle()
-                                    .fill(.white.opacity(textOpacity * 0.72))
-                                    .frame(width: 7, height: 1)
-                            }
-                            .frame(width: 47, height: 16, alignment: .trailing)
-                            .position(
-                                x: 23.5,
-                                y: min(max(DewPointScalePolicy.yPosition(forFahrenheit: value, height: height), 8), height - 8)
-                            )
-                        }
-
-                        HStack(spacing: 4) {
-                            Rectangle()
-                                .fill(.white.opacity(textOpacity * 0.95))
-                                .frame(width: 18, height: 2)
-                            Circle()
-                                .fill(.white.opacity(textOpacity))
-                                .frame(width: 11, height: 11)
-                                .overlay {
-                                    Circle()
-                                        .stroke(.black.opacity(0.72), lineWidth: 2)
+                        ZStack(alignment: .topLeading) {
+                            ZStack(alignment: .topLeading) {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(DewPointComfortBand.allCases.reversed())) { band in
+                                        band.tint
+                                            .opacity(0.9)
+                                            .frame(
+                                                width: barWidth,
+                                                height: height * CGFloat(band.spanFahrenheit / DewPointScalePolicy.spanFahrenheit)
+                                            )
+                                    }
                                 }
-                            Text(snapshot.dewPoint ?? tickLabel(forFahrenheit: dewPointF))
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white.opacity(textOpacity))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.72)
-                                .frame(width: 48, alignment: .leading)
-                                .shadow(color: .black.opacity(0.75), radius: 2)
+                                .clipShape(RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous))
+                                .frame(width: barWidth, height: height)
+                                .offset(x: barX)
+
+                                RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
+                                    .stroke(.white.opacity(0.24), lineWidth: 1)
+                                    .frame(width: barWidth, height: height)
+                                    .offset(x: barX)
+
+                                ForEach(DewPointScalePolicy.tickValuesFahrenheit, id: \.self) { value in
+                                    HStack(spacing: 4) {
+                                        Text(tickLabel(forFahrenheit: value))
+                                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                                            .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                                            .frame(width: 36, alignment: .trailing)
+                                        Rectangle()
+                                            .fill(.white.opacity(textOpacity * 0.48))
+                                            .frame(width: 7, height: 1)
+                                    }
+                                    .frame(width: 47, height: 16, alignment: .trailing)
+                                    .position(
+                                        x: 23.5,
+                                        y: min(max(DewPointScalePolicy.yPosition(forFahrenheit: value, height: height), 8), height - 8)
+                                    )
+                                }
+                            }
+                            .opacity(chartOpacity)
+
+                            HStack(spacing: 4) {
+                                Rectangle()
+                                    .fill(.white.opacity(textOpacity * 0.9))
+                                    .frame(width: 18, height: 2)
+                                Circle()
+                                    .fill(.white.opacity(textOpacity * 0.96))
+                                    .frame(width: 11, height: 11)
+                                    .overlay {
+                                        Circle()
+                                            .stroke(.black.opacity(0.48), lineWidth: 1.5)
+                                    }
+                                Text(snapshot.dewPoint ?? tickLabel(forFahrenheit: dewPointF))
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white.opacity(textOpacity * 0.92))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.72)
+                                    .frame(width: 48, alignment: .leading)
+                                    .shadow(color: .black.opacity(0.48), radius: 2)
+                            }
+                            .frame(width: 86, height: 18, alignment: .leading)
+                            .offset(x: 40, y: markerY - 9)
                         }
-                        .frame(width: 86, height: 18, alignment: .leading)
-                        .offset(x: 40, y: markerY - 9)
                     }
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(width: scaleWidth, height: scaleHeight)
+                .frame(width: scaleWidth, height: max(canvasProxy.size.height, 1), alignment: .topTrailing)
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 9)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
-            }
+            .frame(minWidth: scaleWidth, maxWidth: scaleWidth, maxHeight: .infinity)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Dew point comfort scale")
             .accessibilityValue(
