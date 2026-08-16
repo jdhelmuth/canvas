@@ -387,6 +387,15 @@ struct WeatherOverlayWidget: View {
                     .font(.system(size: min(max(24, weatherSize * 1.28), 58), weight: .medium, design: .rounded))
                     .fontWidth(.condensed)
                     .overlayTextStroke(settings: settings, mediaImage: mediaImage, opacity: textOpacity)
+                if settings.effectiveWeatherShowFeelsLike,
+                   let apparentTemperature = snapshot.apparentTemperature {
+                    Text(apparentTemperature)
+                        .font(.system(size: max(12, weatherSize * 0.62), weight: .medium, design: .rounded))
+                        .fontWidth(.condensed)
+                        .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                        .lineLimit(1)
+                        .accessibilityHidden(true)
+                }
                 Text(snapshot.condition)
                     .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
                     .foregroundStyle(.white.opacity(textOpacity * 0.78))
@@ -394,7 +403,16 @@ struct WeatherOverlayWidget: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(snapshot.temperature), \(snapshot.condition)")
+        .accessibilityLabel(conditionsAccessibilityLabel(for: snapshot))
+    }
+
+    private func conditionsAccessibilityLabel(for snapshot: CanvasWeatherSnapshot) -> String {
+        var values = [snapshot.temperature]
+        if settings.effectiveWeatherShowFeelsLike, let apparentTemperature = snapshot.apparentTemperature {
+            values.append("feels like \(apparentTemperature)")
+        }
+        values.append(snapshot.condition)
+        return values.joined(separator: ", ")
     }
 
     private func metrics(for snapshot: CanvasWeatherSnapshot) -> [Metric] {
@@ -409,9 +427,6 @@ struct WeatherOverlayWidget: View {
                 tint: .white,
                 background: category.tint.opacity(0.78)
             ))
-        }
-        if settings.effectiveWeatherShowFeelsLike, let value = snapshot.apparentTemperature {
-            result.append(Metric(id: "feels-like", icon: "thermometer.medium", text: "Feels \(value)", accessibilityText: "Feels like \(value)"))
         }
         if settings.effectiveWeatherShowHumidity, let value = snapshot.humidityPercent {
             result.append(Metric(id: "humidity", icon: "humidity.fill", text: "\(value)%", accessibilityText: "Humidity \(value) percent", tint: .cyan))
