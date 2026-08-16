@@ -146,6 +146,9 @@ final class AppStore: ObservableObject {
             settingsStore.settings.overlays.weatherShowSunriseSunset = true
             settingsStore.settings.overlays.weatherShowNextHour = true
         }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-dew-point-scale") {
+            settingsStore.settings.overlays.weatherShowDewPointScale = true
+        }
         library = PhotoLibraryService()
         googlePhotosMirror = GooglePhotosMirrorService()
         googlePhotos = GooglePhotosService()

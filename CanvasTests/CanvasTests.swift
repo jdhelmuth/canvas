@@ -511,12 +511,14 @@ final class CanvasTests: XCTestCase {
         let locale = Locale(identifier: "en_US")
         XCTAssertEqual(CanvasWeatherTemperatureFormatter.normalized("72°F", locale: locale), "72.0°F")
         XCTAssertEqual(CanvasWeatherTemperatureFormatter.normalized("22°C", locale: locale), "71.6°F")
+        XCTAssertEqual(CanvasWeatherTemperatureFormatter.fahrenheitValue(from: "20°C") ?? 0, 68, accuracy: 0.001)
 
         let snapshot = CanvasWeatherSnapshot(
             symbolName: "sun.max.fill",
             condition: "Clear",
             temperature: "72°F",
             apparentTemperature: "70°F",
+            dewPoint: "55°F",
             highTemperature: "78°F",
             lowTemperature: "61°F",
             nextHourTemperature: "74°F"
@@ -526,7 +528,45 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(snapshot.highTemperature, "78.0°F")
         XCTAssertEqual(snapshot.lowTemperature, "61.0°F")
         XCTAssertEqual(snapshot.nextHourTemperature, "74.0°F")
+        XCTAssertEqual(snapshot.dewPointF ?? 0, 55, accuracy: 0.001)
         XCTAssertEqual(CanvasWeatherSnapshot.preview.temperature, "72.0°F")
+    }
+
+    func testDewPointScalePolicyMapsComfortBandsAndPinsMarkerEdges() {
+        XCTAssertEqual(DewPointScalePolicy.comfortBand(forFahrenheit: 49.9), .dry)
+        XCTAssertEqual(DewPointScalePolicy.comfortBand(forFahrenheit: 50), .comfortable)
+        XCTAssertEqual(DewPointScalePolicy.comfortBand(forFahrenheit: 60), .sticky)
+        XCTAssertEqual(DewPointScalePolicy.comfortBand(forFahrenheit: 65), .muggy)
+        XCTAssertEqual(DewPointScalePolicy.comfortBand(forFahrenheit: 70), .oppressive)
+
+        XCTAssertEqual(
+            DewPointScalePolicy.normalizedPosition(forFahrenheit: 30),
+            0,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DewPointScalePolicy.normalizedPosition(forFahrenheit: 55),
+            0.5,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DewPointScalePolicy.normalizedPosition(forFahrenheit: 90),
+            1,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DewPointScalePolicy.yPosition(forFahrenheit: 70, height: 200),
+            40,
+            accuracy: 0.001
+        )
+    }
+
+    func testLegacyDewPointSnapshotBackfillsRawValueForScale() throws {
+        let legacyJSON = Data(#"{"symbolName":"sun.max.fill","condition":"Clear","temperature":"72°F","dewPoint":"20°C","updatedAt":0}"#.utf8)
+        let snapshot = try JSONDecoder().decode(CanvasWeatherSnapshot.self, from: legacyJSON)
+
+        XCTAssertEqual(snapshot.dewPoint, "68.0°F")
+        XCTAssertEqual(snapshot.dewPointF ?? 0, 68, accuracy: 0.001)
     }
 
     func testCachedLegacyWeatherTemperaturesNormalizeEveryTemperatureSurface() throws {
@@ -707,6 +747,7 @@ final class CanvasTests: XCTestCase {
         XCTAssertFalse(defaults.effectiveWeatherShowWind)
         XCTAssertFalse(defaults.effectiveWeatherShowUVIndex)
         XCTAssertFalse(defaults.effectiveWeatherShowPrecipitationChance)
+        XCTAssertFalse(defaults.effectiveWeatherShowDewPointScale)
         XCTAssertFalse(defaults.effectiveWeatherShowRainToday)
         XCTAssertFalse(defaults.effectiveWeatherShowDailyHighLow)
         XCTAssertFalse(defaults.effectiveWeatherShowSunriseSunset)

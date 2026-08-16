@@ -423,6 +423,15 @@ struct PlayerView: View {
                     )
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(for: settings.position)).padding(24)
             }
+            if settings.effectiveWeatherShowDewPointScale {
+                DewPointScaleView(
+                    snapshot: store.weather.snapshot,
+                    textOpacity: opacity.text
+                )
+                .padding(.trailing, 18)
+                .padding(.vertical, 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
             if CaptureDateOverlayPolicy.showsStandaloneDate(
                 enabled: settings.showCaptureDate,
                 kind: model.currentAsset?.kind,

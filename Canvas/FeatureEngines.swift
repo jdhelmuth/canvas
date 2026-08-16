@@ -440,6 +440,82 @@ enum WeatherClockLayoutPolicy {
     }
 }
 
+/// The visual scale uses Fahrenheit as its stable source unit because both
+/// Canvas weather providers expose their raw dew point in Fahrenheit. Labels
+/// are converted for the user's locale by the view; the thresholds stay
+/// consistent across providers and device settings.
+enum DewPointComfortBand: String, CaseIterable, Identifiable {
+    case dry
+    case comfortable
+    case sticky
+    case muggy
+    case oppressive
+
+    var id: String { rawValue }
+
+    var lowerFahrenheit: Double {
+        switch self {
+        case .dry: 30
+        case .comfortable: 50
+        case .sticky: 60
+        case .muggy: 65
+        case .oppressive: 70
+        }
+    }
+
+    var upperFahrenheit: Double {
+        switch self {
+        case .dry: 50
+        case .comfortable: 60
+        case .sticky: 65
+        case .muggy: 70
+        case .oppressive: 80
+        }
+    }
+
+    var spanFahrenheit: Double { upperFahrenheit - lowerFahrenheit }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .dry: "dry"
+        case .comfortable: "comfortable"
+        case .sticky: "noticeably sticky"
+        case .muggy: "muggy"
+        case .oppressive: "oppressive"
+        }
+    }
+}
+
+enum DewPointScalePolicy {
+    static let minimumFahrenheit = DewPointComfortBand.allCases.map(\.lowerFahrenheit).min() ?? 30
+    static let maximumFahrenheit = DewPointComfortBand.allCases.map(\.upperFahrenheit).max() ?? 80
+    static let tickValuesFahrenheit: [Double] = [30, 40, 50, 60, 65, 70, 80]
+    static let spanFahrenheit = maximumFahrenheit - minimumFahrenheit
+
+    /// Returns a 0...1 position where zero is the bottom of the scale and
+    /// one is the top. Values outside the reference range pin to an edge.
+    static func normalizedPosition(forFahrenheit value: Double) -> CGFloat {
+        guard value.isFinite, spanFahrenheit > 0 else { return 0.5 }
+        let normalized = (value - minimumFahrenheit) / spanFahrenheit
+        return CGFloat(min(max(normalized, 0), 1))
+    }
+
+    static func yPosition(forFahrenheit value: Double, height: CGFloat) -> CGFloat {
+        height * (1 - normalizedPosition(forFahrenheit: value))
+    }
+
+    static func comfortBand(forFahrenheit value: Double) -> DewPointComfortBand {
+        guard value.isFinite else { return .comfortable }
+        switch value {
+        case ..<50: return .dry
+        case ..<60: return .comfortable
+        case ..<65: return .sticky
+        case ..<70: return .muggy
+        default: return .oppressive
+        }
+    }
+}
+
 /// The compact live weather card has no stale-data footer. Current weather
 /// content remains in the card, while attribution and actionable status stay
 /// on their dedicated non-stale surfaces.

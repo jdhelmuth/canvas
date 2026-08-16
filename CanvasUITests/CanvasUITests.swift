@@ -81,12 +81,14 @@ final class CanvasUITests: XCTestCase {
         let feelsLike = app.switches["Feels like"]
         let humidity = app.switches["Humidity"]
         let wind = app.switches["Wind"]
+        let dewPointScale = app.switches["weather-dew-point-scale-toggle"]
         app.swipeUp()
         let weatherSize = app.sliders["Weather size-slider"]
         XCTAssertTrue(weatherSize.waitForExistence(timeout: 3))
         XCTAssertTrue(feelsLike.waitForExistence(timeout: 3))
         XCTAssertTrue(humidity.waitForExistence(timeout: 3))
         XCTAssertTrue(wind.waitForExistence(timeout: 3))
+        XCTAssertTrue(dewPointScale.waitForExistence(timeout: 3))
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Weather settings"
         attachment.lifetime = .keepAlways
@@ -117,6 +119,23 @@ final class CanvasUITests: XCTestCase {
         attachment.name = "Clock and weather overlay"
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    func testDewPointScaleIsPositionedOnTheRightEdge() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--canvas-ui-reset",
+            "--canvas-ui-weather-frame",
+            "--canvas-ui-dew-point-scale"
+        ]
+        app.launch()
+
+        let window = app.windows.firstMatch
+        let scale = app.otherElements["canvas.dew-point.scale"]
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        XCTAssertTrue(scale.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(scale.frame.midX, window.frame.midX)
+        XCTAssertLessThanOrEqual(scale.frame.maxX, window.frame.maxX)
     }
 
     func testWeatherWidgetIsBelowClockInPortrait() {

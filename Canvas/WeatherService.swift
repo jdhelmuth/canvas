@@ -38,6 +38,32 @@ enum CanvasWeatherTemperatureFormatter {
         let unit: UnitTemperature = value[unitRange].uppercased() == "C" ? .celsius : .fahrenheit
         return string(from: number, unit: unit, locale: locale)
     }
+
+    /// Returns a stable Fahrenheit value from one of Canvas's localized
+    /// temperature strings. This is used only as a compatibility fallback
+    /// for snapshots written before raw dew-point values were persisted.
+    static func fahrenheitValue(from value: String?) -> Double? {
+        guard let value else { return nil }
+
+        let expression = try? NSRegularExpression(
+            pattern: #"^\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))\s*(?:°|º)?\s*([CFcf])\s*$"#
+        )
+        let range = NSRange(location: 0, length: (value as NSString).length)
+        guard
+            let match = expression?.firstMatch(in: value, options: [], range: range),
+            let numberRange = Range(match.range(at: 1), in: value),
+            let unitRange = Range(match.range(at: 2), in: value),
+            let number = Double(value[numberRange].replacingOccurrences(of: ",", with: "."))
+        else {
+            return nil
+        }
+
+        switch value[unitRange].uppercased() {
+        case "F": return number
+        case "C": return number * 9 / 5 + 32
+        default: return nil
+        }
+    }
 }
 
 /// App-owned weather data. WeatherKit types stay behind this value type so the
@@ -51,6 +77,10 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
     let wind: String?
     let uvIndex: Int?
     let dewPoint: String?
+    /// Raw Fahrenheit value used for positioning the scale. The display
+    /// string remains localized and is still the value shown beside the
+    /// marker.
+    let dewPointF: Double?
     let pressure: String?
     let rainRate: String?
     let solarRadiation: String?
@@ -75,6 +105,7 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         wind: String? = nil,
         uvIndex: Int? = nil,
         dewPoint: String? = nil,
+        dewPointF: Double? = nil,
         pressure: String? = nil,
         rainRate: String? = nil,
         solarRadiation: String? = nil,
@@ -98,6 +129,7 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         self.wind = wind
         self.uvIndex = uvIndex
         self.dewPoint = CanvasWeatherTemperatureFormatter.normalized(dewPoint)
+        self.dewPointF = dewPointF ?? CanvasWeatherTemperatureFormatter.fahrenheitValue(from: dewPoint)
         self.pressure = pressure
         self.rainRate = rainRate
         self.solarRadiation = solarRadiation
@@ -123,6 +155,7 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         case wind
         case uvIndex
         case dewPoint
+        case dewPointF
         case pressure
         case rainRate
         case solarRadiation
@@ -150,6 +183,7 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
             wind: try container.decodeIfPresent(String.self, forKey: .wind),
             uvIndex: try container.decodeIfPresent(Int.self, forKey: .uvIndex),
             dewPoint: try container.decodeIfPresent(String.self, forKey: .dewPoint),
+            dewPointF: try container.decodeIfPresent(Double.self, forKey: .dewPointF),
             pressure: try container.decodeIfPresent(String.self, forKey: .pressure),
             rainRate: try container.decodeIfPresent(String.self, forKey: .rainRate),
             solarRadiation: try container.decodeIfPresent(String.self, forKey: .solarRadiation),
@@ -186,6 +220,7 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
             wind: wind ?? fallback.wind,
             uvIndex: uvIndex ?? fallback.uvIndex,
             dewPoint: dewPoint ?? fallback.dewPoint,
+            dewPointF: dewPointF ?? fallback.dewPointF,
             pressure: pressure ?? fallback.pressure,
             rainRate: rainRate ?? fallback.rainRate,
             solarRadiation: solarRadiation ?? fallback.solarRadiation,
@@ -213,6 +248,7 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
             wind: wind,
             uvIndex: uvIndex,
             dewPoint: dewPoint,
+            dewPointF: dewPointF,
             pressure: pressure,
             rainRate: rainRate,
             solarRadiation: solarRadiation,
@@ -238,6 +274,8 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         humidityPercent: 48,
         wind: "NW 8 mph",
         uvIndex: 4,
+        dewPoint: "55°F",
+        dewPointF: 55,
         precipitationChancePercent: 12,
         rainToday: nil,
         highTemperature: "78°F",
@@ -672,6 +710,7 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
             wind: wind(reading.windMph, gust: reading.windGustMph, direction: reading.windDirectionDeg),
             uvIndex: reading.uvIndex.map { Int($0.rounded()) },
             dewPoint: temperature(reading.dewPointF),
+            dewPointF: reading.dewPointF,
             pressure: pressure(reading.pressureInHg),
             rainRate: rainfallRate(reading.hourlyRainIn),
             solarRadiation: solarRadiation(reading.solarRadiationWm2),
@@ -816,6 +855,8 @@ struct WeatherKitCanvasWeatherProvider: CanvasWeatherProviding {
                 humidityPercent: Int((current.humidity * 100).rounded()),
                 wind: "\(current.wind.compassDirection.abbreviation) \(measurementFormatter.string(from: current.wind.speed))",
                 uvIndex: current.uvIndex.value,
+                dewPoint: temperatureFormatter.string(from: current.dewPoint),
+                dewPointF: current.dewPoint.converted(to: .fahrenheit).value,
                 precipitationChancePercent: currentHour.map { Int(($0.precipitationChance * 100).rounded()) },
                 highTemperature: today.map { temperatureFormatter.string(from: $0.highTemperature) },
                 lowTemperature: today.map { temperatureFormatter.string(from: $0.lowTemperature) },

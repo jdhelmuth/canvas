@@ -853,6 +853,7 @@ struct OverlaySettings: Codable, Equatable {
     var weatherShowWind: Bool? = false
     var weatherShowUVIndex: Bool? = false
     var weatherShowDewPoint: Bool? = false
+    var weatherShowDewPointScale: Bool? = false
     var weatherShowPressure: Bool? = false
     var weatherShowRainRate: Bool? = false
     var weatherShowSolarRadiation: Bool? = false
@@ -922,6 +923,7 @@ struct OverlaySettings: Codable, Equatable {
     var effectiveWeatherShowWind: Bool { weatherShowWind ?? false }
     var effectiveWeatherShowUVIndex: Bool { weatherShowUVIndex ?? false }
     var effectiveWeatherShowDewPoint: Bool { weatherShowDewPoint ?? false }
+    var effectiveWeatherShowDewPointScale: Bool { weatherShowDewPointScale ?? false }
     var effectiveWeatherShowPressure: Bool { weatherShowPressure ?? false }
     var effectiveWeatherShowRainRate: Bool { weatherShowRainRate ?? false }
     var effectiveWeatherShowSolarRadiation: Bool { weatherShowSolarRadiation ?? false }

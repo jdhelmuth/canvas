@@ -426,8 +426,17 @@ struct SettingsView: View {
                     Toggle("Humidity", isOn: optionalOverlayBinding(\.weatherShowHumidity, default: false))
                     Toggle("Wind", isOn: optionalOverlayBinding(\.weatherShowWind, default: false))
                     Toggle("UV index", isOn: optionalOverlayBinding(\.weatherShowUVIndex, default: false))
+                    Toggle("Dew point", isOn: optionalOverlayBinding(\.weatherShowDewPoint, default: false))
+                    Toggle(
+                        "Dew point comfort scale",
+                        isOn: optionalOverlayBinding(\.weatherShowDewPointScale, default: false)
+                    )
+                    .accessibilityIdentifier("weather-dew-point-scale-toggle")
+                    .accessibilityHint("Show a color-banded dew point reference scale on the right edge of the canvas.")
+                    Text("The scale uses color bands for comfort and marks the current dew point with a numeric marker.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     if store.settings.effectiveWeatherSource == .ambientStation {
-                        Toggle("Dew point", isOn: optionalOverlayBinding(\.weatherShowDewPoint, default: false))
                         Toggle("Pressure", isOn: optionalOverlayBinding(\.weatherShowPressure, default: false))
                         Toggle("Rain rate", isOn: optionalOverlayBinding(\.weatherShowRainRate, default: false))
                         Toggle("Solar radiation", isOn: optionalOverlayBinding(\.weatherShowSolarRadiation, default: false))
@@ -944,46 +953,58 @@ private struct ClockOverlayPreview: View {
             showTime: settings.showTime,
             showWeather: settings.showWeather
         )
-        if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
-                ForEach(items) { item in
-                    if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
-                        if item == .clock, pairsClockAndWeather {
-                            previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
-                        } else {
-                            previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
+        ZStack {
+            if !items.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(items) { item in
+                        if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
+                            if item == .clock, pairsClockAndWeather {
+                                previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
+                            } else {
+                                previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
+                            }
                         }
                     }
                 }
-            }
-            .foregroundStyle(.white.opacity(opacity.text))
-            .padding(14)
-            .background {
-                OverlayMaterial.ultraThin.backgroundView(
-                    cornerRadius: 14,
-                    opacity: opacity.background,
-                    transparency: settings.backgroundTransparency ?? OverlayBackgroundPolicy.defaultTransparency
-                )
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(for: settings.position))
-            // Match PlayerView.overlay(in:) exactly; the whole simulated
-            // canvas is then uniformly scaled into this preview card.
-            .padding(24)
-        } else if settings.showCaptureDate {
-            if previewImages.isEmpty {
-                Text("Choose media to preview capture dates")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.72))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(for: settings.position))
-                    .padding(24)
+                .foregroundStyle(.white.opacity(opacity.text))
+                .padding(14)
+                .background {
+                    OverlayMaterial.ultraThin.backgroundView(
+                        cornerRadius: 14,
+                        opacity: opacity.background,
+                        transparency: settings.backgroundTransparency ?? OverlayBackgroundPolicy.defaultTransparency
+                    )
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(for: settings.position))
+                // Match PlayerView.overlay(in:) exactly; the whole simulated
+                // canvas is then uniformly scaled into this preview card.
+                .padding(24)
+            } else if settings.showCaptureDate {
+                if previewImages.isEmpty {
+                    Text("Choose media to preview capture dates")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.72))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(for: settings.position))
+                        .padding(24)
+                } else {
+                    Color.clear
+                }
             } else {
-                Color.clear
+                Text("Enable an overlay to preview it here")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        } else {
-            Text("Enable an overlay to preview it here")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.8))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if settings.effectiveWeatherShowDewPointScale {
+                DewPointScaleView(
+                    snapshot: store.weather.snapshot,
+                    textOpacity: opacity.text
+                )
+                .padding(.trailing, 18)
+                .padding(.vertical, 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            }
         }
     }
 
