@@ -377,11 +377,21 @@ struct WeatherOverlayWidget: View {
     }
 
     private func conditions(_ snapshot: CanvasWeatherSnapshot) -> some View {
-        return HStack(spacing: 10) {
-            WeatherConditionGlyph(
-                symbolName: snapshot.symbolName,
-                diameter: min(max(38, weatherSize * 1.85), 62)
-            )
+        let glyphDiameter = min(max(38, weatherSize * 1.85), 62)
+
+        return HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .center, spacing: 0) {
+                WeatherConditionGlyph(
+                    symbolName: snapshot.symbolName,
+                    diameter: glyphDiameter
+                )
+                Text(snapshot.condition)
+                    .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                    .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(width: glyphDiameter * 1.28)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 Text(snapshot.temperature)
                     .font(.system(size: min(max(24, weatherSize * 1.28), 58), weight: .medium, design: .rounded))
@@ -396,10 +406,6 @@ struct WeatherOverlayWidget: View {
                         .lineLimit(1)
                         .accessibilityHidden(true)
                 }
-                Text(snapshot.condition)
-                    .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
-                    .foregroundStyle(.white.opacity(textOpacity * 0.78))
-                    .lineLimit(1)
             }
         }
         .accessibilityElement(children: .ignore)
