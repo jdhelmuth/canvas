@@ -394,13 +394,13 @@ struct WeatherOverlayWidget: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(snapshot.temperature)
-                    .font(.system(size: min(max(24, weatherSize * 1.28), 58), weight: .medium, design: .rounded))
+                    .font(.system(size: min(max(30, weatherSize * 1.65), 70), weight: .medium, design: .rounded))
                     .fontWidth(.condensed)
                     .overlayTextStroke(settings: settings, mediaImage: mediaImage, opacity: textOpacity)
                 if settings.effectiveWeatherShowFeelsLike,
                    let apparentTemperature = snapshot.apparentTemperature {
                     Text(apparentTemperature)
-                        .font(.system(size: max(12, weatherSize * 0.62), weight: .medium, design: .rounded))
+                        .font(.system(size: min(max(15, weatherSize * 0.78), 30), weight: .medium, design: .rounded))
                         .fontWidth(.condensed)
                         .foregroundStyle(.white.opacity(textOpacity * 0.78))
                         .lineLimit(1)
