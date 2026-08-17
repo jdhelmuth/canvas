@@ -561,7 +561,7 @@ final class CanvasTests: XCTestCase {
         )
         XCTAssertEqual(
             DewPointScalePolicy.displayHeight(forCanvasHeight: 800),
-            360,
+            376,
             accuracy: 0.001
         )
         XCTAssertEqual(

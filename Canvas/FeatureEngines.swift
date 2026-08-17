@@ -497,7 +497,7 @@ enum DewPointScalePolicy {
     /// the scaled Settings preview.
     static func displayHeight(forCanvasHeight height: CGFloat) -> CGFloat {
         guard height.isFinite, height > 0 else { return 320 }
-        return min(max(height * 0.45, 280), 440)
+        return min(max(height * 0.47, 280), 440)
     }
 
     /// Returns a 0...1 position where zero is the bottom of the scale and

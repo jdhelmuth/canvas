@@ -518,10 +518,10 @@ struct DewPointScaleView: View {
     let snapshot: CanvasWeatherSnapshot?
     let textOpacity: Double
 
-    private let scaleWidth: CGFloat = 142
+    private let scaleWidth: CGFloat = 134
     private let barWidth: CGFloat = 18
-    private let barX: CGFloat = 8
-    private let tickGroupWidth: CGFloat = 64
+    private let barX: CGFloat = 50
+    private let tickGroupWidth: CGFloat = 60
     private let markerLabelWidth: CGFloat = 45
     private let chartOpacity: Double = 0.68
 
@@ -583,33 +583,20 @@ struct DewPointScaleView: View {
                             }
 
                             Capsule()
-                                .fill(.white.opacity(textOpacity * 0.96))
-                                .frame(width: 44, height: 3)
-                                .position(x: barX + barWidth / 2 + 5, y: markerY)
-
-                            ZStack {
-                                Circle()
-                                    .fill(.black.opacity(textOpacity * 0.88))
-                                    .frame(width: 24, height: 24)
-                                Circle()
-                                    .fill(.white.opacity(textOpacity * 0.98))
-                                    .frame(width: 14, height: 14)
-                                Circle()
-                                    .stroke(.white.opacity(textOpacity * 0.96), lineWidth: 1.5)
-                                    .frame(width: 20, height: 20)
-                            }
-                            .shadow(color: .black.opacity(0.75), radius: 3)
-                            .position(x: barX + barWidth / 2, y: markerY)
+                                .fill(.white.opacity(textOpacity * 0.98))
+                                .frame(width: 28, height: 4)
+                                .shadow(color: .black.opacity(0.72), radius: 2)
+                                .position(x: barX + barWidth / 2 + 1, y: markerY)
 
                             Text(snapshot.dewPoint ?? tickLabel(forFahrenheit: dewPointF))
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white.opacity(textOpacity * 0.98))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.68)
-                                .frame(width: markerLabelWidth, alignment: .leading)
+                                .frame(width: markerLabelWidth, alignment: .trailing)
                                 .shadow(color: .black.opacity(0.62), radius: 2)
                                 .position(
-                                    x: scaleWidth - markerLabelWidth / 2 - 1,
+                                    x: barX - markerLabelWidth / 2 - 4,
                                     y: markerY
                                 )
                         }
