@@ -559,6 +559,16 @@ final class CanvasTests: XCTestCase {
             40,
             accuracy: 0.001
         )
+        XCTAssertEqual(
+            DewPointScalePolicy.displayHeight(forCanvasHeight: 800),
+            360,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DewPointScalePolicy.displayHeight(forCanvasHeight: 1_200),
+            440,
+            accuracy: 0.001
+        )
     }
 
     func testLegacyDewPointSnapshotBackfillsRawValueForScale() throws {

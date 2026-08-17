@@ -1001,6 +1001,7 @@ private struct ClockOverlayPreview: View {
                     snapshot: store.weather.snapshot,
                     textOpacity: opacity.text
                 )
+                .frame(height: DewPointScalePolicy.displayHeight(forCanvasHeight: size.height))
                 .padding(.trailing, 18)
                 .padding(.vertical, 20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)

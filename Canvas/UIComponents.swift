@@ -518,15 +518,17 @@ struct DewPointScaleView: View {
     let snapshot: CanvasWeatherSnapshot?
     let textOpacity: Double
 
-    private let scaleWidth: CGFloat = 126
+    private let scaleWidth: CGFloat = 142
     private let barWidth: CGFloat = 18
-    private let barX: CGFloat = 48
+    private let barX: CGFloat = 8
+    private let tickGroupWidth: CGFloat = 64
+    private let markerLabelWidth: CGFloat = 45
     private let chartOpacity: Double = 0.68
 
     var body: some View {
         if let snapshot, let dewPointF = snapshot.dewPointF, dewPointF.isFinite {
             GeometryReader { canvasProxy in
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     Text("DEW POINT")
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .tracking(1.1)
@@ -557,49 +559,59 @@ struct DewPointScaleView: View {
 
                                 RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
                                     .stroke(.white.opacity(0.24), lineWidth: 1)
-                                    .frame(width: barWidth, height: height)
-                                    .offset(x: barX)
+                                .frame(width: barWidth, height: height)
+                                .offset(x: barX)
 
-                                ForEach(DewPointScalePolicy.tickValuesFahrenheit, id: \.self) { value in
-                                    HStack(spacing: 4) {
-                                        Text(tickLabel(forFahrenheit: value))
-                                            .font(.system(size: 9, weight: .medium, design: .rounded))
-                                            .foregroundStyle(.white.opacity(textOpacity * 0.78))
-                                            .frame(width: 36, alignment: .trailing)
-                                        Rectangle()
-                                            .fill(.white.opacity(textOpacity * 0.48))
-                                            .frame(width: 7, height: 1)
-                                    }
-                                    .frame(width: 47, height: 16, alignment: .trailing)
-                                    .position(
-                                        x: 23.5,
-                                        y: min(max(DewPointScalePolicy.yPosition(forFahrenheit: value, height: height), 8), height - 8)
-                                    )
-                                }
                             }
                             .opacity(chartOpacity)
 
-                            HStack(spacing: 4) {
-                                Rectangle()
-                                    .fill(.white.opacity(textOpacity * 0.9))
-                                    .frame(width: 18, height: 2)
-                                Circle()
-                                    .fill(.white.opacity(textOpacity * 0.96))
-                                    .frame(width: 11, height: 11)
-                                    .overlay {
-                                        Circle()
-                                            .stroke(.black.opacity(0.48), lineWidth: 1.5)
-                                    }
-                                Text(snapshot.dewPoint ?? tickLabel(forFahrenheit: dewPointF))
-                                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.white.opacity(textOpacity * 0.92))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.72)
-                                    .frame(width: 48, alignment: .leading)
-                                    .shadow(color: .black.opacity(0.48), radius: 2)
+                            ForEach(DewPointScalePolicy.tickValuesFahrenheit, id: \.self) { value in
+                                HStack(spacing: 6) {
+                                    Rectangle()
+                                        .fill(.white.opacity(textOpacity * 0.46))
+                                        .frame(width: 8, height: 1)
+                                    Text(tickLabel(forFahrenheit: value))
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(.white.opacity(textOpacity * 0.9))
+                                        .frame(width: 46, alignment: .leading)
+                                }
+                                .frame(width: tickGroupWidth, height: 20, alignment: .leading)
+                                .position(
+                                    x: barX + barWidth + 5 + tickGroupWidth / 2,
+                                    y: min(max(DewPointScalePolicy.yPosition(forFahrenheit: value, height: height), 10), height - 10)
+                                )
                             }
-                            .frame(width: 86, height: 18, alignment: .leading)
-                            .offset(x: 40, y: markerY - 9)
+
+                            Capsule()
+                                .fill(.white.opacity(textOpacity * 0.96))
+                                .frame(width: 44, height: 3)
+                                .position(x: barX + barWidth / 2 + 5, y: markerY)
+
+                            ZStack {
+                                Circle()
+                                    .fill(.black.opacity(textOpacity * 0.88))
+                                    .frame(width: 24, height: 24)
+                                Circle()
+                                    .fill(.white.opacity(textOpacity * 0.98))
+                                    .frame(width: 14, height: 14)
+                                Circle()
+                                    .stroke(.white.opacity(textOpacity * 0.96), lineWidth: 1.5)
+                                    .frame(width: 20, height: 20)
+                            }
+                            .shadow(color: .black.opacity(0.75), radius: 3)
+                            .position(x: barX + barWidth / 2, y: markerY)
+
+                            Text(snapshot.dewPoint ?? tickLabel(forFahrenheit: dewPointF))
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white.opacity(textOpacity * 0.98))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.68)
+                                .frame(width: markerLabelWidth, alignment: .leading)
+                                .shadow(color: .black.opacity(0.62), radius: 2)
+                                .position(
+                                    x: scaleWidth - markerLabelWidth / 2 - 1,
+                                    y: markerY
+                                )
                         }
                     }
                     .frame(maxHeight: .infinity)

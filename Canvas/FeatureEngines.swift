@@ -492,6 +492,14 @@ enum DewPointScalePolicy {
     static let tickValuesFahrenheit: [Double] = [30, 40, 50, 60, 65, 70, 80]
     static let spanFahrenheit = maximumFahrenheit - minimumFahrenheit
 
+    /// Keeps the reference visible without letting it compete with the photo.
+    /// The clamps keep the same proportion feeling across iPad sizes and in
+    /// the scaled Settings preview.
+    static func displayHeight(forCanvasHeight height: CGFloat) -> CGFloat {
+        guard height.isFinite, height > 0 else { return 320 }
+        return min(max(height * 0.45, 280), 440)
+    }
+
     /// Returns a 0...1 position where zero is the bottom of the scale and
     /// one is the top. Values outside the reference range pin to an edge.
     static func normalizedPosition(forFahrenheit value: Double) -> CGFloat {
