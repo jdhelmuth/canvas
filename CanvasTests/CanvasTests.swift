@@ -7,6 +7,13 @@ import PhotosUI
 @testable import Canvas
 
 final class CanvasTests: XCTestCase {
+    func testAudioPlaybackIndexPolicyHandlesChangingPlayerLists() {
+        XCTAssertNil(AudioPlaybackIndexPolicy.clampedIndex(0, playerCount: 0))
+        XCTAssertNil(AudioPlaybackIndexPolicy.nextSequentialIndex(after: 0, playerCount: 0))
+        XCTAssertEqual(AudioPlaybackIndexPolicy.clampedIndex(99, playerCount: 2), 1)
+        XCTAssertEqual(AudioPlaybackIndexPolicy.nextSequentialIndex(after: 1, playerCount: 2), 0)
+    }
+
     @MainActor
     func testAssetImageLoaderUsesBoundedMemoryCache() {
         let loader = AssetImageLoader()

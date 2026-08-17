@@ -393,7 +393,8 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
                   let url = Self.validatedPickerURL(rawURL) else { throw GooglePhotosError.invalidResponse }
             activePickerSessionID = pickerSession.id
             pickerNativeURL = url
-            pickerBrowserURL = Self.browserURL(for: url)
+            let browserURL = Self.browserURL(for: url)
+            pickerBrowserURL = browserURL
             // Reaching this state means both OAuth and the Photos Picker API have
             // accepted the session; a cached token alone never earns a connected badge.
             state = .selecting
@@ -401,7 +402,7 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
             // Photos. Prefer the installed app's universal-link route; if iPadOS
             // cannot resolve it, fall back to Google's documented web URL with
             // /autoclose so Safari closes when the selection is done.
-            pickerHandoff = try await openPicker(nativeURL: url, browserURL: pickerBrowserURL!)
+            pickerHandoff = try await openPicker(nativeURL: url, browserURL: browserURL)
             guard isCurrent(operationID) else { return }
             let completed = try await waitForSelection(session: pickerSession, operationID: operationID)
             let picked = uniquePickedItems(try await listPickedItemsWithRetry(sessionID: completed.id))

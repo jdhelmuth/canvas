@@ -1,6 +1,18 @@
 import AVFoundation
 import Foundation
 
+enum AudioPlaybackIndexPolicy {
+    static func clampedIndex(_ index: Int, playerCount: Int) -> Int? {
+        guard playerCount > 0 else { return nil }
+        return min(max(index, 0), playerCount - 1)
+    }
+
+    static func nextSequentialIndex(after index: Int, playerCount: Int) -> Int? {
+        guard playerCount > 0 else { return nil }
+        return (index + 1) % playerCount
+    }
+}
+
 @MainActor
 final class AudioService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
@@ -20,6 +32,7 @@ final class AudioService: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func configure(_ settings: CanvasSettings) {
         stop()
+        index = 0
         self.settings = settings
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(settings.backgroundAudio == .localFiles && !settings.videoMuted)
@@ -56,18 +69,32 @@ final class AudioService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     func start() {
         guard settings.backgroundAudio == .localFiles, !settings.videoMuted, !players.isEmpty else { return }
         if settings.audioShuffle { index = Int.random(in: 0..<players.count) }
+        else if let safeIndex = AudioPlaybackIndexPolicy.clampedIndex(index, playerCount: players.count) { index = safeIndex }
         players[index].play(); isPlaying = true
     }
     func pause() { players.forEach { $0.pause() }; isPlaying = false }
     func stop() { players.forEach { $0.stop(); $0.currentTime = 0 }; isPlaying = false }
     func setVolume(_ volume: Double) { settings.audioVolume = volume; players.forEach { $0.volume = Float(volume) } }
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in self.handleFinished() }
+        Task { @MainActor [weak self, weak player] in
+            guard let self, let player else { return }
+            self.handleFinished(for: player)
+        }
     }
-    private func handleFinished() {
+
+    private func handleFinished(for player: AVAudioPlayer) {
+        // A completion can arrive after a settings update replaced the player
+        // list. Ignore that stale callback instead of advancing the new list.
+        guard players.contains(where: { $0 === player }) else { return }
         guard settings.audioRepeat else { isPlaying = false; return }
-        index = (index + 1) % max(players.count, 1)
-        if settings.audioShuffle { index = Int.random(in: 0..<players.count) }
+        if settings.audioShuffle {
+            index = Int.random(in: 0..<players.count)
+        } else if let nextIndex = AudioPlaybackIndexPolicy.nextSequentialIndex(after: index, playerCount: players.count) {
+            index = nextIndex
+        } else {
+            isPlaying = false
+            return
+        }
         players[index].play(); isPlaying = true
     }
 }

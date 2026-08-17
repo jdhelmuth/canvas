@@ -781,8 +781,8 @@ final class GooglePhotosMirrorService {
                 entry: &workingEntry,
                 verifiedAt: now
             )
-        } else if workingEntry.appleAlbumID.isEmpty {
-            workingEntry.appleAlbumID = album!.localIdentifier
+        } else if workingEntry.appleAlbumID.isEmpty, let album {
+            workingEntry.appleAlbumID = album.localIdentifier
         }
 
         guard let resolvedAlbum = album else { throw GoogleApplePhotosMirrorError.albumCreationFailed }

@@ -1387,7 +1387,8 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
                 throw WeatherRequestError.timedOut
             }
             defer { group.cancelAll() }
-            return try await group.next()!
+            guard let result = try await group.next() else { throw CancellationError() }
+            return result
         }
     }
 
