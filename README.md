@@ -50,7 +50,11 @@ The unit suite covers deterministic shuffle and linear queues, favorites/date or
 
 ## Privacy strings
 
-The generated Info.plist includes Photos read/add and When In Use location descriptions. Location is used only when the user opts into weather and AQI; there are no analytics, advertisements, uploads, or tracking SDKs.
+The generated Info.plist includes Photos read/add and When In Use location descriptions. Photos access covers album display, explicit Favorite/Unfavorite, and creating a Canvas-owned album for Google imports. Location is used only when the user opts into weather and AQI; there are no analytics, advertisements, uploads, or tracking SDKs.
+
+## Release
+
+Store distribution is documented in [RELEASE.md](RELEASE.md). Xcode Cloud runs `ci_scripts/` after clone and before/after archive: it validates the Xcode/SDK baseline, blocks colliding App Store build numbers, and fails if development-only `IconOptions` assets were bundled.
 
 ## Completion checklist
 

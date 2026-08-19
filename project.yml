@@ -13,9 +13,9 @@ settings:
     SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "YES"
     INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: "YES"
     INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
-    INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Canvas needs access to display chosen albums and safely create or reuse a named album for Google Photos you explicitly import."
-    INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Canvas adds non-destructive copies of your selected Google Photos to a named Apple Photos album for organization and offline access."
-    INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Canvas uses your location only to show current local weather when you turn on the weather overlay."
+    INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Canvas needs access to display chosen albums, change Favorite status when you tap Favorite or Unfavorite, and safely create or reuse a verified Canvas-owned album for Google Photos you explicitly import. It never alters photo contents or deletes items."
+    INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Canvas adds non-destructive copies of your selected Google Photos to a verified Canvas-owned Apple Photos album for organization and offline access. Canvas never deletes or replaces Apple Photos assets."
+    INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Canvas uses your location only to show local weather and air quality when you turn on the weather overlay."
     INFOPLIST_KEY_UIBackgroundModes: "audio"
     GOOGLE_PHOTOS_CLIENT_ID: "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com"
     GOOGLE_PHOTOS_CALLBACK_SCHEME: "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005"
@@ -32,6 +32,8 @@ targets:
     platform: iOS
     entitlements:
       path: Canvas/Canvas.entitlements
+      properties:
+        com.apple.developer.weatherkit: true
     info:
       path: Canvas/Info.plist
       properties:
@@ -41,6 +43,9 @@ targets:
         GooglePhotosClientID: $(GOOGLE_PHOTOS_CLIENT_ID)
         GooglePhotosCallbackScheme: $(GOOGLE_PHOTOS_CALLBACK_SCHEME)
         ITSAppUsesNonExemptEncryption: false
+        NSPhotoLibraryUsageDescription: "Canvas needs access to display chosen albums, change Favorite status when you tap Favorite or Unfavorite, and safely create or reuse a verified Canvas-owned album for Google Photos you explicitly import. It never alters photo contents or deletes items."
+        NSPhotoLibraryAddUsageDescription: "Canvas adds non-destructive copies of your selected Google Photos to a verified Canvas-owned Apple Photos album for organization and offline access. Canvas never deletes or replaces Apple Photos assets."
+        NSLocationWhenInUseUsageDescription: "Canvas uses your location only to show local weather and air quality when you turn on the weather overlay."
         UILaunchScreen: {}
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
@@ -49,8 +54,12 @@ targets:
           - UIInterfaceOrientationLandscapeRight
     sources:
       - path: Canvas
+        excludes:
+          - Resources/IconOptions
     resources:
       - path: Canvas/Resources
+        excludes:
+          - IconOptions
       - path: Canvas/PrivacyInfo.xcprivacy
     settings:
       base:
