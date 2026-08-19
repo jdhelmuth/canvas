@@ -21,7 +21,7 @@ Apple's upload baseline is currently Xcode 26 and the iOS 26 SDK. Check [Apple's
 2. Run `scripts/validate_release_requirements.sh` on a Mac with the intended release Xcode selected.
 3. Export the App Store Connect variables listed above and run `scripts/app_store_build_preflight.sh [candidate-build-number]`. It checks every uploaded build for the same iOS marketing version and fails unless the candidate is strictly greater.
 4. In Xcode Cloud, set **Next Build Number** to at least the value reported by the preflight. Run the Archive workflow.
-5. Confirm the post-build archive verification passes, including bundle/version metadata, the privacy manifest, and exclusion of development-only icon options.
+5. Confirm the post-build archive verification passes, including bundle/version metadata and the privacy manifest.
 6. Distribute to an internal TestFlight group and complete the smoke test below before external testing or App Review.
 7. Record the release commit, Xcode version, SDK version, marketing/build version, release notes, and smoke-test result in the release or PR.
 
@@ -37,7 +37,6 @@ Test both a fresh install and an upgrade from the previous public build on a sup
 - Exercise a video, Live Photo, and an iCloud-backed item.
 - Import a small Google Picker selection, confirm local playback, and with Full Access confirm a verified Canvas-owned Apple Photos album copy. Limited Access must leave that Apple copy pending.
 - Verify settings, weekday schedules, local audio, Apple Weather or Ambient station overlays, AQI opt-in, denied-permission states, and offline behavior.
-- Confirm no icon-option images or generation notes appear in the app bundle.
 - Confirm version/build in Settings or TestFlight matches the archived version/build.
 - Review the App Privacy answers, privacy policy, support link, export-compliance answer, screenshots, and release notes.
 
