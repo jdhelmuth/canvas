@@ -57,6 +57,10 @@ class PreflightHelperTests(unittest.TestCase):
         self.assertFalse(preflight.INTEGER_BUILD.fullmatch("1e2"))
         self.assertFalse(preflight.INTEGER_BUILD.fullmatch(""))
 
+    def test_missing_connect_credentials_lists_required_names(self) -> None:
+        self.assertIn("ASC_APP_ID", preflight.missing_connect_credentials())
+        self.assertIn("ASC_PRIVATE_KEY", preflight.missing_connect_credentials())
+
     def test_config_string_requires_non_empty_strings(self) -> None:
         self.assertEqual(preflight.config_string({"scheme": "Canvas"}, "scheme"), "Canvas")
         with self.assertRaises(preflight.PreflightError):

@@ -3,6 +3,7 @@
   "scheme": "Canvas",
   "bundleIdentifier": "com.johnhelmuth.canvas",
   "platform": "IOS",
+  "appStoreAppId": "6797351994",
   "privacyManifest": "Canvas/PrivacyInfo.xcprivacy",
   "minimumXcodeMajor": 26,
   "minimumIPhoneOSSDKMajor": 26,

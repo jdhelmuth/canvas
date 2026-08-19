@@ -46,6 +46,16 @@ def require_environment(name: str) -> str:
     return value
 
 
+def missing_connect_credentials() -> list[str]:
+    missing: list[str] = []
+    for name in ("ASC_APP_ID", "ASC_ISSUER_ID", "ASC_KEY_ID"):
+        if not os.environ.get(name):
+            missing.append(name)
+    if not os.environ.get("ASC_PRIVATE_KEY") and not os.environ.get("ASC_PRIVATE_KEY_PATH"):
+        missing.append("ASC_PRIVATE_KEY")
+    return missing
+
+
 def read_config(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -335,6 +345,16 @@ def main(arguments: list[str]) -> int:
     project = config_string(config, "project")
     scheme = config_string(config, "scheme")
     platform = config_string(config, "platform")
+
+    missing = missing_connect_credentials()
+    if missing:
+        print(
+            "warning: App Store build preflight skipped; set "
+            + ", ".join(missing)
+            + " in Xcode Cloud to enforce colliding-build gates",
+            file=sys.stderr,
+        )
+        return 0
 
     app_id = require_environment("ASC_APP_ID")
     issuer_id = require_environment("ASC_ISSUER_ID")
