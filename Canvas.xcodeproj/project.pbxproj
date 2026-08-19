@@ -10,7 +10,6 @@
 		045AD57B5DA98AB633475E67 /* PhotoLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B380B71F82FF74DEE95762 /* PhotoLibraryService.swift */; };
 		06ADCAA0434B61EA4864CFB7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2571C01CD7FBD18E30621F77 /* Models.swift */; };
 		0B3756741CA77517FB2BE21B /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 912AC961545646EAF400FA11 /* PlayerView.swift */; };
-		100214C2FA7054097371B204 /* 03-quiet-window.png in Resources */ = {isa = PBXBuildFile; fileRef = 00274B7EC7C4D11077AB0394 /* 03-quiet-window.png */; };
 		1C6035F68035422F3FCB0F6E /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC027B1915975701C7AD946 /* WeatherService.swift */; };
 		2217263011C962ED34E70955 /* UIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */; };
 		332C5C3DD86D1CE3C802F7C9 /* CanvasApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */; };
@@ -21,18 +20,13 @@
 		7BF01F5D2AA2E7C001D60FA8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EEC5A042F199B16C1AF7320 /* SettingsView.swift */; };
 		829CBC486C99D59F2F823C1C /* QueueService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B914DC989141AA2940C250 /* QueueService.swift */; };
 		844F92EC8939ABFAFF357BFB /* AudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 887B3465A4360F74E0FDB3C4 /* AudioService.swift */; };
-		8AE101FFB4F7BB52EBC06494 /* 05-memory-orbit.png in Resources */ = {isa = PBXBuildFile; fileRef = A08AFDAAD3EB30A44A3FCCF0 /* 05-memory-orbit.png */; };
 		981C2B32F2EF1F3DCDE687FA /* CanvasUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CCF4022578701A33BBB2E24 /* CanvasUITests.swift */; };
 		9BCF21322D0FD4CC48A47285 /* FeatureEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC3B68247338973D156775B /* FeatureEngines.swift */; };
 		9E6624AC3B1C5E0F6F4634B5 /* MediaRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3BE561BC20E80C66A71AADD /* MediaRenderer.swift */; };
 		B720295E345F7E5A480E5F2E /* LayoutCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */; };
 		B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */; };
 		C84E1E6614EBDF510752F72D /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 141DE4CA1F3AAFF208D74F5E /* RootView.swift */; };
-		D532C9C4A69D5055BF383892 /* 04-woven-moments.png in Resources */ = {isa = PBXBuildFile; fileRef = 99BB2BDFD54831A6D0891FC1 /* 04-woven-moments.png */; };
-		D90A2EF3B2E2035622879F10 /* 01-gallery-portal.png in Resources */ = {isa = PBXBuildFile; fileRef = B8014F57BD0F8DFD478D4783 /* 01-gallery-portal.png */; };
-		DCD5DA0863E2569D1184D106 /* 02-memory-mosaic.png in Resources */ = {isa = PBXBuildFile; fileRef = 408BC60454498D18DAFBB193 /* 02-memory-mosaic.png */; };
 		E35A46222E562C0934EB7C55 /* PlaybackViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E2895031A481ABFE0EB164 /* PlaybackViewModel.swift */; };
-		E3B41EC90AF036F687C3A258 /* GENERATION_NOTES.md in Resources */ = {isa = PBXBuildFile; fileRef = F59A68D9BD49955A16CC58D4 /* GENERATION_NOTES.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,37 +47,31 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		00274B7EC7C4D11077AB0394 /* 03-quiet-window.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "03-quiet-window.png"; sourceTree = "<group>"; };
 		09B914DC989141AA2940C250 /* QueueService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueService.swift; sourceTree = "<group>"; };
 		0A7020D4D196010D78B427FE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0EEC5A042F199B16C1AF7320 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		141DE4CA1F3AAFF208D74F5E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		21E28B3B120D9AC1C038CCC8 /* Canvas.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Canvas.entitlements; sourceTree = "<group>"; };
 		2571C01CD7FBD18E30621F77 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasApp.swift; sourceTree = "<group>"; };
 		3BC027B1915975701C7AD946 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		3E55871F1C2D83E54A6E27AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		408BC60454498D18DAFBB193 /* 02-memory-mosaic.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "02-memory-mosaic.png"; sourceTree = "<group>"; };
 		5CCF4022578701A33BBB2E24 /* CanvasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasUITests.swift; sourceTree = "<group>"; };
 		5DC3B68247338973D156775B /* FeatureEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureEngines.swift; sourceTree = "<group>"; };
 		5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIComponents.swift; sourceTree = "<group>"; };
 		6411992ADAE9E9596FC3EE76 /* Canvas.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Canvas.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8045FCF88B615769B397B576 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		81A6F2BE6B6D4D1D9D3E0F21 /* Canvas.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Canvas.entitlements; sourceTree = "<group>"; };
 		84E2895031A481ABFE0EB164 /* PlaybackViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackViewModel.swift; sourceTree = "<group>"; };
 		887B3465A4360F74E0FDB3C4 /* AudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioService.swift; sourceTree = "<group>"; };
 		912AC961545646EAF400FA11 /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
-		99BB2BDFD54831A6D0891FC1 /* 04-woven-moments.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "04-woven-moments.png"; sourceTree = "<group>"; };
-		A08AFDAAD3EB30A44A3FCCF0 /* 05-memory-orbit.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "05-memory-orbit.png"; sourceTree = "<group>"; };
 		A3FED328DC8E9AC497D5DFEE /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
 		AEA0A308923FC240D8D3FACC /* CanvasTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CanvasTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B8014F57BD0F8DFD478D4783 /* 01-gallery-portal.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "01-gallery-portal.png"; sourceTree = "<group>"; };
 		C10E128904B7124C0BEFDD31 /* CanvasUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CanvasUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D3BE561BC20E80C66A71AADD /* MediaRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRenderer.swift; sourceTree = "<group>"; };
 		DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutCanvas.swift; sourceTree = "<group>"; };
 		DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePhotosService.swift; sourceTree = "<group>"; };
 		E0B380B71F82FF74DEE95762 /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
 		EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasTests.swift; sourceTree = "<group>"; };
-		F59A68D9BD49955A16CC58D4 /* GENERATION_NOTES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = GENERATION_NOTES.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -101,8 +89,8 @@
 			isa = PBXGroup;
 			children = (
 				887B3465A4360F74E0FDB3C4 /* AudioService.swift */,
+				21E28B3B120D9AC1C038CCC8 /* Canvas.entitlements */,
 				3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */,
-				81A6F2BE6B6D4D1D9D3E0F21 /* Canvas.entitlements */,
 				5DC3B68247338973D156775B /* FeatureEngines.swift */,
 				DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */,
 				8045FCF88B615769B397B576 /* Info.plist */,
@@ -128,7 +116,6 @@
 			isa = PBXGroup;
 			children = (
 				3E55871F1C2D83E54A6E27AB /* Assets.xcassets */,
-				AD33EBEB11E5CF375FE15513 /* IconOptions */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -157,27 +144,6 @@
 				5740F2B545AA3E042FB2D3A2 /* CanvasUITests */,
 				00139D9974E6F4CD0620A20B /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		AD33EBEB11E5CF375FE15513 /* IconOptions */ = {
-			isa = PBXGroup;
-			children = (
-				D5B4E512F568A155A881E247 /* 2026-08-01-generated */,
-			);
-			path = IconOptions;
-			sourceTree = "<group>";
-		};
-		D5B4E512F568A155A881E247 /* 2026-08-01-generated */ = {
-			isa = PBXGroup;
-			children = (
-				B8014F57BD0F8DFD478D4783 /* 01-gallery-portal.png */,
-				408BC60454498D18DAFBB193 /* 02-memory-mosaic.png */,
-				00274B7EC7C4D11077AB0394 /* 03-quiet-window.png */,
-				99BB2BDFD54831A6D0891FC1 /* 04-woven-moments.png */,
-				A08AFDAAD3EB30A44A3FCCF0 /* 05-memory-orbit.png */,
-				F59A68D9BD49955A16CC58D4 /* GENERATION_NOTES.md */,
-			);
-			path = "2026-08-01-generated";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -287,13 +253,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D90A2EF3B2E2035622879F10 /* 01-gallery-portal.png in Resources */,
-				DCD5DA0863E2569D1184D106 /* 02-memory-mosaic.png in Resources */,
-				100214C2FA7054097371B204 /* 03-quiet-window.png in Resources */,
-				D532C9C4A69D5055BF383892 /* 04-woven-moments.png in Resources */,
-				8AE101FFB4F7BB52EBC06494 /* 05-memory-orbit.png in Resources */,
 				5C4EBBA2B9AA05F0EA32F259 /* Assets.xcassets in Resources */,
-				E3B41EC90AF036F687C3A258 /* GENERATION_NOTES.md in Resources */,
 				48015318F78204BCC6747736 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -411,9 +371,9 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show current local weather when you turn on the weather overlay.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas adds non-destructive copies of your selected Google Photos to a named Apple Photos album for organization and offline access.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to display chosen albums and safely create or reuse a named album for Google Photos you explicitly import.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show local weather and air quality when you turn on the weather overlay.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas adds non-destructive copies of your selected Google Photos to a verified Canvas-owned Apple Photos album for organization and offline access. Canvas never deletes or replaces Apple Photos assets.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to display chosen albums, change Favorite status when you tap Favorite or Unfavorite, and safely create or reuse a verified Canvas-owned album for Google Photos you explicitly import. It never alters photo contents or deletes items.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -436,11 +396,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 55;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
-				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -462,11 +422,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 55;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
-				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -532,9 +492,9 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show current local weather when you turn on the weather overlay.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas adds non-destructive copies of your selected Google Photos to a named Apple Photos album for organization and offline access.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to display chosen albums and safely create or reuse a named album for Google Photos you explicitly import.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show local weather and air quality when you turn on the weather overlay.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Canvas adds non-destructive copies of your selected Google Photos to a verified Canvas-owned Apple Photos album for organization and offline access. Canvas never deletes or replaces Apple Photos assets.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Canvas needs access to display chosen albums, change Favorite status when you tap Favorite or Unfavorite, and safely create or reuse a verified Canvas-owned album for Google Photos you explicitly import. It never alters photo contents or deletes items.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
