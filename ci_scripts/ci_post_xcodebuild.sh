@@ -26,8 +26,8 @@ ARCHIVE_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundl
 [ "$ARCHIVE_BUNDLE_ID" = "$EXPECTED_BUNDLE_ID" ] || fail "archive bundle ID is $ARCHIVE_BUNDLE_ID; expected $EXPECTED_BUNDLE_ID"
 [ -n "$ARCHIVE_VERSION" ] || fail "archive marketing version is empty"
 case "$ARCHIVE_BUILD" in *[!0-9]*|'') fail "archive build number is not an integer: '$ARCHIVE_BUILD'" ;; esac
-if [ -n "${CI_BUILD_NUMBER:-}" ]; then
-  [ "$ARCHIVE_BUILD" = "$CI_BUILD_NUMBER" ] || fail "archive build $ARCHIVE_BUILD does not match Xcode Cloud build $CI_BUILD_NUMBER"
+if [ -n "${CI_BUILD_NUMBER:-}" ] && [ "$ARCHIVE_BUILD" != "$CI_BUILD_NUMBER" ]; then
+  echo "warning: archive build $ARCHIVE_BUILD differs from Xcode Cloud run $CI_BUILD_NUMBER; Canvas versions from CURRENT_PROJECT_VERSION" >&2
 fi
 
 APP_DIR="$ARCHIVE/Products/Applications"
