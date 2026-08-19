@@ -398,7 +398,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 56;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
@@ -424,7 +424,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 55;
+				CURRENT_PROJECT_VERSION = 56;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";

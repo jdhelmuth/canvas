@@ -1,86 +1,27 @@
 # Canvas
 
-Canvas Slideshow is a native iPadOS photo-frame app built with SwiftUI, PhotoKit, AVKit, and PhotosUI. No login is required for the Apple Photos workflow. It keeps selections and preferences local, reads only the Photos albums the user authorizes, and includes no analytics, advertising, or tracking.
+Canvas Slideshow is a native iPadOS photo frame. It reads the Apple Photos albums you authorize, keeps settings on device, and includes no analytics, ads, or tracking.
 
 ## Build
 
-1. Install XcodeGen (`brew install xcodegen`) if it is not already available.
-2. From this folder run `xcodegen generate`.
-3. Open `Canvas.xcodeproj` in Xcode 26.6, choose an iPad simulator or a connected iPad, set a development team for a physical device, then Build and Run.
+1. Install XcodeGen (`brew install xcodegen`) if needed.
+2. Run `xcodegen generate`.
+3. Open `Canvas.xcodeproj` in Xcode 26.6 and run on an iPad or iPad simulator.
 
-The project targets iPadOS 18.0 and uses the iPad device family. The product bundle identifier is `com.johnhelmuth.canvas`. The App Store product name is Canvas Slideshow.
-
-Build output is intentionally excluded from the repository. Physical installation requires signing with the developer account that owns this bundle identifier.
-
-## First run
-
-Canvas explains Photos access during onboarding, supports Full and Limited Photos authorization for browsing, then lets the user combine regular, smart, and shared albums. Full Photos access is required to safely create and reuse the named Apple Photos album used for explicit Google imports. The default frame is shuffled, repeating, ten seconds per photo, with a one-second crossfade and the screen kept awake during active playback.
-
-All adjustable values are stored as one versioned Codable settings document in UserDefaults. Imported local audio is copied into Application Support/Canvas Audio. Explicit Google imports are stored locally and copied non-destructively into one named Apple Photos album; Apple Photos also shows those assets in All Photos. Canvas never deletes or replaces Apple Photos assets.
-
-## Architecture
-
-- `PhotoLibraryService`: authorization, album discovery, change observation, lazy PhotoKit fetches, iCloud-aware image requests, favorites, cache, and prefetch.
-- `QueueService` / `QueueAlgorithm`: shuffle, linear, date, filename, favorites-first ordering, repeat, recent-item avoidance, and safe asset disappearance.
-- `PlaybackViewModel`: cancellation-safe current-item loading, duration timers, resume navigation, loop reshuffle, and layout companion prefetch.
-- `LayoutCanvas`, `MediaRenderer`, and `TransitionEngine`: single/pair/collage/grid layouts, Live Photos, video playback, Reduce Motion behavior, and transition selection.
-- `SettingsStore`, presets, `ScheduleEngine`, `ScheduleMonitor`, `AudioService`, and `PowerService`: local persistence and runtime behavior.
-- SwiftUI views are split between onboarding, album selection, library home, player, settings, schedules, overlays, and details.
-
-## Verification
+Bundle ID: `com.johnhelmuth.canvas`. Google Photos Picker is optional; set `GOOGLE_PHOTOS_CLIENT_ID` and `GOOGLE_PHOTOS_CALLBACK_SCHEME` in `project.yml`.
 
 ```text
 xcodebuild -project Canvas.xcodeproj -scheme Canvas \
-  -destination 'platform=iOS Simulator,name=GardenIQ iPad Pro 13' test \
+  -destination 'generic/platform=iOS Simulator' test \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-The unit suite covers deterministic shuffle and linear queues, favorites/date ordering, recent-item avoidance, media filters, preset round-trips, schedule windows crossing midnight, and Reduce Motion transition selection. UI tests cover onboarding and the home/settings surface with isolated launch arguments.
+Store distribution is in [RELEASE.md](RELEASE.md).
 
-## Apple-platform limitations
+## Policies
 
-- Limited Photos access is honored for browsing, but it cannot safely create, find, and verify a reusable Canvas-owned named album. Google imports remain intact locally and Apple Photos mirroring stays pending until the user chooses Full Access in Settings. Canvas never adopts an existing user album solely by title.
-- PhotoKit may return an iCloud loading error or an asset that was deleted while queued. Canvas reports the item and continues rather than crashing.
-- A physical-device build requires the user's Apple Developer signing team and a trusted, connected iPad. The simulator cannot reproduce the user's real Photos library, Live Photos, or iCloud media.
-- iPadOS may suspend a foregrounded/backgrounded process and does not guarantee wake, unlock, or schedule execution while the app is not running. Schedules therefore evaluate while Canvas is active and explicitly explain this limitation. Canvas's separate automatic night mode applies an in-app low-light treatment to an open frame from 10 PM to 7 AM by default, returns to normal automatically, and never changes system brightness.
-- Weather overlays use the selected source with a one-time When In Use location permission. Apple Weather supplies current conditions, feels-like temperature, humidity, wind, UV, precipitation chance, today's high/low, sunrise/sunset, and a next-hour outlook. Ambient stations supply station measurements whenever they exist, including feels-like temperature, humidity, wind and gust, dew point, pressure, UV, rain rate, daily rain, solar radiation, and today's high/low; those values take precedence over WeatherKit. When Ambient has no value for a category, Canvas best-effort fills that field from WeatherKit, including the sky condition and Apple-only forecast/sun details. If the WeatherKit fallback is unavailable, valid Ambient station values remain usable. Optional AQI uses preliminary AirNow monitoring-site observations: Canvas rounds the coordinates to approximately one-kilometer precision and sends them to ClimateIQ's secure public API, which selects the nearest active U.S. monitor. WeatherKit does not expose AQI. Canvas refreshes foreground weather on a short cadence and reports clear states for denied location, offline access, missing WeatherKit entitlement when Apple Weather is selected, and service failures. The `com.johnhelmuth.canvas` App ID must have WeatherKit enabled in both its **App Capabilities** and **App Services** tabs before a signed device build can return live Apple-weather conditions or Ambient fallback fields. After changing either setting, refresh signing/provisioning and install a newly signed build.
-- Apple Music playback is not enabled. Local imported audio works without a subscription; MusicKit requires a separate entitlement, user authorization, and policy review.
-- PhotoKit does not provide a universal cross-library identity. For Google items Canvas explicitly mirrors, it persists Google-ID and SHA-256 mappings, verifies PhotoKit local identifiers, reuses the same PHAsset across Canvas albums when a stable ID or verified hash matches, and uses deterministic resource markers to make retry and crash recovery idempotent.
-- Opening Photos is best-effort via the Photos URL scheme; the exact asset handoff is controlled by iPadOS.
-
-## Privacy strings
-
-The generated Info.plist includes Photos read/add and When In Use location descriptions. Photos access covers album display, explicit Favorite/Unfavorite, and creating a Canvas-owned album for Google imports. Location is used only when the user opts into weather and AQI; there are no analytics, advertisements, uploads, or tracking SDKs.
-
-## Release
-
-Store distribution is documented in [RELEASE.md](RELEASE.md). Xcode Cloud runs `ci_scripts/` after clone and before/after archive: it validates the Xcode/SDK baseline, blocks colliding App Store build numbers, and fails if development-only `IconOptions` assets were bundled.
-
-## Completion checklist
-
-| Area | State |
-| --- | --- |
-| Photos full/limited permission and album selection | Complete |
-| Combined albums, library changes, empty/deleted assets | Complete |
-| Lazy sized image loading, cache, cancellation and prefetch | Complete |
-| Queue modes, repeat, shuffle loops, recent avoidance, navigation | Complete |
-| Media filters and local exclusions | Complete; content-level duplicate matching is unavailable from PhotoKit |
-| 1 second–60 minute timing presets and video maximum | Complete |
-| Cut/crossfade/slide/push/zoom/Ken Burns/blur/scale/page-style selection | Complete; blur and page-style use native SwiftUI fallbacks |
-| Single/pair/collage/grid/automatic layouts | Complete |
-| Live Photos and muted video playback | Complete |
-| Time/date/capture/weekday/album/location/count/battery/weather overlays | Complete; Apple Weather or Ambient fallback fields require WeatherKit capability/App Service; Ambient station measurements still require the station connection and user location permission |
-| Named weekday schedules and foreground enforcement | Complete; iPadOS background wake limits apply |
-| Keep-awake, charging, battery, and automatic night dimming | Complete; night dimming is an in-app treatment and does not alter system brightness |
-| Favorite, exclude, details, swipe, zoom, lock, keyboard/pointer-ready controls | Complete; Photos handoff is best-effort |
-| Local audio, interruption recovery, independent controls | Complete; Apple Music unavailable without policy/entitlement work |
-| Onboarding, settings, presets, privacy surface, accessibility hooks | Complete |
-| Unit/UI tests and docs | Complete |
-
-## Public policies and support
-
-- [Privacy policy](https://jdhelmuth.github.io/canvas/privacy.html)
+- [Privacy](https://jdhelmuth.github.io/canvas/privacy.html)
 - [Support](https://jdhelmuth.github.io/canvas/support.html)
-- [Issue tracker](https://github.com/jdhelmuth/canvas/issues)
+- [Issues](https://github.com/jdhelmuth/canvas/issues)
 
-Canvas is released under the [MIT License](LICENSE).
+MIT License.
