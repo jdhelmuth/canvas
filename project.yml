@@ -24,6 +24,8 @@ settings:
     Debug:
       SWIFT_OPTIMIZATION_LEVEL: "-Onone"
       ENABLE_TESTABILITY: YES
+      ONLY_ACTIVE_ARCH: YES
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     Release:
       SWIFT_OPTIMIZATION_LEVEL: "-O"
 targets:
@@ -68,6 +70,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "56"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         UIRequiredDeviceCapabilities:
           - arm64
     scheme:
@@ -87,6 +90,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.johnhelmuth.canvas.tests
         PRODUCT_NAME: CanvasTests
         GENERATE_INFOPLIST_FILE: YES
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @loader_path/Frameworks"
   CanvasUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -99,3 +104,4 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.johnhelmuth.canvas.uitests
         PRODUCT_NAME: CanvasUITests
         GENERATE_INFOPLIST_FILE: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @loader_path/Frameworks"
