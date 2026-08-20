@@ -85,6 +85,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.johnhelmuth.canvas.tests
+        PRODUCT_NAME: CanvasTests
         GENERATE_INFOPLIST_FILE: YES
   CanvasUITests:
     type: bundle.ui-testing
@@ -96,4 +97,5 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.johnhelmuth.canvas.uitests
+        PRODUCT_NAME: CanvasUITests
         GENERATE_INFOPLIST_FILE: YES

@@ -482,6 +482,7 @@
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.uitests;
+				PRODUCT_NAME = CanvasUITests;
 				TEST_TARGET_NAME = Canvas;
 			};
 			name = Release;
@@ -491,6 +492,7 @@
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.tests;
+				PRODUCT_NAME = CanvasTests;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Canvas.app/Canvas";
 			};
 			name = Release;
@@ -500,6 +502,7 @@
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.uitests;
+				PRODUCT_NAME = CanvasUITests;
 				TEST_TARGET_NAME = Canvas;
 			};
 			name = Debug;
@@ -509,6 +512,7 @@
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.tests;
+				PRODUCT_NAME = CanvasTests;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Canvas.app/Canvas";
 			};
 			name = Debug;
