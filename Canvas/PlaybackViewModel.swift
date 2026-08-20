@@ -99,7 +99,8 @@ final class PlaybackViewModel: ObservableObject {
 
         let appleItems = library.mediaItems(for: settings.selectedAlbums, filters: settings.filters)
         let googleItems = googlePhotos?.items(for: settings.selectedAlbums, filters: settings.filters) ?? []
-        let assets = MediaIdentityMatcher.deduplicated(appleItems + googleItems)
+        let bundledItems = BundledPhotoLibrary.items(for: settings.selectedAlbums, filters: settings.filters)
+        let assets = MediaIdentityMatcher.deduplicated(appleItems + googleItems + bundledItems)
         let queueCurrentAssetID = queue.indices.contains(currentIndex) ? queue[currentIndex].id : nil
         let displayedAssetID = displayedFrame?.asset.id
         let identityToPreserve = queueCurrentAssetID ?? displayedAssetID

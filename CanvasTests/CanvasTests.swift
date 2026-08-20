@@ -1885,6 +1885,52 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(selected.map(\.id), [sharedFlag.id, sharedSubtype.id])
     }
 
+    func testBundledLandscapesAlbumIsSelectableWithoutPhotosAccess() {
+        XCTAssertEqual(BundledPhotoLibrary.landscapesPhotos.count, 13)
+        XCTAssertEqual(Set(BundledPhotoLibrary.landscapesPhotos.map(\.id)).count, 13)
+        XCTAssertEqual(BundledPhotoLibrary.albums.map(\.id), [BundledPhotoLibrary.landscapesAlbumID])
+        XCTAssertEqual(BundledPhotoLibrary.landscapesAlbum.source, .bundled)
+        XCTAssertEqual(BundledPhotoLibrary.landscapesAlbum.title, "Landscapes")
+        XCTAssertEqual(PhotoSource.bundled.title, "Included with Canvas")
+
+        XCTAssertEqual(BundledPhotoLibrary.items(for: [], filters: CanvasFilters()).count, 0)
+        let appleOnly = [AlbumReference(id: "apple", title: "Family", subtype: 0, estimatedCount: 1, isSmart: false, isShared: false)]
+        XCTAssertEqual(BundledPhotoLibrary.items(for: appleOnly, filters: CanvasFilters()).count, 0)
+
+        let selected = BundledPhotoLibrary.items(for: BundledPhotoLibrary.albums, filters: CanvasFilters())
+        XCTAssertEqual(selected.count, BundledPhotoLibrary.landscapesPhotos.count)
+        XCTAssertTrue(selected.allSatisfy { $0.source == .bundled && $0.kind == .photo && $0.localURL != nil })
+        XCTAssertEqual(Set(selected.map(\.id)).count, selected.count)
+
+        var photosOff = CanvasFilters()
+        photosOff.includePhotos = false
+        XCTAssertEqual(BundledPhotoLibrary.items(for: BundledPhotoLibrary.albums, filters: photosOff).count, 0)
+    }
+
+    func testAppleAlbumCategoryIgnoresBundledAlbums() {
+        let bundled = BundledPhotoLibrary.landscapesAlbum
+        XCTAssertEqual(AppleAlbumCategory.category(for: bundled), .other)
+        XCTAssertEqual(AppleAlbumCategory.albums(from: [bundled], in: .user), [])
+        XCTAssertEqual(AppleAlbumCategory.albums(from: [bundled], in: .smart), [])
+    }
+
+    func testFrameLaunchPolicyAcceptsBundledLandscapes() {
+        let items = BundledPhotoLibrary.items(for: BundledPhotoLibrary.albums, filters: CanvasFilters())
+        XCTAssertFalse(items.isEmpty)
+        XCTAssertEqual(FrameLaunchPolicy.decision(for: items), .ready)
+    }
+
+    func testAlbumSelectionCleanupPreservesBundledAlbums() {
+        let bundled = BundledPhotoLibrary.landscapesAlbum
+        let google = AlbumReference(id: "google-album:1", title: "Trip", subtype: 0, estimatedCount: 2, isSmart: false, isShared: true, source: .googlePhotos)
+        let remaining = AlbumSelectionCleanup.removingGoogleAlbum(google.id, from: [bundled, google])
+        XCTAssertEqual(remaining, [bundled])
+        XCTAssertEqual(
+            AlbumSelectionCleanup.removingMissingGoogleAlbums(from: [bundled, google], validIDs: []),
+            [bundled]
+        )
+    }
+
     func testAppleAlbumCategoryDefaultOrderIsStableAndIncludesEmptyCategories() {
         XCTAssertEqual(
             AppleAlbumCategoryOrdering.categories(from: nil),
@@ -2638,6 +2684,18 @@ final class CanvasTests: XCTestCase {
         let album = AlbumReference(id: "google-album:test", title: "Shared family", subtype: 0, estimatedCount: 20, isSmart: false, isShared: true, source: .googlePhotos)
         store.settings.selectedAlbums = [album]
         XCTAssertEqual(SettingsStore(defaults: defaults).settings.selectedAlbums, [album])
+    }
+
+    @MainActor
+    func testBundledAlbumSelectionPersistsAcrossSettingsReload() {
+        let suiteName = "CanvasTests.bundled-selection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = SettingsStore(defaults: defaults)
+        store.settings.selectedAlbums = [BundledPhotoLibrary.landscapesAlbum]
+        let restored = SettingsStore(defaults: defaults).settings.selectedAlbums
+        XCTAssertEqual(restored, [BundledPhotoLibrary.landscapesAlbum])
+        XCTAssertEqual(restored.first?.source, .bundled)
     }
 
     func testDeletingOldGoogleAlbumRemovesOnlyItsLocalRecordAndFiles() {

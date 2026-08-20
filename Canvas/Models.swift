@@ -99,9 +99,15 @@ enum BackgroundAudioMode: String, Codable, CaseIterable, Identifiable {
 }
 
 enum PhotoSource: String, Codable, CaseIterable, Identifiable {
-    case applePhotos, googlePhotos
+    case bundled, applePhotos, googlePhotos
     var id: String { rawValue }
-    var title: String { self == .applePhotos ? "Apple Photos" : "Google Photos" }
+    var title: String {
+        switch self {
+        case .bundled: "Included with Canvas"
+        case .applePhotos: "Apple Photos"
+        case .googlePhotos: "Google Photos"
+        }
+    }
 }
 
 /// Selects the source for the optional live weather overlay. WeatherKit stays
