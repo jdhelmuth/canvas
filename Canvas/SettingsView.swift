@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var ambientStationsLoading = false
     @State private var ambientStationsError: String?
     @State private var expandedOverlayGroups: Set<OverlaySettingsGroup> = [.visibility]
+    @State private var path = NavigationPath()
 
     private enum OverlaySettingsGroup: String, Hashable {
         case visibility
@@ -39,12 +40,21 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 settingsLink("Albums & Filters", icon: "photo.on.rectangle", summary: "\(store.settings.selectedAlbums.count) selected") { Form { albumsFiltersSection } }
                 settingsLink("Playback & Timing", icon: "play.circle", summary: store.settings.photoDuration.cleanSeconds) { Form { playbackSection; timingSection } }
                 settingsLink("Transitions & Layout", icon: "rectangle.3.group", summary: store.settings.layout.title) { Form { transitionSection; layoutSection } }
-                settingsLink("Clock & Overlays", icon: "clock", summary: store.settings.overlays.showTime ? "Clock shown" : "Clock hidden") { clockOverlaysPage }
+                NavigationLink(value: "overlays") {
+                    Label {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Clock & Overlays")
+                            Text(store.settings.overlays.showTime ? "Clock shown" : "Clock hidden")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: { Image(systemName: "clock").foregroundStyle(.orange) }
+                }
                 settingsLink("Schedule & Power", icon: "bolt", summary: store.settings.keepAwake ? "Keep awake" : "System managed") { Form { scheduleSection; powerSection } }
                 settingsLink("Audio", icon: "speaker.wave.2", summary: store.settings.videoMuted ? "All playback muted" : "Playback audio on") { Form { audioSection } }
                 settingsLink("Accessibility & Privacy", icon: "hand.raised", summary: store.settings.appearanceMode.title) { Form { accessibilitySection; privacySection } }
@@ -52,6 +62,11 @@ struct SettingsView: View {
             }
             .navigationTitle("Canvas settings")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: String.self) { _ in
+                clockOverlaysPage
+                    .navigationTitle("Clock & Overlays")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.fontWeight(.semibold) } }
             .sheet(isPresented: $showAlbumPicker) { AlbumPickerView(isOnboarding: false) }
             .sheet(isPresented: $showPresetPrompt) { presetSaveSheet }
@@ -64,6 +79,14 @@ struct SettingsView: View {
                     store.weather.refreshAuthorization()
                 }
             }
+#if DEBUG
+            .onAppear {
+                if ProcessInfo.processInfo.arguments.contains("--canvas-ui-settings-overlays"), path.isEmpty {
+                    expandedOverlayGroups = [.visibility, .weather]
+                    path.append("overlays")
+                }
+            }
+#endif
         }
     }
 
@@ -868,7 +891,7 @@ private struct ClockOverlayPreview: View {
                                 }
                                 .foregroundStyle(.white.opacity(0.75))
                             }
-                            previewOverlay(date: context.date, size: canvasSize)
+                            previewOverlay(date: StoreCaptureClock.date, size: canvasSize)
                         }
                         .frame(width: canvasSize.width, height: canvasSize.height)
                         .scaleEffect(scale)

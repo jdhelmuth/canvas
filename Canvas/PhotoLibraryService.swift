@@ -399,6 +399,109 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         albums = result.filter { seen.insert($0.id).inserted }.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
+#if DEBUG
+    func prepareStoreShowcase() async -> [AlbumReference] {
+        refreshAuthorization()
+        guard authorization.canManageGoogleMirrorAlbums else { return [] }
+        let recents = PHAssetCollection.fetchAssetCollections(
+            with: .smartAlbum,
+            subtype: .smartAlbumUserLibrary,
+            options: nil
+        ).firstObject
+        guard let recents else { return [] }
+        let fetch = PHAsset.fetchAssets(in: recents, options: nil)
+        var photos: [PHAsset] = []
+        fetch.enumerateObjects { asset, _, _ in
+            guard asset.mediaType == .image else { return }
+            photos.append(asset)
+        }
+        photos.sort { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
+        guard photos.count >= 2 else { return [] }
+        // One recent photo per album so the home tiles are visually distinct
+        // instead of two Recents collages of the same library. Never delete
+        // existing albums — iOS prompts, which ruins a screenshot capture.
+        let groups: [(String, [PHAsset])] = [
+            ("Coast", [photos[0]]),
+            ("Woods", [photos[1]])
+        ]
+        var created: [PHAssetCollection] = []
+        for (title, assets) in groups where !assets.isEmpty {
+            var existing: PHAssetCollection?
+            PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil).enumerateObjects { collection, _, stop in
+                if collection.localizedTitle == title {
+                    existing = collection
+                    stop.pointee = true
+                }
+            }
+            if let existing {
+                created.append(existing)
+                continue
+            }
+            var albumID: String?
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    let request = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: title)
+                    request.addAssets(assets as NSArray)
+                    albumID = request.placeholderForCreatedAssetCollection.localIdentifier
+                }
+            } catch {
+                continue
+            }
+            if let albumID,
+               let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [albumID], options: nil).firstObject {
+                created.append(album)
+            }
+        }
+        refreshAlbums()
+        return created.compactMap { collection in
+            albums.first { $0.id == collection.localIdentifier }
+        }
+    }
+
+    func prepareNewestShowcase() async -> [AlbumReference] {
+        refreshAuthorization()
+        guard authorization.canManageGoogleMirrorAlbums else { return [] }
+        let recents = PHAssetCollection.fetchAssetCollections(
+            with: .smartAlbum,
+            subtype: .smartAlbumUserLibrary,
+            options: nil
+        ).firstObject
+        guard let recents else { return [] }
+        let fetch = PHAsset.fetchAssets(in: recents, options: nil)
+        var photos: [PHAsset] = []
+        fetch.enumerateObjects { asset, _, _ in
+            guard asset.mediaType == .image else { return }
+            photos.append(asset)
+        }
+        photos.sort { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
+        guard let newest = photos.first else { return [] }
+        let title = "Cove"
+        var existing: PHAssetCollection?
+        PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil).enumerateObjects { collection, _, stop in
+            if collection.localizedTitle == title {
+                existing = collection
+                stop.pointee = true
+            }
+        }
+        if let existing {
+            try? await PHPhotoLibrary.shared().performChanges {
+                PHAssetCollectionChangeRequest(for: existing)?.addAssets([newest] as NSArray)
+            }
+            refreshAlbums()
+            return albums.filter { $0.id == existing.localIdentifier }
+        }
+        var albumID: String?
+        try? await PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: title)
+            request.addAssets([newest] as NSArray)
+            albumID = request.placeholderForCreatedAssetCollection.localIdentifier
+        }
+        refreshAlbums()
+        guard let albumID else { return [] }
+        return albums.filter { $0.id == albumID }
+    }
+#endif
+
     func assets(for references: [AlbumReference], filters: CanvasFilters) -> [PHAsset] {
         guard authorization.canRead else { return [] }
         let options = PHFetchOptions()

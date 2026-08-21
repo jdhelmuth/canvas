@@ -44,12 +44,19 @@ struct PlayerView: View {
         // Apply this at the container boundary so the GeometryReader that
         // determines each tile's viewport receives the entire display.
         .ignoresSafeArea()
-        .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
+        .canvasPlaybackSystemChrome()
         .task {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             store.weather.setActive(true)
-            if isWeatherFramePreview { controlsVisible = false }
+            if isWeatherFramePreview || hidesControlsForStoreCapture { controlsVisible = false }
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") {
+                for _ in 0..<48 {
+                    if !store.settings.selectedAlbums.isEmpty { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+#endif
             isLocked = store.settings.lockControls
             scheduleMonitor.start(rules: store.settings.schedules)
             updateNightDimmingSchedule()
@@ -78,7 +85,7 @@ struct PlayerView: View {
         .onChange(of: store.settings) { _, updated in
             Task {
                 await model.updateSettings(updated)
-                if model.queueCount == 0 { dismiss() }
+                if model.queueCount == 0 && !hidesControlsForStoreCapture { dismiss() }
             }
             store.audio.update(updated)
             isLocked = updated.lockControls
@@ -88,7 +95,7 @@ struct PlayerView: View {
         .onChange(of: store.googlePhotos.albums) { _, _ in
             Task {
                 await model.refreshLibrary()
-                if model.queueCount == 0 { dismiss() }
+                if model.queueCount == 0 && !hidesControlsForStoreCapture { dismiss() }
             }
         }
         .onChange(of: powerAllowsPlayback) { _, _ in updatePowerState() }
@@ -123,6 +130,14 @@ struct PlayerView: View {
     private var isWeatherFramePreview: Bool {
 #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+#else
+        false
+#endif
+    }
+
+    private var hidesControlsForStoreCapture: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--canvas-ui-play")
 #else
         false
 #endif
@@ -400,7 +415,7 @@ struct PlayerView: View {
             showTime: settings.showTime,
             showWeather: settings.showWeather
         )
-        let date = Date()
+        let date = StoreCaptureClock.date
         return ZStack {
             if !items.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
@@ -684,5 +699,21 @@ private struct CanvasTransitionModifier: ViewModifier {
                 anchor: anchor,
                 perspective: state.perspective
             )
+    }
+}
+
+extension View {
+    /// Hide the status bar and home indicator on a real iPad so the frame can
+    /// fill the display. The iOS 26 Simulator loads XCTAutomationSupport into
+    /// SpringBoard; that session nil-dereferences if those overlays are gone.
+    @ViewBuilder
+    func canvasPlaybackSystemChrome() -> some View {
+        #if targetEnvironment(simulator)
+        self
+        #else
+        self
+            .statusBarHidden(true)
+            .persistentSystemOverlays(.hidden)
+        #endif
     }
 }

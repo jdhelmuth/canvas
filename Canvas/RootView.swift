@@ -9,7 +9,8 @@ struct RootView: View {
     var body: some View {
         Group {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame") {
+            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+                || ProcessInfo.processInfo.arguments.contains("--canvas-ui-play") {
                 PlayerView()
             } else if store.settings.hasCompletedOnboarding {
                 LibraryHomeView()
@@ -23,6 +24,24 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+#if DEBUG
+        .task(id: "canvas-ui-showcase-root") {
+            guard ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") else { return }
+            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-request-photos") {
+                await store.library.requestAccess()
+            }
+            for _ in 0..<40 {
+                store.library.refreshAuthorization()
+                if store.library.authorization.canRead { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            let showcase = ProcessInfo.processInfo.arguments.contains("--canvas-ui-newest-only")
+                ? await store.library.prepareNewestShowcase()
+                : await store.library.prepareStoreShowcase()
+            guard !showcase.isEmpty else { return }
+            store.settingsStore.update { $0.selectedAlbums = showcase }
+        }
+#endif
         .onChange(of: scenePhase) { _, phase in
             store.weather.setActive(phase == .active)
             if phase == .active {
@@ -220,7 +239,30 @@ struct LibraryHomeView: View {
                 previewSeed += 1
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 updateDeviceOrientation(UIDevice.current.orientation)
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--canvas-ui-settings") {
+                    showSettings = true
+                }
+                if ProcessInfo.processInfo.arguments.contains("--canvas-ui-request-photos") {
+                    Task { await store.library.requestAccess() }
+                }
+#endif
             }
+#if DEBUG
+            .task(id: "canvas-ui-showcase") {
+                guard ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") else { return }
+                for _ in 0..<40 {
+                    store.library.refreshAuthorization()
+                    if store.library.authorization.canRead { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                let showcase = ProcessInfo.processInfo.arguments.contains("--canvas-ui-newest-only")
+                    ? await store.library.prepareNewestShowcase()
+                    : await store.library.prepareStoreShowcase()
+                guard !showcase.isEmpty else { return }
+                store.settingsStore.update { $0.selectedAlbums = showcase }
+            }
+#endif
             .onDisappear { UIDevice.current.endGeneratingDeviceOrientationNotifications() }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 updateDeviceOrientation(UIDevice.current.orientation)

@@ -1502,7 +1502,6 @@ enum BatteryOverlayPolicy {
 final class PowerService: ObservableObject {
     @Published private(set) var batteryLevel: Float = -1
     @Published private(set) var isCharging = false
-    private var priorBrightness: CGFloat?
     init() { UIDevice.current.isBatteryMonitoringEnabled = true; refresh() }
     func refresh() {
         let state = UIDevice.current.batteryState
@@ -1514,13 +1513,14 @@ final class PowerService: ObservableObject {
         isCharging = state == .charging || state == .full
     }
     func beginPlayback(keepAwake: Bool) {
-        if priorBrightness == nil { priorBrightness = UIScreen.main.brightness }
         // Re-apply the setting on every update. Calling this with false must
         // undo a previously enabled keep-awake session when the person edits
         // Power & Display while a frame is already open.
         UIApplication.shared.isIdleTimerDisabled = keepAwake
     }
-    func endPlayback() { UIApplication.shared.isIdleTimerDisabled = false; if let priorBrightness { UIScreen.main.brightness = priorBrightness; self.priorBrightness = nil } }
+    func endPlayback() {
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
 }
 
 @MainActor
