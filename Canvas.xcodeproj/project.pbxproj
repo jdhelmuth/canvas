@@ -10,23 +10,56 @@
 		045AD57B5DA98AB633475E67 /* PhotoLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B380B71F82FF74DEE95762 /* PhotoLibraryService.swift */; };
 		06ADCAA0434B61EA4864CFB7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2571C01CD7FBD18E30621F77 /* Models.swift */; };
 		0B3756741CA77517FB2BE21B /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 912AC961545646EAF400FA11 /* PlayerView.swift */; };
+		144A52B4B2038CF78818C0B6 /* delicate-arch.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 319981DAE22A4CCDC3F151E7 /* delicate-arch.jpg */; };
+		1AE53AD6647A24078FF5ABB2 /* antennae-galaxies.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A1E7E5BC5C6D109C498CC1E5 /* antennae-galaxies.jpg */; };
 		1C6035F68035422F3FCB0F6E /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC027B1915975701C7AD946 /* WeatherService.swift */; };
+		1E26FB374DA012E9E8670FA1 /* glacier-bay.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 951B809035E99411769274EE /* glacier-bay.jpg */; };
 		2217263011C962ED34E70955 /* UIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */; };
+		300B2F79D77FF464586E944A /* yosemite-falls.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2F4D36887B9C8FFBA82C04D3 /* yosemite-falls.jpg */; };
 		332C5C3DD86D1CE3C802F7C9 /* CanvasApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */; };
 		48015318F78204BCC6747736 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A7020D4D196010D78B427FE /* PrivacyInfo.xcprivacy */; };
+		4852B6A5514E4100FF22D4F0 /* pillars-of-creation.jpg in Resources */ = {isa = PBXBuildFile; fileRef = C337C3E726B3A176EDD806B3 /* pillars-of-creation.jpg */; };
+		4969E06A817DED8FEE8E0199 /* golden-gate.jpg in Resources */ = {isa = PBXBuildFile; fileRef = D8C9DE030785099CD68185CC /* golden-gate.jpg */; };
+		49C75D4EB189E6BEF2FC5F3A /* webb-deep-field.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 9064AE2CCE1F270013E57396 /* webb-deep-field.jpg */; };
+		4D3C43F9E857BE2B8FA8BE8D /* glacier-sunset.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 13D439EEC02C03424FF66A11 /* glacier-sunset.jpg */; };
+		5031FEF8C39639BE572410A5 /* avalanche-peak.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 1126FD75C870A6F77524E7B6 /* avalanche-peak.jpg */; };
+		509F716A292612FACF9C7205 /* yellowstone-inspiration.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 608E57F92AC03E33C4ADE366 /* yellowstone-inspiration.jpg */; };
+		5133881DF5ACE96A74F107F4 /* crab-nebula.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A38CB82A8EAEA2277B2963B0 /* crab-nebula.jpg */; };
 		5C4EBBA2B9AA05F0EA32F259 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3E55871F1C2D83E54A6E27AB /* Assets.xcassets */; };
+		5EBD08290771840F5199F535 /* cosmic-cliffs.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B2F65AD21DF2C006FC295A40 /* cosmic-cliffs.jpg */; };
 		6AAAB99CA854CCE450126836 /* GooglePhotosService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */; };
+		6F0742DA96CDBE9BABBCCA4E /* kenai-glacier.jpg in Resources */ = {isa = PBXBuildFile; fileRef = DCCDB40A53D4B9937B3E4AF9 /* kenai-glacier.jpg */; };
+		72EED23FA3F57501ADAD8E6F /* ATTRIBUTION.md in Resources */ = {isa = PBXBuildFile; fileRef = 2806F8724546FF6718A362CF /* ATTRIBUTION.md */; };
+		763432879145861A9496A2FF /* zion-east.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 9394E4E7E10FB257F383EE2C /* zion-east.jpg */; };
 		78AFC4AE49AB32275ABBDE71 /* Persistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3FED328DC8E9AC497D5DFEE /* Persistence.swift */; };
 		7BF01F5D2AA2E7C001D60FA8 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EEC5A042F199B16C1AF7320 /* SettingsView.swift */; };
+		7EB872E1C7F61019C9B50C8B /* chicago-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2DE19BC26F5FEF6B30047BB7 /* chicago-night.jpg */; };
+		82125F36CDA5FD5E25D28C1A /* independence-hall.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 5BA999A7E935189FDA6820EE /* independence-hall.jpg */; };
 		829CBC486C99D59F2F823C1C /* QueueService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B914DC989141AA2940C250 /* QueueService.swift */; };
+		8405A80DC7803EB7052C004E /* gateway-arch.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 4B48EF22BA55605E981434FF /* gateway-arch.jpg */; };
 		844F92EC8939ABFAFF357BFB /* AudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 887B3465A4360F74E0FDB3C4 /* AudioService.swift */; };
+		869E10F6C0A4283E72A27C61 /* van-gogh-from-space.jpg in Resources */ = {isa = PBXBuildFile; fileRef = F165A3DAA247EA7018EFEB95 /* van-gogh-from-space.jpg */; };
+		8F88F53D55505434DD0452FA /* smoky-forest.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 0B37A8C019E32CCFD8ADFF86 /* smoky-forest.jpg */; };
 		981C2B32F2EF1F3DCDE687FA /* CanvasUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CCF4022578701A33BBB2E24 /* CanvasUITests.swift */; };
+		9AB2E9DD7954431C857F51AB /* joshua-tree-sunset.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 6856BE0CCC97B83B3766800E /* joshua-tree-sunset.jpg */; };
 		9BCF21322D0FD4CC48A47285 /* FeatureEngines.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC3B68247338973D156775B /* FeatureEngines.swift */; };
 		9E6624AC3B1C5E0F6F4634B5 /* MediaRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3BE561BC20E80C66A71AADD /* MediaRenderer.swift */; };
+		A3F473E66902055E2D772C63 /* yellowstone-lake.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2B188B2A2FC43066B602DD7D /* yellowstone-lake.jpg */; };
+		A4E9F5EC503E86CD48F8BDB9 /* montreal-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = C033CD8E62F86C12A379B0A0 /* montreal-night.jpg */; };
+		B6A836F73CA36D222031AB78 /* san-francisco-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 070F843F21B9DC80E6153E97 /* san-francisco-night.jpg */; };
 		B720295E345F7E5A480E5F2E /* LayoutCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */; };
 		B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */; };
+		BE9612A953DC29173D6A7B28 /* olympic-twilight.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 175EAB8D8D8208BCF80B4FB4 /* olympic-twilight.jpg */; };
+		C6C75FBDD785B60DB5DC09C3 /* olympic-sea-stacks.jpg in Resources */ = {isa = PBXBuildFile; fileRef = F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */; };
 		C84E1E6614EBDF510752F72D /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 141DE4CA1F3AAFF208D74F5E /* RootView.swift */; };
+		D65E0406CF9A5E4050EF8F11 /* lagoon-nebula.jpg in Resources */ = {isa = PBXBuildFile; fileRef = BD0B9017CE22F3F5F7E95242 /* lagoon-nebula.jpg */; };
+		D7EC0C38F8A9BC5F40863EDA /* los-angeles-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 913195214E517C663AB0086C /* los-angeles-night.jpg */; };
+		DBE9FA74FB00F8B5DD6047D0 /* whirlpool-galaxy.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 032B6D801002B79240A16AD8 /* whirlpool-galaxy.jpg */; };
 		E35A46222E562C0934EB7C55 /* PlaybackViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E2895031A481ABFE0EB164 /* PlaybackViewModel.swift */; };
+		E385175AE9768A27384FCF14 /* national-mall.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 00D23C9A88C331D2A4E2B56D /* national-mall.jpg */; };
+		E9ED90AD8A282FBF6397F088 /* akpatok-island.jpg in Resources */ = {isa = PBXBuildFile; fileRef = D52EB493A85D234721E4DFB2 /* akpatok-island.jpg */; };
+		EC7A9E1D177CC5FE1025A20A /* BundledPhotoLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */; };
+		FD03977AA8C94209CA484065 /* tokyo-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 13109BE567BBD27D10450F1D /* tokyo-night.jpg */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,31 +80,64 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		00D23C9A88C331D2A4E2B56D /* national-mall.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "national-mall.jpg"; sourceTree = "<group>"; };
+		032B6D801002B79240A16AD8 /* whirlpool-galaxy.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "whirlpool-galaxy.jpg"; sourceTree = "<group>"; };
+		070F843F21B9DC80E6153E97 /* san-francisco-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "san-francisco-night.jpg"; sourceTree = "<group>"; };
 		09B914DC989141AA2940C250 /* QueueService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueService.swift; sourceTree = "<group>"; };
 		0A7020D4D196010D78B427FE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0B37A8C019E32CCFD8ADFF86 /* smoky-forest.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "smoky-forest.jpg"; sourceTree = "<group>"; };
 		0EEC5A042F199B16C1AF7320 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1126FD75C870A6F77524E7B6 /* avalanche-peak.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "avalanche-peak.jpg"; sourceTree = "<group>"; };
+		13109BE567BBD27D10450F1D /* tokyo-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "tokyo-night.jpg"; sourceTree = "<group>"; };
+		13D439EEC02C03424FF66A11 /* glacier-sunset.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "glacier-sunset.jpg"; sourceTree = "<group>"; };
 		141DE4CA1F3AAFF208D74F5E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		175EAB8D8D8208BCF80B4FB4 /* olympic-twilight.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "olympic-twilight.jpg"; sourceTree = "<group>"; };
 		21E28B3B120D9AC1C038CCC8 /* Canvas.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Canvas.entitlements; sourceTree = "<group>"; };
 		2571C01CD7FBD18E30621F77 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		2806F8724546FF6718A362CF /* ATTRIBUTION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ATTRIBUTION.md; sourceTree = "<group>"; };
+		2B188B2A2FC43066B602DD7D /* yellowstone-lake.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "yellowstone-lake.jpg"; sourceTree = "<group>"; };
+		2DE19BC26F5FEF6B30047BB7 /* chicago-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "chicago-night.jpg"; sourceTree = "<group>"; };
+		2F4D36887B9C8FFBA82C04D3 /* yosemite-falls.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "yosemite-falls.jpg"; sourceTree = "<group>"; };
+		319981DAE22A4CCDC3F151E7 /* delicate-arch.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "delicate-arch.jpg"; sourceTree = "<group>"; };
+		393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledPhotoLibrary.swift; sourceTree = "<group>"; };
 		3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasApp.swift; sourceTree = "<group>"; };
 		3BC027B1915975701C7AD946 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		3E55871F1C2D83E54A6E27AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4B48EF22BA55605E981434FF /* gateway-arch.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "gateway-arch.jpg"; sourceTree = "<group>"; };
+		5BA999A7E935189FDA6820EE /* independence-hall.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "independence-hall.jpg"; sourceTree = "<group>"; };
 		5CCF4022578701A33BBB2E24 /* CanvasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasUITests.swift; sourceTree = "<group>"; };
 		5DC3B68247338973D156775B /* FeatureEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureEngines.swift; sourceTree = "<group>"; };
 		5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIComponents.swift; sourceTree = "<group>"; };
+		608E57F92AC03E33C4ADE366 /* yellowstone-inspiration.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "yellowstone-inspiration.jpg"; sourceTree = "<group>"; };
 		6411992ADAE9E9596FC3EE76 /* Canvas.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Canvas.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6856BE0CCC97B83B3766800E /* joshua-tree-sunset.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "joshua-tree-sunset.jpg"; sourceTree = "<group>"; };
 		8045FCF88B615769B397B576 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		84E2895031A481ABFE0EB164 /* PlaybackViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackViewModel.swift; sourceTree = "<group>"; };
 		887B3465A4360F74E0FDB3C4 /* AudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioService.swift; sourceTree = "<group>"; };
+		9064AE2CCE1F270013E57396 /* webb-deep-field.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "webb-deep-field.jpg"; sourceTree = "<group>"; };
 		912AC961545646EAF400FA11 /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
+		913195214E517C663AB0086C /* los-angeles-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "los-angeles-night.jpg"; sourceTree = "<group>"; };
+		9394E4E7E10FB257F383EE2C /* zion-east.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "zion-east.jpg"; sourceTree = "<group>"; };
+		951B809035E99411769274EE /* glacier-bay.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "glacier-bay.jpg"; sourceTree = "<group>"; };
+		A1E7E5BC5C6D109C498CC1E5 /* antennae-galaxies.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "antennae-galaxies.jpg"; sourceTree = "<group>"; };
+		A38CB82A8EAEA2277B2963B0 /* crab-nebula.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "crab-nebula.jpg"; sourceTree = "<group>"; };
 		A3FED328DC8E9AC497D5DFEE /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
 		AEA0A308923FC240D8D3FACC /* CanvasTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CanvasTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B2F65AD21DF2C006FC295A40 /* cosmic-cliffs.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "cosmic-cliffs.jpg"; sourceTree = "<group>"; };
+		BD0B9017CE22F3F5F7E95242 /* lagoon-nebula.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "lagoon-nebula.jpg"; sourceTree = "<group>"; };
+		C033CD8E62F86C12A379B0A0 /* montreal-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "montreal-night.jpg"; sourceTree = "<group>"; };
 		C10E128904B7124C0BEFDD31 /* CanvasUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CanvasUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C337C3E726B3A176EDD806B3 /* pillars-of-creation.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "pillars-of-creation.jpg"; sourceTree = "<group>"; };
 		D3BE561BC20E80C66A71AADD /* MediaRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRenderer.swift; sourceTree = "<group>"; };
+		D52EB493A85D234721E4DFB2 /* akpatok-island.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "akpatok-island.jpg"; sourceTree = "<group>"; };
+		D8C9DE030785099CD68185CC /* golden-gate.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "golden-gate.jpg"; sourceTree = "<group>"; };
+		DCCDB40A53D4B9937B3E4AF9 /* kenai-glacier.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "kenai-glacier.jpg"; sourceTree = "<group>"; };
 		DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutCanvas.swift; sourceTree = "<group>"; };
 		DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePhotosService.swift; sourceTree = "<group>"; };
 		E0B380B71F82FF74DEE95762 /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
 		EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasTests.swift; sourceTree = "<group>"; };
+		F165A3DAA247EA7018EFEB95 /* van-gogh-from-space.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "van-gogh-from-space.jpg"; sourceTree = "<group>"; };
+		F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "olympic-sea-stacks.jpg"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -89,6 +155,7 @@
 			isa = PBXGroup;
 			children = (
 				887B3465A4360F74E0FDB3C4 /* AudioService.swift */,
+				393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */,
 				21E28B3B120D9AC1C038CCC8 /* Canvas.entitlements */,
 				3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */,
 				5DC3B68247338973D156775B /* FeatureEngines.swift */,
@@ -116,6 +183,7 @@
 			isa = PBXGroup;
 			children = (
 				3E55871F1C2D83E54A6E27AB /* Assets.xcassets */,
+				5C953B43ABA41A750CF8111D /* IncludedAlbums */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -128,12 +196,55 @@
 			path = CanvasUITests;
 			sourceTree = "<group>";
 		};
+		5C953B43ABA41A750CF8111D /* IncludedAlbums */ = {
+			isa = PBXGroup;
+			children = (
+				2806F8724546FF6718A362CF /* ATTRIBUTION.md */,
+				6614E0143EC3724F8C215AAF /* Abstract */,
+				716421427B554F697CC26C15 /* Cityscapes */,
+				91A125DB79BE5FFBA1EE565F /* Landscapes */,
+			);
+			path = IncludedAlbums;
+			sourceTree = "<group>";
+		};
 		65B125DECB83636404DDF309 /* CanvasTests */ = {
 			isa = PBXGroup;
 			children = (
 				EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */,
 			);
 			path = CanvasTests;
+			sourceTree = "<group>";
+		};
+		6614E0143EC3724F8C215AAF /* Abstract */ = {
+			isa = PBXGroup;
+			children = (
+				D52EB493A85D234721E4DFB2 /* akpatok-island.jpg */,
+				A1E7E5BC5C6D109C498CC1E5 /* antennae-galaxies.jpg */,
+				B2F65AD21DF2C006FC295A40 /* cosmic-cliffs.jpg */,
+				A38CB82A8EAEA2277B2963B0 /* crab-nebula.jpg */,
+				BD0B9017CE22F3F5F7E95242 /* lagoon-nebula.jpg */,
+				C337C3E726B3A176EDD806B3 /* pillars-of-creation.jpg */,
+				F165A3DAA247EA7018EFEB95 /* van-gogh-from-space.jpg */,
+				9064AE2CCE1F270013E57396 /* webb-deep-field.jpg */,
+				032B6D801002B79240A16AD8 /* whirlpool-galaxy.jpg */,
+			);
+			path = Abstract;
+			sourceTree = "<group>";
+		};
+		716421427B554F697CC26C15 /* Cityscapes */ = {
+			isa = PBXGroup;
+			children = (
+				2DE19BC26F5FEF6B30047BB7 /* chicago-night.jpg */,
+				4B48EF22BA55605E981434FF /* gateway-arch.jpg */,
+				D8C9DE030785099CD68185CC /* golden-gate.jpg */,
+				5BA999A7E935189FDA6820EE /* independence-hall.jpg */,
+				913195214E517C663AB0086C /* los-angeles-night.jpg */,
+				C033CD8E62F86C12A379B0A0 /* montreal-night.jpg */,
+				00D23C9A88C331D2A4E2B56D /* national-mall.jpg */,
+				070F843F21B9DC80E6153E97 /* san-francisco-night.jpg */,
+				13109BE567BBD27D10450F1D /* tokyo-night.jpg */,
+			);
+			path = Cityscapes;
 			sourceTree = "<group>";
 		};
 		7CBAFD5024D8EC0EEC8A318C = {
@@ -144,6 +255,26 @@
 				5740F2B545AA3E042FB2D3A2 /* CanvasUITests */,
 				00139D9974E6F4CD0620A20B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		91A125DB79BE5FFBA1EE565F /* Landscapes */ = {
+			isa = PBXGroup;
+			children = (
+				1126FD75C870A6F77524E7B6 /* avalanche-peak.jpg */,
+				319981DAE22A4CCDC3F151E7 /* delicate-arch.jpg */,
+				951B809035E99411769274EE /* glacier-bay.jpg */,
+				13D439EEC02C03424FF66A11 /* glacier-sunset.jpg */,
+				6856BE0CCC97B83B3766800E /* joshua-tree-sunset.jpg */,
+				DCCDB40A53D4B9937B3E4AF9 /* kenai-glacier.jpg */,
+				F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */,
+				175EAB8D8D8208BCF80B4FB4 /* olympic-twilight.jpg */,
+				0B37A8C019E32CCFD8ADFF86 /* smoky-forest.jpg */,
+				608E57F92AC03E33C4ADE366 /* yellowstone-inspiration.jpg */,
+				2B188B2A2FC43066B602DD7D /* yellowstone-lake.jpg */,
+				2F4D36887B9C8FFBA82C04D3 /* yosemite-falls.jpg */,
+				9394E4E7E10FB257F383EE2C /* zion-east.jpg */,
+			);
+			path = Landscapes;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -253,8 +384,40 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				72EED23FA3F57501ADAD8E6F /* ATTRIBUTION.md in Resources */,
 				5C4EBBA2B9AA05F0EA32F259 /* Assets.xcassets in Resources */,
 				48015318F78204BCC6747736 /* PrivacyInfo.xcprivacy in Resources */,
+				E9ED90AD8A282FBF6397F088 /* akpatok-island.jpg in Resources */,
+				1AE53AD6647A24078FF5ABB2 /* antennae-galaxies.jpg in Resources */,
+				5031FEF8C39639BE572410A5 /* avalanche-peak.jpg in Resources */,
+				7EB872E1C7F61019C9B50C8B /* chicago-night.jpg in Resources */,
+				5EBD08290771840F5199F535 /* cosmic-cliffs.jpg in Resources */,
+				5133881DF5ACE96A74F107F4 /* crab-nebula.jpg in Resources */,
+				144A52B4B2038CF78818C0B6 /* delicate-arch.jpg in Resources */,
+				8405A80DC7803EB7052C004E /* gateway-arch.jpg in Resources */,
+				1E26FB374DA012E9E8670FA1 /* glacier-bay.jpg in Resources */,
+				4D3C43F9E857BE2B8FA8BE8D /* glacier-sunset.jpg in Resources */,
+				4969E06A817DED8FEE8E0199 /* golden-gate.jpg in Resources */,
+				82125F36CDA5FD5E25D28C1A /* independence-hall.jpg in Resources */,
+				9AB2E9DD7954431C857F51AB /* joshua-tree-sunset.jpg in Resources */,
+				6F0742DA96CDBE9BABBCCA4E /* kenai-glacier.jpg in Resources */,
+				D65E0406CF9A5E4050EF8F11 /* lagoon-nebula.jpg in Resources */,
+				D7EC0C38F8A9BC5F40863EDA /* los-angeles-night.jpg in Resources */,
+				A4E9F5EC503E86CD48F8BDB9 /* montreal-night.jpg in Resources */,
+				E385175AE9768A27384FCF14 /* national-mall.jpg in Resources */,
+				C6C75FBDD785B60DB5DC09C3 /* olympic-sea-stacks.jpg in Resources */,
+				BE9612A953DC29173D6A7B28 /* olympic-twilight.jpg in Resources */,
+				4852B6A5514E4100FF22D4F0 /* pillars-of-creation.jpg in Resources */,
+				B6A836F73CA36D222031AB78 /* san-francisco-night.jpg in Resources */,
+				8F88F53D55505434DD0452FA /* smoky-forest.jpg in Resources */,
+				FD03977AA8C94209CA484065 /* tokyo-night.jpg in Resources */,
+				869E10F6C0A4283E72A27C61 /* van-gogh-from-space.jpg in Resources */,
+				49C75D4EB189E6BEF2FC5F3A /* webb-deep-field.jpg in Resources */,
+				DBE9FA74FB00F8B5DD6047D0 /* whirlpool-galaxy.jpg in Resources */,
+				509F716A292612FACF9C7205 /* yellowstone-inspiration.jpg in Resources */,
+				A3F473E66902055E2D772C63 /* yellowstone-lake.jpg in Resources */,
+				300B2F79D77FF464586E944A /* yosemite-falls.jpg in Resources */,
+				763432879145861A9496A2FF /* zion-east.jpg in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -274,6 +437,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				844F92EC8939ABFAFF357BFB /* AudioService.swift in Sources */,
+				EC7A9E1D177CC5FE1025A20A /* BundledPhotoLibrary.swift in Sources */,
 				332C5C3DD86D1CE3C802F7C9 /* CanvasApp.swift in Sources */,
 				9BCF21322D0FD4CC48A47285 /* FeatureEngines.swift in Sources */,
 				6AAAB99CA854CCE450126836 /* GooglePhotosService.swift in Sources */,
@@ -319,56 +483,9 @@
 		066359799E20EE26529E1105 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 575UAD2C77;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"DEBUG=1",
-				);
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show local weather and air quality when you turn on the weather overlay.";
@@ -378,10 +495,7 @@
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -397,19 +511,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 60;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas;
 				PRODUCT_NAME = Canvas;
-				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 2;
 				UIRequiredDeviceCapabilities = (
 					arm64,
@@ -423,19 +532,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 56;
+				CURRENT_PROJECT_VERSION = 60;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas;
 				PRODUCT_NAME = Canvas;
-				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 2;
 				UIRequiredDeviceCapabilities = (
 					arm64,
@@ -446,50 +550,8 @@
 		8D407A8531C34013CEB5AED6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 575UAD2C77;
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
 				GOOGLE_PHOTOS_CALLBACK_SCHEME = "com.googleusercontent.apps.242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005";
 				GOOGLE_PHOTOS_CLIENT_ID = "242375941844-tqsjoi12m3ahmhssjsuk0ceurkjj6005.apps.googleusercontent.com";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Canvas uses your location only to show local weather and air quality when you turn on the weather overlay.";
@@ -499,12 +561,8 @@
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 2;
@@ -514,16 +572,10 @@
 		AF67BC7D8A5C364F2909F58C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.uitests;
-				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				PRODUCT_NAME = CanvasUITests;
 				TEST_TARGET_NAME = Canvas;
 			};
 			name = Release;
@@ -533,14 +585,9 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.tests;
-				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				PRODUCT_NAME = CanvasTests;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Canvas.app/Canvas";
 			};
 			name = Release;
@@ -548,16 +595,10 @@
 		D2BF79B8CB88C731D242848D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.uitests;
-				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				PRODUCT_NAME = CanvasUITests;
 				TEST_TARGET_NAME = Canvas;
 			};
 			name = Debug;
@@ -567,14 +608,9 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas.tests;
-				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				PRODUCT_NAME = CanvasTests;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Canvas.app/Canvas";
 			};
 			name = Debug;

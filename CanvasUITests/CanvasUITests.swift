@@ -56,7 +56,6 @@ final class CanvasUITests: XCTestCase {
     }
 
     func testWeatherSettingsExposeRealCompactDataChoices() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-preview"]
         app.launch()
@@ -141,7 +140,6 @@ final class CanvasUITests: XCTestCase {
     }
 
     func testWeatherWidgetIsBelowClockInPortrait() {
-        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame"]
         app.launch()
@@ -234,6 +232,10 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Choose albums"].waitForExistence(timeout: 3))
         let emptyAlbumToggle = app.switches["Show albums with 0 photos"]
         XCTAssertTrue(emptyAlbumToggle.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Included with Canvas"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Landscapes"].exists)
+        XCTAssertTrue(app.staticTexts["Cityscapes"].exists)
+        XCTAssertTrue(app.staticTexts["Abstract"].exists)
         let emptyAlbumControl = emptyAlbumToggle.descendants(matching: .switch).firstMatch
         XCTAssertTrue(emptyAlbumControl.exists)
         XCTAssertEqual(emptyAlbumToggle.value as? String, "0")
@@ -303,5 +305,38 @@ final class CanvasUITests: XCTestCase {
         XCTAssertEqual(status.label, "Weather status: Weather live")
 
         if !wasEnabled { weatherToggle.tap() }
+    }
+
+    func testGrantPhotosForStoreCapture() throws {
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: "/tmp/canvas-grant-photos.flag"),
+            "Create /tmp/canvas-grant-photos.flag to tap the Photos permission sheet for store capture."
+        )
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--canvas-ui-reset",
+            "--canvas-ui-home",
+            "--canvas-ui-showcase",
+            "--canvas-ui-request-photos"
+        ]
+        app.launch()
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allowTitles = ["Allow Full Access", "Allow Access to All Photos"]
+        var tapped = false
+        for title in allowTitles {
+            if app.buttons[title].waitForExistence(timeout: 6) {
+                app.buttons[title].tap()
+                tapped = true
+                break
+            }
+            if springboard.buttons[title].waitForExistence(timeout: 2) {
+                springboard.buttons[title].tap()
+                tapped = true
+                break
+            }
+        }
+        XCTAssertTrue(tapped || app.buttons["start-your-frame"].waitForExistence(timeout: 8) || app.descendants(matching: .any)["start-your-frame"].waitForExistence(timeout: 2))
+        sleep(2)
     }
 }

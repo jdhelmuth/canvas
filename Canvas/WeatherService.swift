@@ -267,25 +267,22 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
     }
 
     static let preview = Self(
-        symbolName: "cloud.sun.fill",
-        condition: "Partly Cloudy",
-        temperature: "72°F",
-        apparentTemperature: "70°F",
-        humidityPercent: 48,
-        wind: "NW 8 mph",
-        uvIndex: 4,
-        dewPoint: "55°F",
-        dewPointF: 55,
-        precipitationChancePercent: 12,
-        rainToday: nil,
-        highTemperature: "78°F",
+        symbolName: "sun.max.fill",
+        condition: "Sunny",
+        temperature: "74°F",
+        apparentTemperature: "72°F",
+        humidityPercent: 51,
+        wind: "SW 4 mph",
+        uvIndex: 7,
+        dewPoint: "54°F",
+        dewPointF: 54,
+        pressure: "30.06 inHg",
+        rainRate: "0.00 in/hr",
+        solarRadiation: "684 W/m²",
+        rainToday: "0.00 in",
+        highTemperature: "79°F",
         lowTemperature: "61°F",
-        sunrise: "6:22 AM",
-        sunset: "8:13 PM",
-        nextHourSymbolName: "sun.max.fill",
-        nextHourTemperature: "74°F",
-        nextHourCondition: "Mostly Sunny",
-        airQualityIndex: 36
+        airQualityIndex: 32
     )
 }
 
@@ -1042,7 +1039,10 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         self.ambientPollingInterval = ambientPollingInterval
         self.defaults = defaults
         self.configurationProvider = configurationProvider
-        self.previewMode = ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-preview") || ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+        self.previewMode = ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-preview")
+            || ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+            || ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather")
+            || ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather-station")
         super.init()
         locationManager.delegate = self
         locationManager.desiredAccuracy = kCLLocationAccuracyKilometer

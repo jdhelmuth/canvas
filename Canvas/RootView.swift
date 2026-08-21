@@ -9,7 +9,8 @@ struct RootView: View {
     var body: some View {
         Group {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame") {
+            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+                || ProcessInfo.processInfo.arguments.contains("--canvas-ui-play") {
                 PlayerView()
             } else if store.settings.hasCompletedOnboarding {
                 LibraryHomeView()
@@ -23,6 +24,24 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+#if DEBUG
+        .task(id: "canvas-ui-showcase-root") {
+            guard ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") else { return }
+            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-request-photos") {
+                await store.library.requestAccess()
+            }
+            for _ in 0..<40 {
+                store.library.refreshAuthorization()
+                if store.library.authorization.canRead { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            let showcase = ProcessInfo.processInfo.arguments.contains("--canvas-ui-newest-only")
+                ? await store.library.prepareNewestShowcase()
+                : await store.library.prepareStoreShowcase()
+            guard !showcase.isEmpty else { return }
+            store.settingsStore.update { $0.selectedAlbums = showcase }
+        }
+#endif
         .onChange(of: scenePhase) { _, phase in
             store.weather.setActive(phase == .active)
             if phase == .active {
@@ -123,7 +142,7 @@ struct OnboardingView: View {
             Spacer()
             Image(systemName: "rectangle.stack.badge.plus").font(.system(size: 64)).foregroundStyle(.blue.gradient)
             Text("Choose your first albums").font(.system(size: 36, weight: .bold, design: .rounded))
-            Text(albumsConfirmed ? "Your albums are ready. Start Canvas now, or go back to change the selection." : (store.settings.selectedAlbums.isEmpty ? "Start with Recents, Favorites, or any albums from your library." : "\(store.settings.selectedAlbums.count) album\(store.settings.selectedAlbums.count == 1 ? "" : "s") selected"))
+            Text(albumsConfirmed ? "Your albums are ready. Start Canvas now, or go back to change the selection." : (store.settings.selectedAlbums.isEmpty ? "Start with Recents, Favorites, an included album such as Landscapes, or any albums from your library." : "\(store.settings.selectedAlbums.count) album\(store.settings.selectedAlbums.count == 1 ? "" : "s") selected"))
                 .font(.title3).foregroundStyle(.secondary)
             if !store.settings.selectedAlbums.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -131,8 +150,8 @@ struct OnboardingView: View {
                         Label {
                             Text(album.title).lineLimit(1)
                         } icon: {
-                            Image(systemName: album.source == .googlePhotos ? "g.circle.fill" : "photo.stack.fill")
-                                .foregroundStyle(album.source == .googlePhotos ? .blue : .orange)
+                            Image(systemName: album.source.symbolName)
+                                .foregroundStyle(album.source.accentColor)
                         }
                     }
                 }
@@ -220,7 +239,30 @@ struct LibraryHomeView: View {
                 previewSeed += 1
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 updateDeviceOrientation(UIDevice.current.orientation)
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--canvas-ui-settings") {
+                    showSettings = true
+                }
+                if ProcessInfo.processInfo.arguments.contains("--canvas-ui-request-photos") {
+                    Task { await store.library.requestAccess() }
+                }
+#endif
             }
+#if DEBUG
+            .task(id: "canvas-ui-showcase") {
+                guard ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") else { return }
+                for _ in 0..<40 {
+                    store.library.refreshAuthorization()
+                    if store.library.authorization.canRead { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                let showcase = ProcessInfo.processInfo.arguments.contains("--canvas-ui-newest-only")
+                    ? await store.library.prepareNewestShowcase()
+                    : await store.library.prepareStoreShowcase()
+                guard !showcase.isEmpty else { return }
+                store.settingsStore.update { $0.selectedAlbums = showcase }
+            }
+#endif
             .onDisappear { UIDevice.current.endGeneratingDeviceOrientationNotifications() }
             .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
                 updateDeviceOrientation(UIDevice.current.orientation)
@@ -317,7 +359,7 @@ struct LibraryHomeView: View {
                 .multilineTextAlignment(.center)
                 .padding(.bottom, 12)
 
-            Text("Choose albums from Apple Photos or Google Photos, then Canvas turns them into a calm, always-ready frame.")
+            Text("Choose albums from Apple Photos, Google Photos, or an included set such as Landscapes, Cityscapes, or Abstract, then Canvas turns them into a calm, always-ready frame.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -397,9 +439,12 @@ struct LibraryHomeView: View {
         // while local Google downloads remain available without a network call.
         store.library.refreshAuthorization()
         store.library.refreshAlbums()
-        let apple = store.library.mediaItems(for: store.settings.selectedAlbums, filters: store.settings.filters)
-        let google = store.googlePhotos.items(for: store.settings.selectedAlbums, filters: store.settings.filters)
-        let playable = MediaIdentityMatcher.deduplicated(apple + google)
+        let playable = CanvasPlaybackMedia.items(
+            for: store.settings.selectedAlbums,
+            filters: store.settings.filters,
+            apple: store.library,
+            google: store.googlePhotos
+        )
         switch FrameLaunchPolicy.decision(for: playable) {
         case .ready:
             showStartRecovery = false
@@ -412,10 +457,10 @@ struct LibraryHomeView: View {
 
     private var startRecoveryMessage: String {
         if store.settings.selectedAlbums.isEmpty {
-            return "Select at least one Apple Photos album or saved Google Photos album. Canvas will use the media already available on this iPad."
+            return "Select at least one album. Landscapes, Cityscapes, and Abstract are included with Canvas and do not need Photos access."
         }
         if !store.library.authorization.canRead {
-            return "Canvas cannot read the selected Apple Photos album yet. Allow Photos access, or choose a saved Google Photos album with downloaded items."
+            return "Canvas cannot read the selected Apple Photos album yet. Allow Photos access, choose an included album, or pick a saved Google Photos album with downloaded items."
         }
         return "The selected albums do not currently contain playable media. Check Photos access or return to Manage albums and choose another source."
     }
@@ -466,8 +511,9 @@ struct LibraryHomeView: View {
     private func loadPreviewImages() async {
         let apple = store.library.mediaItems(for: store.settings.selectedAlbums, filters: store.settings.filters)
         let google = store.googlePhotos.items(for: store.settings.selectedAlbums, filters: store.settings.filters)
+        let bundled = BundledPhotoLibrary.items(for: store.settings.selectedAlbums, filters: store.settings.filters)
         let items = HomePreviewSelection.representativeItems(
-            from: MediaIdentityMatcher.deduplicated(apple + google),
+            from: MediaIdentityMatcher.deduplicated(apple + google + bundled),
             limit: 2,
             seed: previewSeed,
             albumID: "home"
@@ -573,7 +619,7 @@ private struct AlbumThumbnail: View {
                     Color.black.opacity(0.12)
                 } else {
                     Color.secondary.opacity(0.12)
-                    Image(systemName: album.source == .googlePhotos ? "g.circle.fill" : "photo.on.rectangle")
+                    Image(systemName: album.source.thumbnailSymbolName)
                         .font(.title2).foregroundStyle(.secondary).padding(14)
                 }
             }
@@ -585,9 +631,7 @@ private struct AlbumThumbnail: View {
         .clipped()
         .task(id: "\(album.id)#\(previewSeed)#\(store.library.libraryRevision)#\(store.googlePhotos.albums.first(where: { $0.id == album.id })?.updatedAt.timeIntervalSince1970 ?? 0)") {
             let filters = store.settings.filters
-            let items = album.source == .googlePhotos
-                ? store.googlePhotos.items(for: [album], filters: filters)
-                : store.library.mediaItems(for: [album], filters: filters)
+            let items = CanvasPlaybackMedia.items(for: [album], filters: filters, apple: store.library, google: store.googlePhotos)
             var loaded: [UIImage] = []
             let representatives = HomePreviewSelection.representativeItems(from: items, limit: 4, seed: previewSeed, albumID: album.id)
             for item in representatives {
@@ -641,7 +685,10 @@ struct AlbumPickerView: View {
         filtered(AppleAlbumCategory.albums(from: store.library.albums, in: category))
     }
     private var googleAlbums: [AlbumReference] { filtered(store.googlePhotos.albumReferences) }
-    private var availableAlbums: [AlbumReference] { store.library.albums + store.googlePhotos.albumReferences }
+    private var bundledAlbums: [AlbumReference] { filtered(BundledPhotoLibrary.albums) }
+    private var availableAlbums: [AlbumReference] {
+        BundledPhotoLibrary.albums + store.library.albums + store.googlePhotos.albumReferences
+    }
     private var appleCategoryOrder: [AppleAlbumCategory] {
         AppleAlbumCategoryOrdering.categories(from: store.settings.albumCategoryOrder)
     }
@@ -654,6 +701,12 @@ struct AlbumPickerView: View {
                             store.settingsStore.update { $0.showEmptyAlbums = value }
                         }
                     Text("When off, empty albums are hidden from Apple Photos and Google Photos. Existing selections are kept.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Section("Included with Canvas") {
+                    ForEach(bundledAlbums) { album in albumChoice(album) }
+                    Text("Public-domain Landscapes, Cityscapes, and Abstract sets from U.S. National Park Service and NASA photography. Ready without Photos access.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -674,7 +727,7 @@ struct AlbumPickerView: View {
                     }
                 }
                 Section {
-                    Text("Canvas reads only the albums you select. Apple shared and smart albums appear when Photos makes them available.")
+                    Text("Canvas reads only the albums you select. The included Landscapes, Cityscapes, and Abstract albums are always available. Apple shared and smart albums appear when Photos makes them available.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

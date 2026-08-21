@@ -1,6 +1,21 @@
 import Foundation
 import Combine
 
+enum StoreCaptureClock {
+    static var date: Date {
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--canvas-ui-weather-preview")
+            || arguments.contains("--canvas-ui-weather-frame")
+            || arguments.contains("--canvas-ui-store-weather")
+            || arguments.contains("--canvas-ui-store-weather-station") {
+            return Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: Date()) ?? Date()
+        }
+#endif
+        return Date()
+    }
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
     private static let currentSchema = 5
@@ -122,7 +137,10 @@ final class AppStore: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-onboarding-album") {
             settingsStore.settings.selectedAlbums = [AlbumReference(id: "ui-test-album", title: "Family favorites", subtype: 0, estimatedCount: 12, isSmart: false, isShared: false)]
         }
-        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-preview") || ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame") {
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-preview")
+            || ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+            || ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather")
+            || ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather-station") {
             settingsStore.settings.hasCompletedOnboarding = true
             settingsStore.settings.overlays.showTime = true
             settingsStore.settings.overlays.showWeather = true
@@ -131,6 +149,53 @@ final class AppStore: ObservableObject {
             settingsStore.settings.overlays.clockFont = .rounded
             settingsStore.settings.overlays.clockWeight = .medium
             settingsStore.settings.overlays.backgroundTransparency = 0.28
+            settingsStore.settings.overlays.alwaysVisible = true
+        }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather") {
+            var overlays = settingsStore.settings.overlays
+            overlays.weatherShowConditions = true
+            overlays.weatherShowAirQuality = true
+            overlays.weatherShowFeelsLike = true
+            overlays.weatherShowHumidity = true
+            overlays.weatherShowWind = true
+            overlays.weatherShowUVIndex = false
+            overlays.weatherShowDewPoint = false
+            overlays.weatherShowPressure = false
+            overlays.weatherShowRainRate = false
+            overlays.weatherShowSolarRadiation = false
+            overlays.weatherShowPrecipitationChance = false
+            overlays.weatherShowRainToday = false
+            overlays.weatherShowDailyHighLow = false
+            overlays.weatherShowSunriseSunset = false
+            overlays.weatherShowNextHour = false
+            settingsStore.settings.overlays = overlays
+        }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather-station") {
+            var overlays = settingsStore.settings.overlays
+            overlays.showTime = true
+            overlays.showWeather = true
+            overlays.position = .bottomLeading
+            overlays.clockSize = 72
+            overlays.clockFont = .rounded
+            overlays.clockWeight = .medium
+            overlays.backgroundTransparency = 0.28
+            overlays.alwaysVisible = true
+            overlays.weatherShowConditions = true
+            overlays.weatherShowAirQuality = true
+            overlays.weatherShowFeelsLike = true
+            overlays.weatherShowHumidity = true
+            overlays.weatherShowWind = true
+            overlays.weatherShowUVIndex = true
+            overlays.weatherShowDewPoint = true
+            overlays.weatherShowPressure = true
+            overlays.weatherShowRainRate = true
+            overlays.weatherShowSolarRadiation = true
+            overlays.weatherShowRainToday = true
+            overlays.weatherShowDailyHighLow = true
+            overlays.weatherShowPrecipitationChance = false
+            overlays.weatherShowSunriseSunset = false
+            overlays.weatherShowNextHour = false
+            settingsStore.settings.overlays = overlays
         }
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-expanded") {
             settingsStore.settings.overlays.weatherShowFeelsLike = true
@@ -148,6 +213,12 @@ final class AppStore: ObservableObject {
         }
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-dew-point-scale") {
             settingsStore.settings.overlays.weatherShowDewPointScale = true
+        }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-single-layout") {
+            settingsStore.settings.layout = .single
+        }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-oldest") {
+            settingsStore.settings.queueMode = .oldestFirst
         }
         library = PhotoLibraryService()
         googlePhotosMirror = GooglePhotosMirrorService()
