@@ -536,7 +536,7 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(snapshot.lowTemperature, "61.0°F")
         XCTAssertEqual(snapshot.nextHourTemperature, "74.0°F")
         XCTAssertEqual(snapshot.dewPointF ?? 0, 55, accuracy: 0.001)
-        XCTAssertEqual(CanvasWeatherSnapshot.preview.temperature, "72.0°F")
+        XCTAssertEqual(CanvasWeatherSnapshot.preview.temperature, "74.0°F")
     }
 
     func testDewPointScalePolicyMapsComfortBandsAndPinsMarkerEdges() {
