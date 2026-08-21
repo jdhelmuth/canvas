@@ -1888,7 +1888,12 @@ final class CanvasTests: XCTestCase {
     func testBundledLandscapesAlbumIsSelectableWithoutPhotosAccess() {
         XCTAssertEqual(BundledPhotoLibrary.landscapesPhotos.count, 13)
         XCTAssertEqual(Set(BundledPhotoLibrary.landscapesPhotos.map(\.id)).count, 13)
-        XCTAssertEqual(BundledPhotoLibrary.albums.map(\.id), [BundledPhotoLibrary.landscapesAlbumID])
+        XCTAssertEqual(BundledPhotoLibrary.albums.map(\.id), [
+            BundledPhotoLibrary.landscapesAlbumID,
+            BundledPhotoLibrary.cityscapesAlbumID,
+            BundledPhotoLibrary.abstractAlbumID
+        ])
+        XCTAssertEqual(BundledPhotoLibrary.albums.map(\.title), ["Landscapes", "Cityscapes", "Abstract"])
         XCTAssertEqual(BundledPhotoLibrary.landscapesAlbum.source, .bundled)
         XCTAssertEqual(BundledPhotoLibrary.landscapesAlbum.title, "Landscapes")
         XCTAssertEqual(PhotoSource.bundled.title, "Included with Canvas")
@@ -1897,8 +1902,20 @@ final class CanvasTests: XCTestCase {
         let appleOnly = [AlbumReference(id: "apple", title: "Family", subtype: 0, estimatedCount: 1, isSmart: false, isShared: false)]
         XCTAssertEqual(BundledPhotoLibrary.items(for: appleOnly, filters: CanvasFilters()).count, 0)
 
+        let landscapes = BundledPhotoLibrary.items(for: [BundledPhotoLibrary.landscapesAlbum], filters: CanvasFilters())
+        XCTAssertEqual(landscapes.count, BundledPhotoLibrary.landscapesPhotos.count)
+        XCTAssertTrue(landscapes.allSatisfy { $0.albumTitle == "Landscapes" && $0.libraryID == BundledPhotoLibrary.landscapesAlbumID })
+
+        let cityscapes = BundledPhotoLibrary.items(for: [BundledPhotoLibrary.cityscapesAlbum], filters: CanvasFilters())
+        XCTAssertEqual(cityscapes.count, BundledPhotoLibrary.cityscapesPhotos.count)
+        XCTAssertTrue(cityscapes.allSatisfy { $0.albumTitle == "Cityscapes" })
+
+        let abstracts = BundledPhotoLibrary.items(for: [BundledPhotoLibrary.abstractAlbum], filters: CanvasFilters())
+        XCTAssertEqual(abstracts.count, BundledPhotoLibrary.abstractPhotos.count)
+        XCTAssertTrue(abstracts.allSatisfy { $0.albumTitle == "Abstract" })
+
         let selected = BundledPhotoLibrary.items(for: BundledPhotoLibrary.albums, filters: CanvasFilters())
-        XCTAssertEqual(selected.count, BundledPhotoLibrary.landscapesPhotos.count)
+        XCTAssertEqual(selected.count, BundledPhotoLibrary.landscapesPhotos.count + BundledPhotoLibrary.cityscapesPhotos.count + BundledPhotoLibrary.abstractPhotos.count)
         XCTAssertTrue(selected.allSatisfy { $0.source == .bundled && $0.kind == .photo && $0.localURL != nil })
         XCTAssertEqual(Set(selected.map(\.id)).count, selected.count)
 
@@ -2692,10 +2709,10 @@ final class CanvasTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SettingsStore(defaults: defaults)
-        store.settings.selectedAlbums = [BundledPhotoLibrary.landscapesAlbum]
+        store.settings.selectedAlbums = BundledPhotoLibrary.albums
         let restored = SettingsStore(defaults: defaults).settings.selectedAlbums
-        XCTAssertEqual(restored, [BundledPhotoLibrary.landscapesAlbum])
-        XCTAssertEqual(restored.first?.source, .bundled)
+        XCTAssertEqual(restored, BundledPhotoLibrary.albums)
+        XCTAssertTrue(restored.allSatisfy { $0.source == .bundled })
     }
 
     func testDeletingOldGoogleAlbumRemovesOnlyItsLocalRecordAndFiles() {

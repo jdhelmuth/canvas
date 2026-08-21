@@ -1,10 +1,17 @@
-# Included Landscapes
+# Included albums
 
-These photographs ship with Canvas as a built-in album. They are works of
-U.S. National Park Service employees created as part of their official duties
-and are in the public domain in the United States.
+These photographs ship with Canvas as built-in albums. They are works of
+U.S. government employees (National Park Service and NASA) created as part of
+their official duties and are in the public domain in the United States.
 
-Canvas does not require Photos access to display this album.
+Canvas does not require Photos access to display these albums.
+
+JPEGs in `Landscapes/`, `Cityscapes/`, and `Abstract/` are resized copies for
+on-device playback.
+
+## Landscapes
+
+U.S. National Park Service photography.
 
 | File | Title | Credit | Source |
 | --- | --- | --- | --- |
@@ -22,5 +29,34 @@ Canvas does not require Photos access to display this album.
 | zion-east.jpg | East Zion | NPS / Caitlin Ceci, Zion National Park | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:East_Zion_Backcountry_(5205534294).jpg) |
 | kenai-glacier.jpg | Kenai Fjords glacier | NPS / Victoria Stauffenberg, Kenai Fjords National Park | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Kenai_Fjords_National_Park_(a4fed04b-e9db-4ee8-8fc3-66290567bcb6).jpg) |
 
-JPEGs in `Landscapes/` are resized copies for on-device playback. See each Commons
-file page for the original photograph and NPS public-domain notice.
+## Cityscapes
+
+National Park Service city landmarks and NASA International Space Station night photography.
+
+| File | Title | Credit | Source |
+| --- | --- | --- | --- |
+| gateway-arch.jpg | Gateway Arch | National Park Service, Gateway Arch National Park | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Gateway_Arch_National_Park_(formerly_Jefferson_National_Expansion_Memorial)_commemorates_St._Louis%27_role_in_the_westward_(7590bd65-3e9a-46d4-a895-61929574492f).jpg) |
+| national-mall.jpg | National Mall | NPS staff, National Mall and Memorial Parks | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:National_Mall,_Washington_D.C._(d1a228f0-88be-4142-9f99-5264e049cf33).jpg) |
+| independence-hall.jpg | Independence Hall | National Park Service, Independence National Historical Park | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Independence_National_Historical_Park_Independence_Mall_April_2004.jpg) |
+| golden-gate.jpg | Golden Gate Bridge | NASA / Expedition 64, International Space Station | [NASA image iss064e053178](https://images.nasa.gov/details/iss064e053178) |
+| chicago-night.jpg | Chicago at night | NASA / Expedition 7, International Space Station | [NASA image iss007e16525](https://images.nasa.gov/details/iss007e16525) |
+| los-angeles-night.jpg | Los Angeles at night | NASA / Reid Wiseman, Expedition 40 | [NASA image iss040e071586](https://images.nasa.gov/details/iss040e071586) |
+| san-francisco-night.jpg | San Francisco at night | NASA / Expedition 40, International Space Station | [NASA image iss040e090835](https://images.nasa.gov/details/iss040e090835) |
+| tokyo-night.jpg | Tokyo at night | NASA / Expedition 40, International Space Station | [NASA image iss040e070563](https://images.nasa.gov/details/iss040e070563) |
+| montreal-night.jpg | Montreal at night | NASA / Expedition 26, International Space Station | [NASA image iss026e012474](https://images.nasa.gov/details/iss026e012474) |
+
+## Abstract
+
+NASA Hubble, James Webb Space Telescope, and Earth Observatory images that read as color and form rather than a conventional scenic snapshot.
+
+| File | Title | Credit | Source |
+| --- | --- | --- | --- |
+| cosmic-cliffs.jpg | Cosmic Cliffs | NASA, ESA, CSA, STScI / James Webb Space Telescope | [NASA image carina_nebula](https://images.nasa.gov/details/carina_nebula) |
+| webb-deep-field.jpg | Webb First Deep Field | NASA, ESA, CSA, STScI / James Webb Space Telescope | [NASA image webb_first_deep_field](https://images.nasa.gov/details/webb_first_deep_field) |
+| pillars-of-creation.jpg | Pillars of Creation | NASA, ESA, and the Hubble Heritage Team (STScI/AURA) | [NASA image GSFC_20171208_Archive_e000842](https://images.nasa.gov/details/GSFC_20171208_Archive_e000842) |
+| lagoon-nebula.jpg | Lagoon Nebula | NASA / ESA / Hubble | [NASA image GSFC_20171208_Archive_e001955](https://images.nasa.gov/details/GSFC_20171208_Archive_e001955) |
+| crab-nebula.jpg | Crab Nebula | NASA / ESA / JPL-Caltech / Hubble | [NASA image PIA03606](https://images.nasa.gov/details/PIA03606) |
+| antennae-galaxies.jpg | Antennae Galaxies | NASA / ESA / Hubble | [NASA image GSFC_20171208_Archive_e001327](https://images.nasa.gov/details/GSFC_20171208_Archive_e001327) |
+| whirlpool-galaxy.jpg | Whirlpool Galaxy | NASA / ESA / Hubble / JPL-Caltech | [NASA image PIA04230](https://images.nasa.gov/details/PIA04230) |
+| van-gogh-from-space.jpg | Van Gogh from Space | NASA Earth Observatory / GSFC | [NASA image GSFC_20171208_Archive_e001928](https://images.nasa.gov/details/GSFC_20171208_Archive_e001928) |
+| akpatok-island.jpg | Akpatok Island | NASA Earth Observatory / GSFC | [NASA image GSFC_20171208_Archive_e002164](https://images.nasa.gov/details/GSFC_20171208_Archive_e002164) |

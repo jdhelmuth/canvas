@@ -14,13 +14,35 @@ struct BundledPhotoRecord: Hashable, Identifiable {
     let creationDate: Date?
 }
 
-/// Public-domain U.S. National Park Service landscapes that ship with Canvas.
-/// The album is available without Photos or Google authorization so a new
-/// install can start a frame immediately, similar to a Nest Hub default library.
+struct BundledAlbumCatalog: Hashable, Identifiable {
+    let id: String
+    let title: String
+    let directory: String
+    let photos: [BundledPhotoRecord]
+
+    var albumID: String { "bundled:\(id)" }
+
+    var reference: AlbumReference {
+        AlbumReference(
+            id: albumID,
+            title: title,
+            subtype: 0,
+            estimatedCount: photos.count,
+            isSmart: false,
+            isShared: false,
+            source: .bundled
+        )
+    }
+}
+
+/// Public-domain themed albums that ship with Canvas, similar to a Nest Hub
+/// default library. They are available without Photos or Google authorization
+/// so a new install can start a frame immediately.
 enum BundledPhotoLibrary {
     static let landscapesAlbumID = "bundled:landscapes"
+    static let cityscapesAlbumID = "bundled:cityscapes"
+    static let abstractAlbumID = "bundled:abstract"
     static let landscapesTitle = "Landscapes"
-    static let resourceSubdirectory = "IncludedAlbums/Landscapes"
 
     static var resourceBundle: Bundle { Bundle(for: BundledPhotoLibraryMarker.self) }
 
@@ -40,52 +62,79 @@ enum BundledPhotoLibrary {
         BundledPhotoRecord(id: "kenai-glacier", filename: "kenai-glacier.jpg", title: "Kenai Fjords glacier", credit: "NPS / Victoria Stauffenberg, Kenai Fjords National Park", creationDate: nil)
     ]
 
-    static var albums: [AlbumReference] {
-        [landscapesAlbum]
-    }
+    static let cityscapesPhotos: [BundledPhotoRecord] = [
+        BundledPhotoRecord(id: "gateway-arch", filename: "gateway-arch.jpg", title: "Gateway Arch", credit: "National Park Service, Gateway Arch National Park", creationDate: nil),
+        BundledPhotoRecord(id: "national-mall", filename: "national-mall.jpg", title: "National Mall", credit: "NPS staff, National Mall and Memorial Parks", creationDate: nil),
+        BundledPhotoRecord(id: "independence-hall", filename: "independence-hall.jpg", title: "Independence Hall", credit: "National Park Service, Independence National Historical Park", creationDate: date("2004-04-01")),
+        BundledPhotoRecord(id: "golden-gate", filename: "golden-gate.jpg", title: "Golden Gate Bridge", credit: "NASA / Expedition 64, International Space Station", creationDate: date("2021-04-04")),
+        BundledPhotoRecord(id: "chicago-night", filename: "chicago-night.jpg", title: "Chicago at night", credit: "NASA / Expedition 7, International Space Station", creationDate: date("2003-10-07")),
+        BundledPhotoRecord(id: "los-angeles-night", filename: "los-angeles-night.jpg", title: "Los Angeles at night", credit: "NASA / Reid Wiseman, Expedition 40", creationDate: date("2014-07-21")),
+        BundledPhotoRecord(id: "san-francisco-night", filename: "san-francisco-night.jpg", title: "San Francisco at night", credit: "NASA / Expedition 40, International Space Station", creationDate: date("2014-07-19")),
+        BundledPhotoRecord(id: "tokyo-night", filename: "tokyo-night.jpg", title: "Tokyo at night", credit: "NASA / Expedition 40, International Space Station", creationDate: date("2014-07-19")),
+        BundledPhotoRecord(id: "montreal-night", filename: "montreal-night.jpg", title: "Montreal at night", credit: "NASA / Expedition 26, International Space Station", creationDate: date("2010-12-24"))
+    ]
 
-    static var landscapesAlbum: AlbumReference {
-        AlbumReference(
-            id: landscapesAlbumID,
-            title: landscapesTitle,
-            subtype: 0,
-            estimatedCount: landscapesPhotos.count,
-            isSmart: false,
-            isShared: false,
-            source: .bundled
-        )
+    static let abstractPhotos: [BundledPhotoRecord] = [
+        BundledPhotoRecord(id: "cosmic-cliffs", filename: "cosmic-cliffs.jpg", title: "Cosmic Cliffs", credit: "NASA, ESA, CSA, STScI / James Webb Space Telescope", creationDate: date("2022-07-12")),
+        BundledPhotoRecord(id: "webb-deep-field", filename: "webb-deep-field.jpg", title: "Webb First Deep Field", credit: "NASA, ESA, CSA, STScI / James Webb Space Telescope", creationDate: date("2022-07-12")),
+        BundledPhotoRecord(id: "pillars-of-creation", filename: "pillars-of-creation.jpg", title: "Pillars of Creation", credit: "NASA, ESA, and the Hubble Heritage Team (STScI/AURA)", creationDate: date("2015-01-06")),
+        BundledPhotoRecord(id: "lagoon-nebula", filename: "lagoon-nebula.jpg", title: "Lagoon Nebula", credit: "NASA / ESA / Hubble", creationDate: nil),
+        BundledPhotoRecord(id: "crab-nebula", filename: "crab-nebula.jpg", title: "Crab Nebula", credit: "NASA / ESA / JPL-Caltech / Hubble", creationDate: nil),
+        BundledPhotoRecord(id: "antennae-galaxies", filename: "antennae-galaxies.jpg", title: "Antennae Galaxies", credit: "NASA / ESA / Hubble", creationDate: nil),
+        BundledPhotoRecord(id: "whirlpool-galaxy", filename: "whirlpool-galaxy.jpg", title: "Whirlpool Galaxy", credit: "NASA / ESA / Hubble / JPL-Caltech", creationDate: nil),
+        BundledPhotoRecord(id: "van-gogh-from-space", filename: "van-gogh-from-space.jpg", title: "Van Gogh from Space", credit: "NASA Earth Observatory / GSFC", creationDate: nil),
+        BundledPhotoRecord(id: "akpatok-island", filename: "akpatok-island.jpg", title: "Akpatok Island", credit: "NASA Earth Observatory / GSFC", creationDate: nil)
+    ]
+
+    static let catalogs: [BundledAlbumCatalog] = [
+        BundledAlbumCatalog(id: "landscapes", title: landscapesTitle, directory: "Landscapes", photos: landscapesPhotos),
+        BundledAlbumCatalog(id: "cityscapes", title: "Cityscapes", directory: "Cityscapes", photos: cityscapesPhotos),
+        BundledAlbumCatalog(id: "abstract", title: "Abstract", directory: "Abstract", photos: abstractPhotos)
+    ]
+
+    static var albums: [AlbumReference] { catalogs.map(\.reference) }
+
+    static var landscapesAlbum: AlbumReference { catalogs[0].reference }
+    static var cityscapesAlbum: AlbumReference { catalogs[1].reference }
+    static var abstractAlbum: AlbumReference { catalogs[2].reference }
+
+    static func url(for filename: String, in directory: String) -> URL? {
+        let name = (filename as NSString).deletingPathExtension
+        let ext = (filename as NSString).pathExtension
+        return resourceBundle.url(forResource: name, withExtension: ext, subdirectory: "IncludedAlbums/\(directory)")
+            ?? resourceBundle.url(forResource: name, withExtension: ext, subdirectory: directory)
+            ?? resourceBundle.url(forResource: name, withExtension: ext)
     }
 
     static func url(for filename: String) -> URL? {
-        let name = (filename as NSString).deletingPathExtension
-        let ext = (filename as NSString).pathExtension
-        return resourceBundle.url(forResource: name, withExtension: ext, subdirectory: resourceSubdirectory)
-            ?? resourceBundle.url(forResource: name, withExtension: ext, subdirectory: "Landscapes")
-            ?? resourceBundle.url(forResource: name, withExtension: ext)
+        url(for: filename, in: "Landscapes")
     }
 
     static func items(for references: [AlbumReference], filters: CanvasFilters) -> [CanvasMediaItem] {
         let selected = Set(references.filter { $0.source == .bundled }.map(\.id))
-        guard selected.contains(landscapesAlbumID) else { return [] }
-        return landscapesPhotos.compactMap { photo in
-            guard let url = url(for: photo.filename) else { return nil }
-            let size = pixelSize(at: url)
-            let item = CanvasMediaItem(
-                id: "bundled:\(photo.id)",
-                source: .bundled,
-                kind: .photo,
-                creationDate: photo.creationDate,
-                filename: photo.filename,
-                isFavorite: false,
-                pixelWidth: size.width,
-                pixelHeight: size.height,
-                albumTitle: landscapesTitle,
-                appleAsset: nil,
-                localURL: url,
-                contentHash: nil,
-                libraryID: landscapesAlbumID
-            )
-            return filters.accepts(item.descriptor) ? item : nil
+        guard selected.isEmpty == false else { return [] }
+        return catalogs.flatMap { catalog -> [CanvasMediaItem] in
+            guard selected.contains(catalog.albumID) else { return [] }
+            return catalog.photos.compactMap { photo in
+                guard let url = url(for: photo.filename, in: catalog.directory) else { return nil }
+                let size = pixelSize(at: url)
+                let item = CanvasMediaItem(
+                    id: "bundled:\(catalog.id):\(photo.id)",
+                    source: .bundled,
+                    kind: .photo,
+                    creationDate: photo.creationDate,
+                    filename: photo.filename,
+                    isFavorite: false,
+                    pixelWidth: size.width,
+                    pixelHeight: size.height,
+                    albumTitle: catalog.title,
+                    appleAsset: nil,
+                    localURL: url,
+                    contentHash: nil,
+                    libraryID: catalog.albumID
+                )
+                return filters.accepts(item.descriptor) ? item : nil
+            }
         }
     }
 

@@ -1,6 +1,6 @@
 # Canvas
 
-Canvas Slideshow is a native iPadOS photo frame. It reads the Apple Photos albums you authorize, includes a public-domain Landscapes album, keeps settings on device, and includes no analytics, ads, or tracking.
+Canvas Slideshow is a native iPadOS photo frame. It reads the Apple Photos albums you authorize, includes public-domain Landscapes, Cityscapes, and Abstract albums, keeps settings on device, and includes no analytics, ads, or tracking.
 
 ## Build
 

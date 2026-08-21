@@ -27,7 +27,7 @@ struct QueueAlgorithm {
 
 /// Decides whether the home action can enter playback without relying on a
 /// thumbnail task or on the Google connection state. Apple Photos, Google
-/// Photos, and the included Landscapes album feed the same queue, so this
+/// Photos, and the included themed albums feed the same queue, so this
 /// check uses the deduplicated media list.
 enum FrameLaunchPolicy {
     enum Decision: Equatable {

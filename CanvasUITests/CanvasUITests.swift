@@ -236,6 +236,8 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(emptyAlbumToggle.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Included with Canvas"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Landscapes"].exists)
+        XCTAssertTrue(app.staticTexts["Cityscapes"].exists)
+        XCTAssertTrue(app.staticTexts["Abstract"].exists)
         let emptyAlbumControl = emptyAlbumToggle.descendants(matching: .switch).firstMatch
         XCTAssertTrue(emptyAlbumControl.exists)
         XCTAssertEqual(emptyAlbumToggle.value as? String, "0")

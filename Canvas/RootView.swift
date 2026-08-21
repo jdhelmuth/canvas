@@ -123,7 +123,7 @@ struct OnboardingView: View {
             Spacer()
             Image(systemName: "rectangle.stack.badge.plus").font(.system(size: 64)).foregroundStyle(.blue.gradient)
             Text("Choose your first albums").font(.system(size: 36, weight: .bold, design: .rounded))
-            Text(albumsConfirmed ? "Your albums are ready. Start Canvas now, or go back to change the selection." : (store.settings.selectedAlbums.isEmpty ? "Start with Recents, Favorites, the included Landscapes album, or any albums from your library." : "\(store.settings.selectedAlbums.count) album\(store.settings.selectedAlbums.count == 1 ? "" : "s") selected"))
+            Text(albumsConfirmed ? "Your albums are ready. Start Canvas now, or go back to change the selection." : (store.settings.selectedAlbums.isEmpty ? "Start with Recents, Favorites, an included album such as Landscapes, or any albums from your library." : "\(store.settings.selectedAlbums.count) album\(store.settings.selectedAlbums.count == 1 ? "" : "s") selected"))
                 .font(.title3).foregroundStyle(.secondary)
             if !store.settings.selectedAlbums.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -317,7 +317,7 @@ struct LibraryHomeView: View {
                 .multilineTextAlignment(.center)
                 .padding(.bottom, 12)
 
-            Text("Choose albums from Apple Photos, Google Photos, or the included Landscapes set, then Canvas turns them into a calm, always-ready frame.")
+            Text("Choose albums from Apple Photos, Google Photos, or an included set such as Landscapes, Cityscapes, or Abstract, then Canvas turns them into a calm, always-ready frame.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -415,10 +415,10 @@ struct LibraryHomeView: View {
 
     private var startRecoveryMessage: String {
         if store.settings.selectedAlbums.isEmpty {
-            return "Select at least one album. Landscapes is included with Canvas and does not need Photos access."
+            return "Select at least one album. Landscapes, Cityscapes, and Abstract are included with Canvas and do not need Photos access."
         }
         if !store.library.authorization.canRead {
-            return "Canvas cannot read the selected Apple Photos album yet. Allow Photos access, choose the included Landscapes album, or pick a saved Google Photos album with downloaded items."
+            return "Canvas cannot read the selected Apple Photos album yet. Allow Photos access, choose an included album, or pick a saved Google Photos album with downloaded items."
         }
         return "The selected albums do not currently contain playable media. Check Photos access or return to Manage albums and choose another source."
     }
@@ -664,7 +664,7 @@ struct AlbumPickerView: View {
                 }
                 Section("Included with Canvas") {
                     ForEach(bundledAlbums) { album in albumChoice(album) }
-                    Text("Public-domain landscapes from U.S. National Park Service photography. Ready without Photos access.")
+                    Text("Public-domain Landscapes, Cityscapes, and Abstract sets from U.S. National Park Service and NASA photography. Ready without Photos access.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -685,7 +685,7 @@ struct AlbumPickerView: View {
                     }
                 }
                 Section {
-                    Text("Canvas reads only the albums you select. The included Landscapes album is always available. Apple shared and smart albums appear when Photos makes them available.")
+                    Text("Canvas reads only the albums you select. The included Landscapes, Cityscapes, and Abstract albums are always available. Apple shared and smart albums appear when Photos makes them available.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
