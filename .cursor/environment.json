@@ -1,0 +1,4 @@
+{
+  "name": "Canvas",
+  "install": "if ! command -v python3 >/dev/null 2>&1 || ! command -v openssl >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y --no-install-recommends python3 openssl; fi && python3 --version && openssl version"
+}
