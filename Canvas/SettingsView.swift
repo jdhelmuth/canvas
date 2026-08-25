@@ -481,7 +481,8 @@ struct SettingsView: View {
                     .accessibilityHint("Adjust weather independently from the clock and date text.")
                     WeatherDataAttributionView(
                         weatherDestination: store.weather.attributionURL,
-                        weatherMarkURL: store.weather.attributionMarkURL
+                        weatherSource: store.settings.effectiveWeatherSource,
+                        showsAirQuality: store.settings.overlays.effectiveWeatherShowAirQuality
                     )
                 }
                 Toggle("Always visible", isOn: binding(\.overlays.alwaysVisible))
@@ -1048,7 +1049,9 @@ private struct ClockOverlayPreview: View {
                 status: store.weather.status,
                 settings: settings,
                 mediaImage: previewImages.first,
-                textOpacity: textOpacity
+                textOpacity: textOpacity,
+                weatherSource: store.settings.effectiveWeatherSource,
+                weatherAttributionURL: store.weather.attributionURL
             ),
             canvasSize: canvasSize
         )
@@ -1098,7 +1101,9 @@ private struct ClockOverlayPreview: View {
             status: store.weather.status,
             settings: settings,
             mediaImage: previewImages.first,
-            textOpacity: textOpacity
+            textOpacity: textOpacity,
+            weatherSource: store.settings.effectiveWeatherSource,
+            weatherAttributionURL: store.weather.attributionURL
         )
     }
 

@@ -312,6 +312,8 @@ struct WeatherOverlayWidget: View {
     let settings: OverlaySettings
     let mediaImage: UIImage?
     let textOpacity: Double
+    let weatherSource: CanvasWeatherSource
+    let weatherAttributionURL: URL?
 
     private var weatherSize: CGFloat { CGFloat(settings.effectiveWeatherSize) }
 
@@ -362,6 +364,14 @@ struct WeatherOverlayWidget: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Next hour, \(temperature), \(condition)")
                     }
+
+                    WeatherDataAttributionView(
+                        weatherDestination: weatherAttributionURL,
+                        weatherSource: weatherSource,
+                        showsAirQuality: settings.effectiveWeatherShowAirQuality && snapshot.airQualityIndex != nil
+                    )
+                    .font(.system(size: max(10, weatherSize * 0.34), weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(textOpacity * 0.82))
 
                 }
                 .frame(width: widgetWidth(for: snapshot), alignment: .leading)
@@ -693,32 +703,21 @@ private extension DewPointComfortBand {
     }
 }
 
-/// WeatherKit's own square mark provides a discrete route to its legal sources
-/// page without placing provider names or source text in the normal weather UI.
+/// Apple requires the Apple Weather trademark and its legal source link to be
+/// clearly visible anywhere WeatherKit data is displayed. Keep the provider
+/// name explicit even when the remote mark is unavailable.
 struct WeatherLegalLink: View {
-    let destination: URL?
-    let markURL: URL?
+    static let defaultDestination = URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
 
-    @ViewBuilder
+    let destination: URL?
+
     var body: some View {
-        if let destination {
-            Link(destination: destination) {
-                AsyncImage(url: markURL) { phase in
-                    if let image = phase.image {
-                        image
-                            .resizable()
-                            .scaledToFit()
-                    } else {
-                        Image(systemName: "info.circle")
-                            .symbolRenderingMode(.hierarchical)
-                    }
-                }
-                .frame(width: 15, height: 15)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Weather attribution and data sources")
+        Link(destination: destination ?? Self.defaultDestination) {
+            Text(" Weather")
+                .underline()
         }
+        .accessibilityLabel("Apple Weather legal attribution and data sources")
+        .accessibilityIdentifier("apple-weather-attribution-link")
     }
 }
 
@@ -739,17 +738,21 @@ struct AirQualityLegalLink: View {
 
 struct WeatherDataAttributionView: View {
     let weatherDestination: URL?
-    let weatherMarkURL: URL?
+    let weatherSource: CanvasWeatherSource
+    let showsAirQuality: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            WeatherLegalLink(destination: weatherDestination, markURL: weatherMarkURL)
-            Link(destination: AirQualityLegalLink.destination) {
-                Label("AQI: AirNow · preliminary", systemImage: "aqi.medium")
-                    .font(.caption)
+            if weatherSource == .ambientStation {
+                Link("Ambient Weather", destination: URL(string: "https://ambientweather.com/faqs/question/view/id/1811/")!)
             }
-            .accessibilityLabel("Preliminary air quality data from AirNow")
+            WeatherLegalLink(destination: weatherSource == .weatherKit ? weatherDestination : nil)
+            if showsAirQuality {
+                Link("AQI: AirNow · preliminary", destination: AirQualityLegalLink.destination)
+                    .accessibilityLabel("Preliminary air quality data from AirNow")
+            }
         }
+        .accessibilityElement(children: .contain)
     }
 }
 
