@@ -480,7 +480,9 @@ struct PlayerView: View {
                 status: store.weather.status,
                 settings: settings,
                 mediaImage: model.currentImage,
-                textOpacity: textOpacity
+                textOpacity: textOpacity,
+                weatherSource: store.settings.effectiveWeatherSource,
+                weatherAttributionURL: store.weather.attributionURL
             ),
             canvasSize: canvasSize
         )
@@ -561,7 +563,9 @@ struct PlayerView: View {
             status: store.weather.status,
             settings: settings,
             mediaImage: model.currentImage,
-            textOpacity: textOpacity
+            textOpacity: textOpacity,
+            weatherSource: store.settings.effectiveWeatherSource,
+            weatherAttributionURL: store.weather.attributionURL
         )
     }
     private func alignment(for position: OverlayPosition) -> Alignment { switch position { case .topLeading: .topLeading; case .topTrailing: .topTrailing; case .bottomLeading: .bottomLeading; case .bottomTrailing: .bottomTrailing; case .center: .center } }

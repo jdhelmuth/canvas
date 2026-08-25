@@ -112,8 +112,9 @@ final class CanvasUITests: XCTestCase {
         XCTAssertGreaterThan(weather.frame.minX, clock.frame.midX)
         XCTAssertLessThanOrEqual(weather.frame.maxX, window.frame.maxX)
         XCTAssertFalse(app.staticTexts["Last known"].exists)
-        XCTAssertEqual(weather.descendants(matching: .button).count, 0)
-        XCTAssertEqual(weather.descendants(matching: .link).count, 0)
+        let attribution = weather.buttons["apple-weather-attribution-link"]
+        XCTAssertTrue(attribution.waitForExistence(timeout: 3))
+        XCTAssertEqual(attribution.label, "Apple Weather legal attribution and data sources")
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Clock and weather overlay"
         attachment.lifetime = .keepAlways
