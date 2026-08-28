@@ -114,22 +114,36 @@ def make_token(temporary_directory: Path, issuer_id: str, key_id: str, key_path:
     return f"{unsigned}.{b64url(der_es256_to_raw(signature_path.read_bytes()))}"
 
 
-def api_get(path: str, token: str, parameters: dict[str, str] | None = None) -> dict[str, Any]:
+def api_request(
+    method: str,
+    path: str,
+    token: str,
+    parameters: dict[str, str] | None = None,
+    body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     query = urllib.parse.urlencode(parameters or {})
     url = urllib.parse.urlunsplit(("https", API_ORIGIN, path, query, ""))
-    request = urllib.request.Request(
-        url,
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-    )
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            payload = json.loads(response.read())
+        with urllib.request.urlopen(request, timeout=60) as response:
+            raw = response.read()
     except urllib.error.HTTPError as error:
-        body = error.read().decode("utf-8", "replace")[:500]
-        raise StatusError(f"GET {path} -> HTTP {error.code}: {body}") from error
+        detail = error.read().decode("utf-8", "replace")[:800]
+        raise StatusError(f"{method} {path} -> HTTP {error.code}: {detail}") from error
+    if not raw:
+        return {}
+    payload = json.loads(raw)
     if not isinstance(payload, dict):
-        raise StatusError(f"unexpected response for {path}")
+        raise StatusError(f"unexpected response for {method} {path}")
     return payload
+
+
+def api_get(path: str, token: str, parameters: dict[str, str] | None = None) -> dict[str, Any]:
+    return api_request("GET", path, token, parameters=parameters)
 
 
 def print_builds(token: str, app_id: str, limit: int) -> None:

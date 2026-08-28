@@ -45,8 +45,9 @@ done
 echo "Archive verification OK: $ARCHIVE_BUNDLE_ID $ARCHIVE_VERSION ($ARCHIVE_BUILD)"
 
 ASC_APP_ID="${ASC_APP_ID:-6797351994}"
-export ASC_APP_ID
+export ASC_APP_ID ASC_VERSION="$ARCHIVE_VERSION"
 if [ -n "${ASC_BETA_GROUP_ID:-}" ]; then
   export ASC_BETA_GROUP_ID
 fi
+export ASC_SHIP_SCRIPT="$ROOT/scripts/asc_ship.py"
 "$ROOT/ci_scripts/upload_xcarchive_with_api_key.sh"

@@ -1,0 +1,27 @@
+name: iOS ship on merge
+
+# Grok Bot / any merge to main should archive via Xcode Cloud and submit.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ASC_APP_ID: "6797351994"
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require App Store Connect API key
+        run: |
+          if [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_PRIVATE_KEY" ]; then
+            echo "Add GitHub Actions secrets ASC_ISSUER_ID, ASC_KEY_ID, and ASC_PRIVATE_KEY."
+            exit 1
+          fi
+      - name: Start Xcode Cloud if needed, wait, submit for review
+        run: python3 scripts/asc_ship.py --start-if-needed --wait --submit --root .

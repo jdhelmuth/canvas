@@ -107,8 +107,8 @@ xcrun altool \
 
 echo "upload_xcarchive_with_api_key: upload submitted"
 
-if [ -z "${ASC_APP_ID:-}" ] || [ -z "${ASC_BETA_GROUP_ID:-}" ]; then
-  echo "upload_xcarchive_with_api_key: skipping TestFlight assignment (set ASC_APP_ID and ASC_BETA_GROUP_ID)"
+if [ -z "${ASC_APP_ID:-}" ]; then
+  echo "upload_xcarchive_with_api_key: set ASC_APP_ID to wait for processing and submit for review" >&2
   exit 0
 fi
 
@@ -120,7 +120,10 @@ JWT_OUTPUT="$(xcrun altool \
 ASC_JWT="$(printf '%s\n' "$JWT_OUTPUT" | awk '/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/ { token = $0 } END { print token }')"
 
 if [ -z "$ASC_JWT" ]; then
-  echo "upload_xcarchive_with_api_key: upload submitted, but altool did not return a REST token for TestFlight assignment" >&2
+  echo "upload_xcarchive_with_api_key: upload submitted, but altool did not return a REST token" >&2
+  if [ -n "${ASC_SHIP_SCRIPT:-}" ] && [ -f "$ASC_SHIP_SCRIPT" ]; then
+    ASC_PRIVATE_KEY_PATH="$KEY_PATH" python3 "$ASC_SHIP_SCRIPT" --submit-only --app-id "$ASC_APP_ID" --build-number "$BUILD_NUMBER" --root "${CI_PRIMARY_REPOSITORY_PATH:-.}"
+  fi
   exit 0
 fi
 
@@ -164,13 +167,27 @@ if [ -z "$BUILD_ID" ] || [ "$PROCESSING_STATE" != "VALID" ]; then
   exit 0
 fi
 
-RELATIONSHIP_BODY="$(printf '{"data":[{"type":"builds","id":"%s"}]}' "$BUILD_ID")"
-curl -fsS \
-  -X POST \
-  -H "Authorization: Bearer $ASC_JWT" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d "$RELATIONSHIP_BODY" \
-  "$ASC_API_ROOT/betaGroups/$ASC_BETA_GROUP_ID/relationships/builds" >/dev/null
+if [ -n "${ASC_BETA_GROUP_ID:-}" ]; then
+  RELATIONSHIP_BODY="$(printf '{"data":[{"type":"builds","id":"%s"}]}' "$BUILD_ID")"
+  curl -fsS \
+    -X POST \
+    -H "Authorization: Bearer $ASC_JWT" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "$RELATIONSHIP_BODY" \
+    "$ASC_API_ROOT/betaGroups/$ASC_BETA_GROUP_ID/relationships/builds" >/dev/null
+  echo "upload_xcarchive_with_api_key: assigned build $BUILD_NUMBER to TestFlight group $ASC_BETA_GROUP_ID"
+else
+  echo "upload_xcarchive_with_api_key: skipping TestFlight assignment (set ASC_BETA_GROUP_ID)"
+fi
 
-echo "upload_xcarchive_with_api_key: assigned build $BUILD_NUMBER to TestFlight group $ASC_BETA_GROUP_ID"
+if [ -n "${ASC_SHIP_SCRIPT:-}" ] && [ -f "$ASC_SHIP_SCRIPT" ]; then
+  if command -v /usr/libexec/PlistBuddy >/dev/null 2>&1; then
+    ASC_VERSION="${ASC_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$ARCHIVE_PATH/Info.plist" 2>/dev/null || true)}"
+  fi
+  echo "upload_xcarchive_with_api_key: submitting $ASC_VERSION ($BUILD_NUMBER) for App Store review"
+  ASC_PRIVATE_KEY_PATH="$KEY_PATH" \
+  ASC_BUILD_ID="$BUILD_ID" \
+  ASC_VERSION="$ASC_VERSION" \
+  python3 "$ASC_SHIP_SCRIPT" --submit-only --app-id "$ASC_APP_ID" --build-id "$BUILD_ID" --version "$ASC_VERSION" --root "${CI_PRIMARY_REPOSITORY_PATH:-.}"
+fi
