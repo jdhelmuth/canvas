@@ -7,8 +7,10 @@ Canvas releases are gated by `release/release-requirements.json`, the scripts in
 - Use the shared `Canvas` scheme and its Release Archive action.
 - Select Xcode 26.6 or a newer stable release and a compatible stable macOS image. Do not use beta or RC images for distribution.
 - Keep automatic signing enabled and verify that the `com.johnhelmuth.canvas` App ID has WeatherKit configured in both **App Capabilities** and **App Services**.
-- Add `ASC_APP_ID` as the numeric App Store Connect app ID.
-- Add `ASC_ISSUER_ID`, `ASC_KEY_ID`, and `ASC_PRIVATE_KEY` as secret environment variables. The private key is the complete contents of the App Store Connect API `.p8` key.
+- Add `ASC_APP_ID` as the numeric App Store Connect app ID (`6797351994`).
+- Add `ASC_ISSUER_ID`, `ASC_KEY_ID`, and `ASC_PRIVATE_KEY` (or `ASC_KEY_BASE64`) as secret environment variables. The private key is the complete contents of the App Store Connect API `.p8` key.
+- After Archive, `ci_scripts/ci_post_xcodebuild.sh` verifies the archive then uploads with that API key. Turn off Apple ID “Prepare Build for App Store Connect” on the workflow so Session Proxy Provider cannot fail a successful upload.
+- Linux Cloud Agents: `python3 scripts/asc_status.py --app-id 6797351994`
 - Grant the API key only the App Manager access needed to read build metadata.
 - Set Xcode Cloud's **Next Build Number** higher than the latest uploaded build. The archive gate independently queries App Store Connect and blocks collisions.
 - The gates use Python 3 standard-library JSON/HTTP handling plus tools in the Xcode image; they do not install Homebrew packages and do not require `jq`.

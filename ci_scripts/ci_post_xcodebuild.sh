@@ -43,3 +43,10 @@ do
 done
 
 echo "Archive verification OK: $ARCHIVE_BUNDLE_ID $ARCHIVE_VERSION ($ARCHIVE_BUILD)"
+
+ASC_APP_ID="${ASC_APP_ID:-6797351994}"
+export ASC_APP_ID
+if [ -n "${ASC_BETA_GROUP_ID:-}" ]; then
+  export ASC_BETA_GROUP_ID
+fi
+"$ROOT/ci_scripts/upload_xcarchive_with_api_key.sh"
