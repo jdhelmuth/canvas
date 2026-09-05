@@ -1,0 +1,38 @@
+{
+  "primary": "ios",
+  "java": 21,
+  "commands": {
+    "tools": [
+      {
+        "command": [
+          "python3",
+          "scripts/test-local-checks.py"
+        ]
+      },
+      {
+        "command": [
+          "python3",
+          "scripts/test_release_helpers.py"
+        ]
+      }
+    ],
+    "ios": [
+      {
+        "command": [
+          "xcodebuild",
+          "test",
+          "-project",
+          "Canvas.xcodeproj",
+          "-scheme",
+          "Canvas",
+          "-destination",
+          "{simulator}",
+          "-parallel-testing-enabled",
+          "NO",
+          "CODE_SIGNING_ALLOWED=NO"
+        ],
+        "timeout": 1200
+      }
+    ]
+  }
+}

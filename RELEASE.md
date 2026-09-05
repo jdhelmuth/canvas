@@ -63,3 +63,42 @@ Verified
 ## Rollback
 
 An App Store binary cannot be replaced with a lower build number. For a TestFlight problem, stop distribution and expire or remove the affected build from tester groups. For a released problem, pause a phased release if available, restore the last known-good source commit, apply only required compatibility fixes, assign a new higher marketing/build version, rerun every gate, and submit the replacement. Never roll back user data formats unless backward compatibility has been explicitly tested.
+
+## One distribution build per public release
+
+Use a single VALID, APP_STORE_ELIGIBLE build from **Manual Public Release**
+(`D16A6CAA-A322-4221-9514-9176789B9154`) for both internal TestFlight and App Review.
+Assign that exact build to the existing internal group (`e4cea94c-30af-456c-94df-862210490408`),
+verify the group assignment, and select the same build for submission.
+Submission is an App Store Connect action on an existing build, not a reason
+to start another archive or increment the build number.
+
+The **Default** workflow stays automatic for ordinary development merges and
+produces INTERNAL_ONLY builds. Those cannot be submitted to App Review. Start
+one public archive when a release needs a new eligible binary; reuse an existing
+eligible build when it already contains the exact release code.
+
+For an already-built release, integrate the exact, clean PR head with:
+
+```sh
+python3 scripts/check-local.py --merge-pr NUMBER --skip-cloud-build
+```
+
+This runs local checks, verifies the PR head and base have not moved, and adds
+`[ci skip]` to the actual squash commit. A marker only on a feature-branch
+commit does not survive an unmarked squash merge. For an authorized direct
+push, end the final main commit message with `[ci skip]` after validation.
+Preserve any existing website deployment marker separately.
+
+Reserve the next live build number once before the public archive, and keep
+that number when integrating already-built code. Do not create a newer internal
+build merely to submit, merge, update release notes, or close out a release.
+Do not toggle Default off and on around releases; use the commit marker.
+Do not remove newer TestFlight builds that contain intentional development work.
+
+After integration, read back Xcode Cloud runs to confirm the marked commit did
+not start another build, and verify the submitted build ID matches the release
+build assigned to TestFlight. Existing App Review submissions remain unchanged
+unless the user explicitly requests a replacement.
+
+Apple documents the skip directive in [Get the most out of Xcode Cloud](https://developer.apple.com/videos/play/wwdc2022/110374/).
