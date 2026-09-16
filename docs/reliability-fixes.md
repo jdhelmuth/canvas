@@ -69,5 +69,7 @@ Real-account Google-to-Apple mirroring, Apple cloud downloads/hidden assets, and
 the full fresh-install/upgrade TestFlight checklist remain release gates before
 App Review. Xcode Cloud build 62 is valid, App Store eligible, and available to
 the existing internal TestFlight group. App Review submission is still pending;
-see `release/1.0.1.md` for the provider evidence and the subsequent simulator
-infrastructure limitation while validating test-only corrections.
+see `release/1.0.1.md` for the provider evidence. After repairing sheet-scrolling
+assumptions in the UI tests and disabling optional verbose failure diagnostics,
+the complete local gate passed again on September 16: 219 unit tests, 14 UI
+tests, and 19 tooling tests. The archived production code is unchanged.

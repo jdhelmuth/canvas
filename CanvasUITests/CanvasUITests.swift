@@ -63,7 +63,11 @@ final class CanvasUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-preview"]
         app.launch()
-        app.buttons["settings"].tap()
+        let settings = app.buttons["settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let settingsReady = expectation(for: NSPredicate(format: "hittable == true"), evaluatedWith: settings)
+        wait(for: [settingsReady], timeout: 5)
+        settings.tap()
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
         app.staticTexts["Clock & Overlays"].tap()
 
@@ -76,9 +80,20 @@ final class CanvasUITests: XCTestCase {
 
         let conditions = app.switches["weather-condition-toggle"]
         let airQuality = app.switches["weather-air-quality-toggle"]
-        // Expanding the group can preserve the list near its lower rows. Return
-        // to the start of the weather choices before checking the defaults.
-        for _ in 0..<5 where !conditions.exists || !airQuality.exists { form.swipeDown() }
+        // Expansion may retain either the header or the last weather row.
+        // Start from a known anchor, then use short drags so inertia cannot
+        // skip the adjacent condition/AQI controls in a compact sheet.
+        let visibility = form.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Visibility")).firstMatch
+        for _ in 0..<12 where !visibility.exists { form.swipeDown() }
+        XCTAssertTrue(visibility.exists)
+        func advanceForm() {
+            form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                .press(forDuration: 0.1, thenDragTo: form.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+                ))
+        }
+        for _ in 0..<40 where !conditions.exists || !airQuality.exists { advanceForm() }
         XCTAssertTrue(conditions.waitForExistence(timeout: 3))
         XCTAssertTrue(airQuality.waitForExistence(timeout: 3))
         XCTAssertEqual(conditions.value as? String, "1")
@@ -87,13 +102,13 @@ final class CanvasUITests: XCTestCase {
         let humidity = app.switches["Humidity"]
         let wind = app.switches["Wind"]
         let dewPointScale = app.switches["weather-dew-point-scale-toggle"]
-        form.swipeUp()
         let weatherSize = app.sliders["Weather size-slider"]
-        XCTAssertTrue(weatherSize.waitForExistence(timeout: 3))
-        XCTAssertTrue(feelsLike.waitForExistence(timeout: 3))
-        XCTAssertTrue(humidity.waitForExistence(timeout: 3))
-        XCTAssertTrue(wind.waitForExistence(timeout: 3))
-        XCTAssertTrue(dewPointScale.waitForExistence(timeout: 3))
+        // A compact sheet cannot expose every weather row simultaneously.
+        // Verify each control in display order as it becomes visible.
+        for control in [feelsLike, humidity, wind, dewPointScale, weatherSize] {
+            for _ in 0..<20 where !control.exists { advanceForm() }
+            XCTAssertTrue(control.waitForExistence(timeout: 3))
+        }
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Weather settings"
         attachment.lifetime = .keepAlways
@@ -254,14 +269,19 @@ final class CanvasUITests: XCTestCase {
         let disabledExpectation = expectation(for: NSPredicate(format: "value == %@", "0"), evaluatedWith: emptyAlbumToggle)
         wait(for: [disabledExpectation], timeout: 2)
         XCTAssertEqual(emptyAlbumToggle.value as? String, "0")
-        app.buttons["Add or refresh a Google album"].tap()
+        let albumList = app.collectionViews.firstMatch
+        let googleImport = app.buttons["Add or refresh a Google album"]
+        for _ in 0..<6 where !googleImport.exists { albumList.swipeUp() }
+        XCTAssertTrue(googleImport.waitForExistence(timeout: 3))
+        googleImport.tap()
         XCTAssertTrue(app.navigationBars["Google Photos"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Open Google Photos"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "no Google OAuth client")).firstMatch.exists)
 
         let contributorGuidance = app.staticTexts["google-shared-contributor-guidance"]
         let additiveGuidance = app.staticTexts["google-additive-picker-guidance"]
-        for _ in 0..<6 where !contributorGuidance.exists || !additiveGuidance.exists { app.swipeUp() }
+        let importForm = app.collectionViews.firstMatch
+        for _ in 0..<6 where !contributorGuidance.exists || !additiveGuidance.exists { importForm.swipeUp() }
         XCTAssertTrue(contributorGuidance.waitForExistence(timeout: 3))
         XCTAssertTrue(additiveGuidance.waitForExistence(timeout: 3))
         XCTAssertTrue(contributorGuidance.label.contains("Save all"))
@@ -270,7 +290,7 @@ final class CanvasUITests: XCTestCase {
 
         let appleMirrorGuidance = app.staticTexts["google-apple-photos-mirror-guidance"]
         let fullAccessGuidance = app.staticTexts["google-apple-full-access-guidance"]
-        for _ in 0..<8 where !appleMirrorGuidance.exists || !fullAccessGuidance.exists { app.swipeUp() }
+        for _ in 0..<8 where !appleMirrorGuidance.exists || !fullAccessGuidance.exists { importForm.swipeUp() }
         XCTAssertTrue(appleMirrorGuidance.waitForExistence(timeout: 3))
         XCTAssertTrue(fullAccessGuidance.waitForExistence(timeout: 3))
         XCTAssertTrue(appleMirrorGuidance.label.contains("All Photos"))

@@ -18,6 +18,11 @@ python3 scripts/check-local.py --all --simulator-id '<IPAD-UDID>'
 
 Store distribution is in [RELEASE.md](RELEASE.md).
 
+Local checks keep test results and normal failure attachments but disable Xcode's
+verbose system-diagnostic collection, which can stall after a failed UI test.
+For a system-level investigation, rerun the reported `xcodebuild` command with
+`-collect-test-diagnostics on-failure` instead of `never`.
+
 ## Policies
 
 - [Privacy](https://jdhelmuth.github.io/canvas/privacy.html)

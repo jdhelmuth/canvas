@@ -29,6 +29,8 @@
           "{simulator}",
           "-parallel-testing-enabled",
           "NO",
+          "-collect-test-diagnostics",
+          "never",
           "CODE_SIGNING_ALLOWED=NO"
         ],
         "timeout": 1200
