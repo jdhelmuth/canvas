@@ -122,9 +122,9 @@ final class CanvasUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
         let window = app.windows.firstMatch
-        guard window.waitForExistence(timeout: 5), window.frame.width > window.frame.height else {
-            throw XCTSkip("The simulator did not expose a landscape app window for this UI run.")
-        }
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        let landscape = NSPredicate { _, _ in window.frame.width > window.frame.height }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: window)], timeout: 5), .completed)
 
         let clock = app.otherElements["canvas.clock.overlay"]
         let weather = app.otherElements["canvas.weather.overlay"]
@@ -138,6 +138,26 @@ final class CanvasUITests: XCTestCase {
         XCTAssertEqual(attribution.label, "Apple Weather legal attribution and data sources")
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Clock and weather overlay"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testConnectedStationShowsOnlyPWSConditionsEvenWithLegacyLocalForecast() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame", "--canvas-ui-store-weather-station"]
+        app.launch()
+        let weather = app.otherElements["canvas.weather.overlay"]
+        XCTAssertTrue(weather.waitForExistence(timeout: 5))
+        let conditions = weather.descendants(matching: .any).matching(identifier: "canvas.weather.conditions")
+        XCTAssertEqual(conditions.count, 1)
+        XCTAssertTrue(conditions.firstMatch.label.contains("59.4"))
+        XCTAssertTrue(weather.staticTexts["Ambient station"].exists)
+        XCTAssertFalse(weather.staticTexts["Near this iPad"].exists)
+        XCTAssertFalse(weather.buttons["apple-weather-attribution-link"].exists)
+        XCTAssertTrue(weather.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Air quality index 32")).firstMatch.exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "PWS is the only weather source"
         attachment.lifetime = .keepAlways
         add(attachment)
     }

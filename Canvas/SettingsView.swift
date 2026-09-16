@@ -385,8 +385,12 @@ struct SettingsView: View {
             DisclosureGroup(isExpanded: overlayGroupBinding(.weather)) {
                 Toggle("Current weather (opt-in)", isOn: binding(\.overlays.showWeather))
                 if store.settings.overlays.showWeather {
-                    Picker("Weather source", selection: weatherSourceBinding) {
-                        ForEach(CanvasWeatherSource.allCases) { Text($0.title).tag($0) }
+                    if store.settings.effectiveAmbientDeviceMAC != nil {
+                        LabeledContent("Weather source", value: "Ambient station")
+                    } else {
+                        Picker("Weather source", selection: weatherSourceBinding) {
+                            ForEach(CanvasWeatherSource.allCases) { Text($0.title).tag($0) }
+                        }
                     }
                     if store.settings.effectiveWeatherSource == .ambientStation {
                         VStack(alignment: .leading, spacing: 8) {
@@ -423,13 +427,16 @@ struct SettingsView: View {
                                 Button("Save & find stations") { saveAmbientConnection() }
                                     .buttonStyle(.borderedProminent)
                                     .accessibilityIdentifier("save-ambient-connection")
-                                if CanvasAmbientCredentialStore.loadAPIKey() != nil {
-                                    Button("Forget key", role: .destructive) {
+                                if CanvasAmbientCredentialStore.loadAPIKey() != nil || store.settings.effectiveAmbientDeviceMAC != nil {
+                                    Button("Disconnect station", role: .destructive) {
                                         ambientAPIKey = ""
                                         CanvasAmbientCredentialStore.clearAPIKey()
                                         ambientStations = []
                                         ambientStationsError = nil
-                                        store.settingsStore.update { $0.ambientDeviceMAC = nil }
+                                        store.settingsStore.update {
+                                            $0.ambientDeviceMAC = nil
+                                            $0.weatherSource = .weatherKit
+                                        }
                                         CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
                                         store.weather.update(showWeather: true)
                                     }
@@ -440,7 +447,7 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
                     weatherStatusRow
-                    Text("The minimal layout shows current conditions and AQI. Ambient station readings are shown separately from forecasts and air quality near this iPad.")
+                    Text("A connected Ambient station supplies the weather. Apple Weather is used only when no station is connected. Air quality is measured near this iPad.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Toggle(
@@ -759,7 +766,10 @@ struct SettingsView: View {
 
     private func saveAmbientConnection() {
         CanvasAmbientCredentialStore.saveAPIKey(ambientAPIKey)
-        store.settingsStore.update { $0.ambientDeviceMAC = nil }
+        store.settingsStore.update {
+            $0.ambientDeviceMAC = nil
+            $0.weatherSource = .ambientStation
+        }
         CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
         ambientStations = []
         ambientStationsError = nil

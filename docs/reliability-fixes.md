@@ -15,8 +15,8 @@ version 1.0 (61); release preparation subsequently advanced to 1.0.1 (62).
 | 5. Weather crosses station/account boundaries | Provider, hashed account identity, and station identify requests/cache; configuration changes invalidate old publication. Cached location is checked separately. | Delayed provider/configuration race and cache isolation tests. |
 | 6. Weather reuses an old iPad location | Foregrounding reacquires location; normal refresh uses a 15-minute age policy. Initial unchanged OS authorization callbacks do not queue duplicate requests. | Location-age and injected-location callback regressions. |
 | 7. Old weather/AQI looks current | Weather shows observation time and cached/stale state. AQI has its own checked time and expires after two hours, including during uninterrupted display. | Freshness labels, AQI expiry, and cache tests. |
-| 8. Station timestamps govern unrelated data | Station measurements, local forecast, and AQI retain independent timestamps and update independently. Missing station timestamps remain unknown. | Unchanged/missing station timestamp with fresh local data tests. |
-| 9. Remote station and local forecast are mixed | The overlay separates “Ambient station” from “Near this iPad.” Local forecast fields no longer fill station measurements. | Provider separation and merge tests; no station-coordinate assumption. |
+| 8. Station timestamps govern unrelated data | Station measurements and AQI retain independent timestamps. Missing station timestamps remain unknown; legacy local forecasts stay separate in cached data and are not displayed. | Unchanged/missing station timestamp, AQI freshness, and legacy cache tests. |
+| 9. Remote station and local forecast are mixed | A connected PWS is the sole weather source. Apple Weather is used only without a station; no local forecast fetch or duplicate conditions block accompanies PWS readings. | Station provider and connected/disconnected selection tests plus a UI regression with a legacy cached local forecast. |
 | 10. Navigation scales quadratically | Pair selection checks adjacent items; group traversal is linear without repeated suffix copies. | Existing navigation tests, mixed-boundary regression, and matched before/after benchmark. |
 | 11. Audio ignores schedule/power restrictions | Audio shares effective presentation, scene, schedule, power, and user-playback permission. Interruption recovery respects that permission. | Gate, pause/interruption, stale completion, sequential playlist, and shuffle tests. |
 | 12. Hidden-items option is ineffective | PhotoKit fetch options explicitly receive the hidden-items setting. | Fetch-option regression. |
@@ -28,10 +28,10 @@ version 1.0 (61); release preparation subsequently advanced to 1.0.1 (62).
 ## Additional repairs
 
 - Local imported images use ImageIO downsampling with EXIF orientation. A 2,200 × 2,200 bundled image used 19,360,000 decoded bytes at full size versus 1,960,000 bytes at a 700-pixel target (about 90% less). The 1,800-pixel target used 12,960,000 bytes (about 33% less). These are decoded-image measurements, not whole-process memory measurements.
-- Ambient local forecast enrichment uses a separate 15-minute cache without refreshing the original observation timestamp.
+- Ambient requests only station readings; AirNow AQI retains its separate cache and observation timestamp.
 - Unreadable settings preserve a recovery copy and surface a notice. Future-schema settings cannot be overwritten by this version. An unreadable Google album index no longer prunes saved album selections.
 - Background audio plays an entire nonrepeating playlist once and visits each shuffled track once per cycle.
-- Privacy documentation describes the Ambient credential/station proxy and separate iPad-local weather. README documents selecting a dedicated test simulator.
+- Privacy documentation describes the Ambient credential/station proxy and PWS precedence with separate iPad-local AQI. README documents selecting a dedicated test simulator.
 
 ## Performance verification
 

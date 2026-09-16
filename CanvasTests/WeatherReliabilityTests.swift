@@ -31,6 +31,17 @@ final class WeatherReliabilityTests: XCTestCase {
         throw NSError(domain: "WeatherReliabilityTests", code: 1)
     }
 
+    func testConnectedStationOverridesSavedAppleWeatherPreferenceAndDisconnectRestoresFallback() throws {
+        var settings = CanvasSettings()
+        XCTAssertEqual(settings.effectiveWeatherSource, .weatherKit)
+        settings.ambientDeviceMAC = "00:10:FA:AA:BB:CC"
+        XCTAssertEqual(settings.effectiveWeatherSource, .ambientStation)
+        let restored = try JSONDecoder().decode(CanvasSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(restored.effectiveWeatherSource, .ambientStation)
+        settings.ambientDeviceMAC = nil
+        XCTAssertEqual(settings.effectiveWeatherSource, .weatherKit)
+    }
+
     func testStationSwitchCancelsOldPublicationAndAcceptsOlderNewStation() async throws {
         let provider = ControlledWeatherProvider()
         var current = configuration()
@@ -117,12 +128,6 @@ final class WeatherReliabilityTests: XCTestCase {
         XCTAssertNil(service.snapshot?.removingExpiredAirQuality(at: observationTime.addingTimeInterval(7201)).airQualityIndex)
     }
 
-    func testEnrichmentDoesNotInventStationTimestamp() {
-        let station = CanvasWeatherSnapshot(symbolName: "cloud.fill", condition: "Unknown", temperature: "50°F", updatedAt: .distantPast)
-        let fallback = CanvasWeatherSnapshot(symbolName: "sun.max.fill", condition: "Sunny", temperature: "90°F", updatedAt: .now)
-        XCTAssertEqual(station.fillingMissingFields(from: fallback).updatedAt, .distantPast)
-    }
-
     func testStationAndLocalForecastRemainDistinctAfterCoding() throws {
         let stationTime = Date(timeIntervalSince1970: 1000)
         let forecastTime = Date(timeIntervalSince1970: 2000)
@@ -153,18 +158,17 @@ final class WeatherReliabilityTests: XCTestCase {
         XCTAssertNil(CanvasWeatherFreshnessPolicy.label(snapshot: recent, source: .weatherKit, status: .live, at: now))
     }
 
-    func testAmbientProviderKeepsRemoteMeasurementsSeparateFromLocalWeather() async throws {
+    func testAmbientProviderReturnsOnlyStationWeather() async throws {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.protocolClasses = [WeatherReliabilityURLProtocol.self]
         let session = URLSession(configuration: sessionConfiguration)
         defer { session.invalidateAndCancel() }
-        let fallback = SequenceWeatherProvider([result("90°F", time: .now)])
-        let provider = AmbientWeatherCanvasProvider(apiKey: "test-key", deviceMAC: "00:10:FA:AA:BB:CC", baseURL: URL(string: "https://weather.test")!, session: session, defaults: defaults(), weatherKitFallback: fallback)
+        let provider = AmbientWeatherCanvasProvider(apiKey: "test-key", deviceMAC: "00:10:FA:AA:BB:CC", baseURL: URL(string: "https://weather.test")!, session: session, defaults: defaults())
         let response = try await provider.currentWeather(for: location)
         XCTAssertEqual(response.snapshot.temperature, "50.0°F")
         XCTAssertEqual(response.snapshot.condition, "Conditions unavailable")
-        XCTAssertEqual(response.snapshot.localForecast?.temperature, "90.0°F")
-        XCTAssertEqual(response.snapshot.updatedAt, .distantPast, "A missing station time must remain unknown after enrichment")
+        XCTAssertNil(response.snapshot.localForecast)
+        XCTAssertEqual(response.snapshot.updatedAt, .distantPast, "A missing station time must remain unknown without Apple Weather enrichment")
     }
 
     func testExpiredEnrichmentCacheActuallyRefreshes() async throws {

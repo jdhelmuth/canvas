@@ -216,41 +216,6 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
 
     var displayText: String { conditionsText }
 
-    /// Fills only fields that are absent from an Ambient station reading.
-    /// Ambient remains authoritative for every value it supplied, including
-    /// values that disagree with WeatherKit. The station does not report a
-    /// sky-condition description, so the WeatherKit condition and symbol are
-    /// used when that optional enrichment succeeds.
-    func fillingMissingFields(from fallback: Self) -> Self {
-        Self(
-            symbolName: fallback.symbolName,
-            condition: fallback.condition,
-            temperature: temperature == "—" ? fallback.temperature : temperature,
-            apparentTemperature: apparentTemperature ?? fallback.apparentTemperature,
-            humidityPercent: humidityPercent ?? fallback.humidityPercent,
-            wind: wind ?? fallback.wind,
-            uvIndex: uvIndex ?? fallback.uvIndex,
-            dewPoint: dewPoint ?? fallback.dewPoint,
-            dewPointF: dewPointF ?? fallback.dewPointF,
-            pressure: pressure ?? fallback.pressure,
-            rainRate: rainRate ?? fallback.rainRate,
-            solarRadiation: solarRadiation ?? fallback.solarRadiation,
-            precipitationChancePercent: precipitationChancePercent ?? fallback.precipitationChancePercent,
-            rainToday: rainToday ?? fallback.rainToday,
-            highTemperature: highTemperature ?? fallback.highTemperature,
-            lowTemperature: lowTemperature ?? fallback.lowTemperature,
-            sunrise: sunrise ?? fallback.sunrise,
-            sunset: sunset ?? fallback.sunset,
-            nextHourSymbolName: nextHourSymbolName ?? fallback.nextHourSymbolName,
-            nextHourTemperature: nextHourTemperature ?? fallback.nextHourTemperature,
-            nextHourCondition: nextHourCondition ?? fallback.nextHourCondition,
-            airQualityIndex: airQualityIndex,
-            airQualityUpdatedAt: airQualityUpdatedAt,
-            localForecast: localForecast,
-            updatedAt: updatedAt
-        )
-    }
-
     func addingAirQualityIndex(_ value: Int?, observedAt: Date? = nil) -> Self {
         var copy = self
         copy.airQualityIndex = value
@@ -644,8 +609,8 @@ struct CanvasAmbientCurrentResponse: Decodable, Sendable, Equatable {
     let reading: CanvasAmbientReading?
 }
 
-/// Ambient supplies station measurements. Device-local WeatherKit enrichment
-/// stays in a separate section because the proxy does not supply station coordinates.
+/// A connected station is the sole weather provider. Apple Weather is used
+/// only by the unconnected configuration; station failures never mix sources.
 struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
     let apiKey: String
     let deviceMAC: String?
@@ -658,18 +623,14 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
         deviceMAC: String? = nil,
         baseURL: URL = URL(string: "https://myclimateiq.com")!,
         session: URLSession = .shared,
-        defaults: UserDefaults = .standard,
-        weatherKitFallback: CanvasWeatherProviding = CachedCanvasLocalWeatherProvider()
+        defaults: UserDefaults = .standard
     ) {
         self.apiKey = apiKey
         self.deviceMAC = deviceMAC
         self.baseURL = baseURL
         self.session = session
         self.defaults = defaults
-        self.weatherKitFallback = weatherKitFallback
     }
-
-    let weatherKitFallback: CanvasWeatherProviding
 
     func currentWeather(for location: CLLocation) async throws -> CanvasWeatherProviderResult {
         let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -706,22 +667,7 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
             throw CanvasAmbientWeatherProviderError.noReading
         }
 
-        let ambientResult = Self.result(from: reading)
-        guard let fallback = try? await weatherKitFallback.currentWeather(for: location) else {
-            // A WeatherKit failure must never hide a valid station reading.
-            return ambientResult
-        }
-
-        return CanvasWeatherProviderResult(
-            snapshot: {
-                var station = ambientResult.snapshot
-                station.localForecast = CanvasWeatherLocalForecast(fallback.snapshot, station: station)
-                return station
-            }(),
-            // Both providers remain visibly attributed by the weather widget.
-            attributionURL: ambientResult.attributionURL,
-            attributionMarkURL: ambientResult.attributionMarkURL
-        )
+        return Self.result(from: reading)
     }
 
     /// Returns the stations available to the current Ambient account. This is
@@ -1665,7 +1611,17 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         cancelActiveRefresh()
         weatherEnabled = true
         snapshot = .preview
-        attributionURL = URL(string: "https://weatherkit.apple.com/legal-attribution.html")
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather-station") {
+            snapshot = CanvasWeatherSnapshot(
+                symbolName: "cloud.fill", condition: "Conditions unavailable", temperature: "59.4°F",
+                apparentTemperature: "59.4°F", humidityPercent: 98, dewPoint: "59.1°F", dewPointF: 59.1,
+                rainToday: "0.00 in", airQualityIndex: 32, airQualityUpdatedAt: .now,
+                localForecast: CanvasWeatherLocalForecast(.preview), updatedAt: .now
+            )
+        }
+        attributionURL = URL(string: configurationProvider().source == .ambientStation
+            ? "https://ambientweather.com/faqs/question/view/id/1811/"
+            : "https://weatherkit.apple.com/legal-attribution.html")
         attributionMarkURL = nil
         errorMessage = nil
         isLoading = false

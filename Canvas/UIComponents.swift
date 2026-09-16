@@ -344,38 +344,19 @@ struct WeatherOverlayWidget: View {
                         conditions(snapshot)
                     }
 
-                    if !metrics(for: stationDisplay(snapshot)).isEmpty {
+                    if !metrics(for: snapshot).isEmpty {
                         LazyVGrid(
                             columns: [GridItem(.adaptive(minimum: 92, maximum: 168), spacing: 6)],
                             alignment: .leading,
                             spacing: 6
                         ) {
-                            ForEach(metrics(for: stationDisplay(snapshot))) { metric in
+                            ForEach(metrics(for: snapshot)) { metric in
                                 metricChip(metric)
                             }
                         }
                     }
 
                     nextHour(snapshot)
-                    if weatherSource == .ambientStation,
-                       snapshot.localForecast != nil || snapshot.airQualityIndex != nil {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Near this iPad")
-                                .font(.caption.weight(.semibold))
-                            let local = localDisplay(snapshot)
-                            if snapshot.localForecast != nil, settings.effectiveWeatherShowConditions {
-                                conditions(local)
-                            }
-                            if let freshness = CanvasWeatherFreshnessPolicy.label(snapshot: local, source: .weatherKit, status: status, at: context.date), snapshot.localForecast != nil {
-                                Text(freshness).font(.caption2)
-                            }
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92, maximum: 168), spacing: 6)], spacing: 6) {
-                                ForEach(metrics(for: local)) { metric in metricChip(metric) }
-                            }
-                            nextHour(local)
-                        }
-                        .padding(.top, 6)
-                    }
                     if let date = snapshot.airQualityUpdatedAt, settings.effectiveWeatherShowAirQuality, snapshot.airQualityIndex != nil {
                         Text("AQI checked " + date.formatted(date: .omitted, time: .shortened))
                             .font(.caption2)
@@ -403,16 +384,6 @@ struct WeatherOverlayWidget: View {
         .accessibilityIdentifier("canvas.weather.overlay")
     }
 
-    private func stationDisplay(_ snapshot: CanvasWeatherSnapshot) -> CanvasWeatherSnapshot {
-        weatherSource == .ambientStation ? snapshot.addingAirQualityIndex(nil) : snapshot
-    }
-
-    private func localDisplay(_ snapshot: CanvasWeatherSnapshot) -> CanvasWeatherSnapshot {
-        let forecast = snapshot.localForecast?.snapshot
-            ?? CanvasWeatherSnapshot(symbolName: "location", condition: "", temperature: "—", updatedAt: .distantPast)
-        return forecast.addingAirQualityIndex(snapshot.airQualityIndex, observedAt: snapshot.airQualityUpdatedAt)
-    }
-
     @ViewBuilder
     private func nextHour(_ snapshot: CanvasWeatherSnapshot) -> some View {
         if settings.effectiveWeatherShowNextHour,
@@ -433,19 +404,22 @@ struct WeatherOverlayWidget: View {
 
     private func conditions(_ snapshot: CanvasWeatherSnapshot) -> some View {
         let glyphDiameter = min(max(38, weatherSize * 1.85), 62)
+        let hasCondition = snapshot.condition != "Conditions unavailable"
 
         return HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .center, spacing: 0) {
                 WeatherConditionGlyph(
-                    symbolName: snapshot.symbolName,
+                    symbolName: hasCondition ? snapshot.symbolName : "thermometer.medium",
                     diameter: glyphDiameter
                 )
-                Text(snapshot.condition)
-                    .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
-                    .foregroundStyle(.white.opacity(textOpacity * 0.78))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .frame(width: glyphDiameter * 1.28)
+                if hasCondition {
+                    Text(snapshot.condition)
+                        .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                        .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .frame(width: glyphDiameter * 1.28)
+                }
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(snapshot.temperature)
@@ -454,7 +428,7 @@ struct WeatherOverlayWidget: View {
                     .overlayTextStroke(settings: settings, mediaImage: mediaImage, opacity: textOpacity)
                 if settings.effectiveWeatherShowFeelsLike,
                    let apparentTemperature = snapshot.apparentTemperature {
-                    Text(apparentTemperature)
+                    Text("Feels like \(apparentTemperature)")
                         .font(.system(size: min(max(15, weatherSize * 0.78), 30), weight: .medium, design: .rounded))
                         .fontWidth(.condensed)
                         .foregroundStyle(.white.opacity(textOpacity * 0.78))
@@ -465,6 +439,7 @@ struct WeatherOverlayWidget: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(conditionsAccessibilityLabel(for: snapshot))
+        .accessibilityIdentifier("canvas.weather.conditions")
     }
 
     private func conditionsAccessibilityLabel(for snapshot: CanvasWeatherSnapshot) -> String {
@@ -791,7 +766,9 @@ struct WeatherDataAttributionView: View {
             if weatherSource == .ambientStation {
                 Link("Ambient Weather", destination: URL(string: "https://ambientweather.com/faqs/question/view/id/1811/")!)
             }
-            WeatherLegalLink(destination: weatherSource == .weatherKit ? weatherDestination : nil)
+            if weatherSource == .weatherKit {
+                WeatherLegalLink(destination: weatherDestination)
+            }
             if showsAirQuality {
                 Link("AQI: AirNow · preliminary", destination: AirQualityLegalLink.destination)
                     .accessibilityLabel("Preliminary air quality data from AirNow")

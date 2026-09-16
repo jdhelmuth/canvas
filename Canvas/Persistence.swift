@@ -199,6 +199,8 @@ final class AppStore: ObservableObject {
             settingsStore.settings.overlays = overlays
         }
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather-station") {
+            settingsStore.settings.weatherSource = .ambientStation
+            settingsStore.settings.ambientDeviceMAC = "00:10:FA:AA:BB:CC"
             var overlays = settingsStore.settings.overlays
             overlays.showTime = true
             overlays.showWeather = true

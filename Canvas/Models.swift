@@ -823,7 +823,10 @@ struct CanvasSettings: Codable, Equatable {
         framingMode ?? (fitMode ? .fitWithBorder : .fillZoom)
     }
 
-    var effectiveWeatherSource: CanvasWeatherSource { weatherSource ?? .weatherKit }
+    var effectiveWeatherSource: CanvasWeatherSource {
+        // A saved station takes precedence over an older Apple Weather preference.
+        effectiveAmbientDeviceMAC != nil ? .ambientStation : (weatherSource ?? .weatherKit)
+    }
     var effectiveAmbientDeviceMAC: String? {
         guard let value = ambientDeviceMAC?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
         return value
