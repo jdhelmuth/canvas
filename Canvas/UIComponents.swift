@@ -327,42 +327,59 @@ struct WeatherOverlayWidget: View {
     }
 
     var body: some View {
-        Group {
-            if let snapshot {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let snapshot = snapshot?.removingExpiredAirQuality(at: context.date) {
                 VStack(alignment: .leading, spacing: 8) {
+                    if weatherSource == .ambientStation {
+                        Text("Ambient station")
+                            .font(.caption.weight(.semibold))
+                    }
+                    if let freshness = CanvasWeatherFreshnessPolicy.label(snapshot: snapshot, source: weatherSource, status: status, at: context.date) {
+                        Text(freshness)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(textOpacity * 0.8))
+                    }
+
                     if settings.effectiveWeatherShowConditions {
                         conditions(snapshot)
                     }
 
-                    if !metrics(for: snapshot).isEmpty {
+                    if !metrics(for: stationDisplay(snapshot)).isEmpty {
                         LazyVGrid(
                             columns: [GridItem(.adaptive(minimum: 92, maximum: 168), spacing: 6)],
                             alignment: .leading,
                             spacing: 6
                         ) {
-                            ForEach(metrics(for: snapshot)) { metric in
+                            ForEach(metrics(for: stationDisplay(snapshot))) { metric in
                                 metricChip(metric)
                             }
                         }
                     }
 
-                    if settings.effectiveWeatherShowNextHour,
-                       let temperature = snapshot.nextHourTemperature,
-                       let condition = snapshot.nextHourCondition {
-                        HStack(spacing: 7) {
-                            WeatherConditionGlyph(
-                                symbolName: snapshot.nextHourSymbolName ?? "clock",
-                                diameter: 22
-                            )
-                            Text("Next hour")
-                                .fontWeight(.semibold)
-                            Text("\(temperature) · \(condition)")
-                                .foregroundStyle(.white.opacity(textOpacity * 0.78))
-                                .lineLimit(1)
+                    nextHour(snapshot)
+                    if weatherSource == .ambientStation,
+                       snapshot.localForecast != nil || snapshot.airQualityIndex != nil {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Near this iPad")
+                                .font(.caption.weight(.semibold))
+                            let local = localDisplay(snapshot)
+                            if snapshot.localForecast != nil, settings.effectiveWeatherShowConditions {
+                                conditions(local)
+                            }
+                            if let freshness = CanvasWeatherFreshnessPolicy.label(snapshot: local, source: .weatherKit, status: status, at: context.date), snapshot.localForecast != nil {
+                                Text(freshness).font(.caption2)
+                            }
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92, maximum: 168), spacing: 6)], spacing: 6) {
+                                ForEach(metrics(for: local)) { metric in metricChip(metric) }
+                            }
+                            nextHour(local)
                         }
-                        .font(.system(size: max(12, weatherSize * 0.48), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Next hour, \(temperature), \(condition)")
+                        .padding(.top, 6)
+                    }
+                    if let date = snapshot.airQualityUpdatedAt, settings.effectiveWeatherShowAirQuality, snapshot.airQualityIndex != nil {
+                        Text("AQI checked " + date.formatted(date: .omitted, time: .shortened))
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(textOpacity * 0.8))
                     }
 
                     WeatherDataAttributionView(
@@ -384,6 +401,34 @@ struct WeatherOverlayWidget: View {
         }
         .foregroundStyle(.white.opacity(textOpacity))
         .accessibilityIdentifier("canvas.weather.overlay")
+    }
+
+    private func stationDisplay(_ snapshot: CanvasWeatherSnapshot) -> CanvasWeatherSnapshot {
+        weatherSource == .ambientStation ? snapshot.addingAirQualityIndex(nil) : snapshot
+    }
+
+    private func localDisplay(_ snapshot: CanvasWeatherSnapshot) -> CanvasWeatherSnapshot {
+        let forecast = snapshot.localForecast?.snapshot
+            ?? CanvasWeatherSnapshot(symbolName: "location", condition: "", temperature: "—", updatedAt: .distantPast)
+        return forecast.addingAirQualityIndex(snapshot.airQualityIndex, observedAt: snapshot.airQualityUpdatedAt)
+    }
+
+    @ViewBuilder
+    private func nextHour(_ snapshot: CanvasWeatherSnapshot) -> some View {
+        if settings.effectiveWeatherShowNextHour,
+           let temperature = snapshot.nextHourTemperature,
+           let condition = snapshot.nextHourCondition {
+            HStack(spacing: 7) {
+                WeatherConditionGlyph(symbolName: snapshot.nextHourSymbolName ?? "clock", diameter: 22)
+                Text("Next hour").fontWeight(.semibold)
+                Text("\(temperature) · \(condition)")
+                    .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                    .lineLimit(1)
+            }
+            .font(.system(size: max(12, weatherSize * 0.48), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Next hour, \(temperature), \(condition)")
+        }
     }
 
     private func conditions(_ snapshot: CanvasWeatherSnapshot) -> some View {

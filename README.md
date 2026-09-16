@@ -11,9 +11,9 @@ Canvas Slideshow is a native iPadOS photo frame. It reads the Apple Photos album
 Bundle ID: `com.johnhelmuth.canvas`. Google Photos Picker is optional; set `GOOGLE_PHOTOS_CLIENT_ID` and `GOOGLE_PHOTOS_CALLBACK_SCHEME` in `project.yml`.
 
 ```text
-xcodebuild -project Canvas.xcodeproj -scheme Canvas \
-  -destination 'generic/platform=iOS Simulator' test \
-  CODE_SIGNING_ALLOWED=NO
+xcrun simctl list devices available
+# Choose a dedicated iPad's UDID from that list:
+python3 scripts/check-local.py --all --simulator-id '<IPAD-UDID>'
 ```
 
 Store distribution is in [RELEASE.md](RELEASE.md).

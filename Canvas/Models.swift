@@ -720,7 +720,7 @@ struct CanvasFilters: Codable, Equatable {
     var endDate: Date?
     var excludedAssetIDs: Set<String> = []
 
-    func accepts(_ asset: MediaDescriptor) -> Bool {
+    func accepts(_ asset: MediaDescriptor, calendar: Calendar = .current) -> Bool {
         let legacyID = asset.id.hasPrefix("apple:") ? String(asset.id.dropFirst("apple:".count)) : asset.id
         guard !excludedAssetIDs.contains(asset.id), !excludedAssetIDs.contains(legacyID) else { return false }
         switch asset.kind {
@@ -731,8 +731,23 @@ struct CanvasFilters: Codable, Equatable {
         if !includeBursts && asset.isBurst { return false }
         if locationTaggedOnly && !asset.hasLocation { return false }
         if favoritesOnly && !asset.isFavorite { return false }
-        if let startDate, let date = asset.creationDate, date < startDate { return false }
-        if let endDate, let date = asset.creationDate, date > endDate { return false }
+        return CaptureDateRange.contains(asset.creationDate, from: startDate, through: endDate, calendar: calendar)
+    }
+}
+
+enum CaptureDateRange {
+    /// The controls select calendar days, so the upper bound is the start of
+    /// the following day, not the invisible time retained by a date picker.
+    static func contains(_ date: Date?, from start: Date?, through end: Date?, calendar: Calendar = .current) -> Bool {
+        guard start != nil || end != nil else { return true }
+        guard let date else { return false }
+        var lower = start.map { calendar.startOfDay(for: $0) }
+        var upper = end.map { calendar.startOfDay(for: $0) }
+        if let a = lower, let b = upper, a > b { lower = b; upper = a }
+        if let lower, date < lower { return false }
+        if let upper {
+            guard let exclusiveEnd = calendar.date(byAdding: .day, value: 1, to: upper), date < exclusiveEnd else { return false }
+        }
         return true
     }
 }

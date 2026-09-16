@@ -979,8 +979,13 @@ enum PlaybackGroupResolver {
             // The renderer cannot repair a mixed group after the queue has
             // already loaded both assets, and Back/Next would otherwise skip
             // or replay the landscape that was incorrectly used as a tile.
-            let boundary = imageSizes.indices.first(where: { $0 > currentIndex && singleMediaIndices.contains($0) }) ?? imageSizes.count
-            let suffix = Array(imageSizes[currentIndex..<boundary])
+            // PairLayoutResolver only needs the current item and its immediate
+            // neighbor. Scanning/copying the remaining library per group made
+            // every navigation quadratic for large photo libraries.
+            let next = currentIndex + 1
+            let end = next < imageSizes.count && !singleMediaIndices.contains(next)
+                ? next + 1 : next
+            let suffix = Array(imageSizes[currentIndex..<end])
             let requestedLayout: LayoutStyle? = layout == .pairHorizontal || layout == .pairVertical ? layout : nil
             let local = PairLayoutResolver.selection(
                 imageSizes: suffix,
@@ -1049,17 +1054,9 @@ enum PlaybackGroupResolver {
             singleMediaIndices: singleMediaIndices
         )
         guard !starts.isEmpty else { return nil }
-        let currentStart = starts.last(where: { start in
-            let group = selection(
-                imageSizes: imageSizes,
-                currentIndex: start,
-                layout: layout,
-                canvasSize: canvasSize,
-                singleMediaIndices: singleMediaIndices
-            )
-            return group.indices.contains(currentIndex)
-        }) ?? starts.last(where: { $0 <= currentIndex }) ?? starts[0]
-        guard let position = starts.firstIndex(of: currentStart) else { return starts[0] }
+        // Groups are contiguous, non-overlapping ranges. Their starts are
+        // enough to locate the current group without resolving them again.
+        let position = starts.lastIndex(where: { $0 <= currentIndex }) ?? 0
 
         if direction > 0 {
             if position + 1 < starts.count { return starts[position + 1] }

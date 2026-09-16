@@ -2931,7 +2931,7 @@ final class CanvasTests: XCTestCase {
                 markerVerifiedAlbumIDs: ["same-album-new-identifier"],
                 exactEditableAlbumIDs: ["same-album-new-identifier"]
             ),
-            .reuse("same-album-new-identifier")
+            .failRemoved
         )
         XCTAssertEqual(
             GooglePhotosMirrorAlbumResolutionPolicy.resolve(
@@ -2951,7 +2951,7 @@ final class CanvasTests: XCTestCase {
                 markerVerifiedAlbumIDs: ["marker-verified"],
                 exactEditableAlbumIDs: ["unique-exact"]
             ),
-            .reuse("marker-verified")
+            .failOwnershipUnverified
         )
         XCTAssertEqual(
             GooglePhotosMirrorAlbumResolutionPolicy.resolve(
@@ -2981,7 +2981,7 @@ final class CanvasTests: XCTestCase {
                 markerVerifiedAlbumIDs: ["marker-a", "marker-b"],
                 exactEditableAlbumIDs: ["marker-a", "marker-b"]
             ),
-            .failAmbiguous
+            .failOwnershipUnverified
         )
         XCTAssertEqual(
             GooglePhotosMirrorAlbumResolutionPolicy.resolve(

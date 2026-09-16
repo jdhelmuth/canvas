@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,8 +60,25 @@ class PreflightHelperTests(unittest.TestCase):
         self.assertFalse(preflight.INTEGER_BUILD.fullmatch(""))
 
     def test_missing_connect_credentials_lists_required_names(self) -> None:
-        self.assertIn("ASC_APP_ID", preflight.missing_connect_credentials())
-        self.assertIn("ASC_PRIVATE_KEY", preflight.missing_connect_credentials())
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIn("ASC_APP_ID", preflight.missing_connect_credentials())
+            self.assertIn("ASC_PRIVATE_KEY", preflight.missing_connect_credentials())
+
+    def test_missing_credentials_stop_preflight_before_build_or_network(self) -> None:
+        with patch.dict(os.environ, {}, clear=True), \
+             patch.object(preflight, "show_build_settings") as build, \
+             patch.object(preflight, "latest_uploaded_build") as network:
+            with self.assertRaisesRegex(preflight.PreflightError, "cannot verify uploaded builds"):
+                preflight.main([])
+            build.assert_not_called()
+            network.assert_not_called()
+
+    def test_cli_fails_when_credentials_are_missing(self) -> None:
+        env = {key: value for key, value in os.environ.items() if not key.startswith("ASC_")}
+        result = subprocess.run([sys.executable, str(SCRIPTS / "app_store_build_preflight.py")],
+                                env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("No release validation was performed", result.stderr)
 
     def test_config_string_requires_non_empty_strings(self) -> None:
         self.assertEqual(preflight.config_string({"scheme": "Canvas"}, "scheme"), "Canvas")

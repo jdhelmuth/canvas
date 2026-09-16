@@ -13,68 +13,177 @@ enum AudioPlaybackIndexPolicy {
     }
 }
 
+/// The same playback operations serve real audio files and deterministic
+/// lifecycle tests without needing to activate the device audio session.
+protocol CanvasAudioPlayer: AnyObject {
+    var volume: Float { get set }
+    var currentTime: TimeInterval { get set }
+    @discardableResult func play() -> Bool
+    func pause()
+    func stop()
+}
+
+extension AVAudioPlayer: CanvasAudioPlayer {}
+
 @MainActor
 final class AudioService: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
-    private var players: [AVAudioPlayer] = []
-    private var index = 0
+    private var players: [any CanvasAudioPlayer] = []
+    private var order: [Int] = []
+    private var orderPosition = 0
+    private var playlistFinished = false
     private var settings: CanvasSettings = .init()
+    private var playbackAllowed = false
+    private var ownsActiveSession = false
+    private var wantsPlayback = false
+    private var interrupted = false
+    private var resumeAfterInterruption = false
+    private let playerFactory: (URL) -> (any CanvasAudioPlayer)?
+    private let activateSession: (Bool) -> Void
     private var interruptionObserver: NSObjectProtocol?
 
-    override init() {
+    init(
+        playerFactory: @escaping (URL) -> (any CanvasAudioPlayer)? = { try? AVAudioPlayer(contentsOf: $0) },
+        activateSession: @escaping (Bool) -> Void = { active in
+            let session = AVAudioSession.sharedInstance()
+            if active { try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers]) }
+            try? session.setActive(active, options: active ? [] : .notifyOthersOnDeactivation)
+        }
+    ) {
+        self.playerFactory = playerFactory
+        self.activateSession = activateSession
         super.init()
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
-            guard let typeValue = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: typeValue), type == .ended else { return }
-            Task { @MainActor in if self?.settings.backgroundAudio == .localFiles, self?.settings.videoMuted == false { self?.start() } }
+            guard let value = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: value) else { return }
+            let options = AVAudioSession.InterruptionOptions(rawValue: notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+            Task { @MainActor [weak self] in self?.handleInterruption(type, options: options) }
         }
     }
+
     deinit { if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) } }
 
     func configure(_ settings: CanvasSettings) {
         stop()
-        index = 0
         self.settings = settings
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
-        try? AVAudioSession.sharedInstance().setActive(settings.backgroundAudio == .localFiles && !settings.videoMuted)
-        players = settings.audioFileURLs.compactMap { try? AVAudioPlayer(contentsOf: $0) }
-        players.forEach { $0.delegate = self; $0.volume = settings.videoMuted ? 0 : Float(settings.audioVolume); $0.prepareToPlay() }
+        players = settings.audioFileURLs.compactMap { playerFactory(CanvasAudioFileStore.playbackURL(for: $0)) }
+        for player in players {
+            if let player = player as? AVAudioPlayer {
+                player.delegate = self
+                player.prepareToPlay()
+            }
+            player.volume = settings.videoMuted ? 0 : Float(settings.audioVolume)
+        }
+        resetOrder()
     }
 
-    /// Applies settings changes while a frame is already playing. In
-    /// particular, enabling the global mute switch must stop an already
-    /// running background track immediately, not only affect the next launch.
     func update(_ settings: CanvasSettings) {
-        let wasAllowed = self.settings.backgroundAudio == .localFiles && !self.settings.videoMuted
-        let wasPlaying = isPlaying
-        let nowAllowed = settings.backgroundAudio == .localFiles && !settings.videoMuted
         let filesChanged = self.settings.audioFileURLs != settings.audioFileURLs
+        let shuffleChanged = self.settings.audioShuffle != settings.audioShuffle
         if filesChanged {
+            let requested = wantsPlayback
+            let wasInterrupted = interrupted
+            let shouldResume = resumeAfterInterruption
             configure(settings)
-            if nowAllowed && (wasPlaying || !wasAllowed) { start() }
+            wantsPlayback = requested
+            interrupted = wasInterrupted
+            resumeAfterInterruption = shouldResume
+        } else {
+            self.settings = settings
+            players.forEach { $0.volume = settings.videoMuted ? 0 : Float(settings.audioVolume) }
+            if shuffleChanged { resetOrder(preservingCurrent: true) }
+        }
+        reconcilePlayback()
+    }
+
+    /// A presentation, schedule, power limit, or scene may suspend music
+    /// without discarding the requested track or allowing interruptions to
+    /// resurrect audio after the presentation has closed.
+    func setPlaybackAllowed(_ allowed: Bool) {
+        playbackAllowed = allowed
+        reconcilePlayback()
+    }
+
+    func start() {
+        if playlistFinished { resetOrder() }
+        wantsPlayback = true
+        if interrupted { resumeAfterInterruption = true }
+        reconcilePlayback()
+    }
+
+    func pause() {
+        wantsPlayback = false
+        resumeAfterInterruption = false
+        reconcilePlayback()
+    }
+
+    func stop() {
+        wantsPlayback = false
+        resumeAfterInterruption = false
+        players.forEach { $0.stop(); $0.currentTime = 0 }
+        isPlaying = false
+        setAudioSessionActive(false)
+    }
+
+    func setVolume(_ volume: Double) {
+        settings.audioVolume = volume
+        players.forEach { $0.volume = settings.videoMuted ? 0 : Float(volume) }
+    }
+
+    func handleInterruption(_ type: AVAudioSession.InterruptionType, options: AVAudioSession.InterruptionOptions = []) {
+        switch type {
+        case .began:
+            resumeAfterInterruption = wantsPlayback
+            interrupted = true
+            reconcilePlayback()
+        case .ended:
+            interrupted = false
+            let resume = resumeAfterInterruption && options.contains(.shouldResume)
+            resumeAfterInterruption = false
+            if !resume { wantsPlayback = false }
+            reconcilePlayback()
+        @unknown default:
+            break
+        }
+    }
+
+    private var effectivePermission: Bool {
+        playbackAllowed && wantsPlayback && !interrupted
+            && settings.backgroundAudio == .localFiles && !settings.videoMuted
+    }
+
+    private func setAudioSessionActive(_ active: Bool) {
+        // Do not repeatedly deactivate a session that belongs to a video or
+        // another audio surface when no background track has been started.
+        guard ownsActiveSession != active else { return }
+        ownsActiveSession = active
+        activateSession(active)
+    }
+
+    private func reconcilePlayback() {
+        guard effectivePermission, order.indices.contains(orderPosition) else {
+            players.forEach { $0.pause() }
+            isPlaying = false
+            setAudioSessionActive(false)
             return
         }
-        self.settings = settings
-        players.forEach { $0.volume = settings.videoMuted ? 0 : Float(settings.audioVolume) }
-        if nowAllowed {
-            try? AVAudioSession.sharedInstance().setActive(true)
-            // Enabling background audio or unmuting while a frame is active
-            // should begin the selected track. Volume-only changes preserve
-            // the current player without restarting it.
-            if !wasAllowed && !wasPlaying { start() }
-        } else {
-            stop()
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        guard !isPlaying else { return }
+        setAudioSessionActive(true)
+        isPlaying = players[order[orderPosition]].play()
+    }
+
+    private func resetOrder(preservingCurrent: Bool = false) {
+        let current = preservingCurrent && order.indices.contains(orderPosition) ? order[orderPosition] : nil
+        order = Array(players.indices)
+        if settings.audioShuffle { order.shuffle() }
+        if let current {
+            order.removeAll { $0 == current }
+            order.insert(current, at: 0)
         }
+        orderPosition = 0
+        playlistFinished = false
     }
-    func start() {
-        guard settings.backgroundAudio == .localFiles, !settings.videoMuted, !players.isEmpty else { return }
-        if settings.audioShuffle { index = Int.random(in: 0..<players.count) }
-        else if let safeIndex = AudioPlaybackIndexPolicy.clampedIndex(index, playerCount: players.count) { index = safeIndex }
-        players[index].play(); isPlaying = true
-    }
-    func pause() { players.forEach { $0.pause() }; isPlaying = false }
-    func stop() { players.forEach { $0.stop(); $0.currentTime = 0 }; isPlaying = false }
-    func setVolume(_ volume: Double) { settings.audioVolume = volume; players.forEach { $0.volume = Float(volume) } }
+
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self, weak player] in
             guard let self, let player else { return }
@@ -82,19 +191,23 @@ final class AudioService: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
-    private func handleFinished(for player: AVAudioPlayer) {
-        // A completion can arrive after a settings update replaced the player
-        // list. Ignore that stale callback instead of advancing the new list.
-        guard players.contains(where: { $0 === player }) else { return }
-        guard settings.audioRepeat else { isPlaying = false; return }
-        if settings.audioShuffle {
-            index = Int.random(in: 0..<players.count)
-        } else if let nextIndex = AudioPlaybackIndexPolicy.nextSequentialIndex(after: index, playerCount: players.count) {
-            index = nextIndex
+    func handleFinished(for player: any CanvasAudioPlayer) {
+        // Ignore callbacks from replaced tracks and callbacks arriving after
+        // a gate or stop. Repeat controls the whole playlist, not each track.
+        guard effectivePermission, isPlaying, order.indices.contains(orderPosition),
+              players[order[orderPosition]] === player else { return }
+        isPlaying = false
+        if orderPosition + 1 < order.count {
+            orderPosition += 1
+        } else if settings.audioRepeat {
+            resetOrder()
         } else {
-            isPlaying = false
+            wantsPlayback = false
+            playlistFinished = true
+            setAudioSessionActive(false)
             return
         }
-        players[index].play(); isPlaying = true
+        players[order[orderPosition]].currentTime = 0
+        reconcilePlayback()
     }
 }

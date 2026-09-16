@@ -24,6 +24,14 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        .alert("Saved setup recovery", isPresented: Binding(
+            get: { store.settingsStore.recoveryMessage != nil },
+            set: { if !$0 { store.settingsStore.dismissRecoveryNotice() } }
+        )) {
+            Button("OK", role: .cancel) { store.settingsStore.dismissRecoveryNotice() }
+        } message: {
+            Text(store.settingsStore.recoveryMessage ?? "")
+        }
 #if DEBUG
         .task(id: "canvas-ui-showcase-root") {
             guard ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") else { return }
