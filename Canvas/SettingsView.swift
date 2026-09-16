@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var showPresetPrompt = false
     @State private var presetNameError: String?
     @State private var showAudioImporter = false
+    @State private var audioImportInProgress = false
+    @State private var audioImportError: String?
     @State private var ambientAPIKey = CanvasAmbientCredentialStore.loadAPIKey() ?? ""
     @State private var ambientStations: [CanvasAmbientDevice] = []
     @State private var ambientStationsLoading = false
@@ -72,6 +74,11 @@ struct SettingsView: View {
             .sheet(isPresented: $showPresetPrompt) { presetSaveSheet }
             .fileImporter(isPresented: $showAudioImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
                 importAudio(result)
+            }
+            .alert("Audio import incomplete", isPresented: Binding(
+                get: { audioImportError != nil }, set: { if !$0 { audioImportError = nil } }
+            )) { Button("OK", role: .cancel) { audioImportError = nil } } message: {
+                Text(audioImportError ?? "")
             }
             .onChange(of: scenePhase) { _, phase in
                 store.weather.setActive(phase == .active)
@@ -149,6 +156,8 @@ struct SettingsView: View {
             if store.settings.filters.startDate != nil || store.settings.filters.endDate != nil {
                 DatePicker("From", selection: optionalDateBinding(\.startDate, fallback: Calendar.current.date(byAdding: .year, value: -1, to: Date()) ?? Date()), displayedComponents: .date)
                 DatePicker("Through", selection: optionalDateBinding(\.endDate, fallback: Date()), displayedComponents: .date)
+                Text("Includes both selected days. Photos without a capture date are excluded while a date range is active.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Button("Clear date range", role: .destructive) { store.settingsStore.settings.filters.startDate = nil; store.settingsStore.settings.filters.endDate = nil }
             } else {
                 Button { store.settingsStore.settings.filters.startDate = Calendar.current.date(byAdding: .year, value: -1, to: Date()); store.settingsStore.settings.filters.endDate = Date() } label: { Label("Add date range", systemImage: "calendar") }
@@ -376,8 +385,12 @@ struct SettingsView: View {
             DisclosureGroup(isExpanded: overlayGroupBinding(.weather)) {
                 Toggle("Current weather (opt-in)", isOn: binding(\.overlays.showWeather))
                 if store.settings.overlays.showWeather {
-                    Picker("Weather source", selection: weatherSourceBinding) {
-                        ForEach(CanvasWeatherSource.allCases) { Text($0.title).tag($0) }
+                    if store.settings.effectiveAmbientDeviceMAC != nil {
+                        LabeledContent("Weather source", value: "Ambient station")
+                    } else {
+                        Picker("Weather source", selection: weatherSourceBinding) {
+                            ForEach(CanvasWeatherSource.allCases) { Text($0.title).tag($0) }
+                        }
                     }
                     if store.settings.effectiveWeatherSource == .ambientStation {
                         VStack(alignment: .leading, spacing: 8) {
@@ -414,13 +427,16 @@ struct SettingsView: View {
                                 Button("Save & find stations") { saveAmbientConnection() }
                                     .buttonStyle(.borderedProminent)
                                     .accessibilityIdentifier("save-ambient-connection")
-                                if CanvasAmbientCredentialStore.loadAPIKey() != nil {
-                                    Button("Forget key", role: .destructive) {
+                                if CanvasAmbientCredentialStore.loadAPIKey() != nil || store.settings.effectiveAmbientDeviceMAC != nil {
+                                    Button("Disconnect station", role: .destructive) {
                                         ambientAPIKey = ""
                                         CanvasAmbientCredentialStore.clearAPIKey()
                                         ambientStations = []
                                         ambientStationsError = nil
-                                        store.settingsStore.update { $0.ambientDeviceMAC = nil }
+                                        store.settingsStore.update {
+                                            $0.ambientDeviceMAC = nil
+                                            $0.weatherSource = .weatherKit
+                                        }
                                         CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
                                         store.weather.update(showWeather: true)
                                     }
@@ -431,7 +447,7 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
                     weatherStatusRow
-                    Text("The minimal layout shows current conditions and AQI. Ambient values take priority; Apple Weather fills only categories the station does not provide.")
+                    Text("A connected Ambient station supplies the weather. Apple Weather is used only when no station is connected. Air quality is measured near this iPad.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Toggle(
@@ -516,6 +532,13 @@ struct SettingsView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if let snapshot = store.weather.snapshot {
+                if let freshness = CanvasWeatherFreshnessPolicy.label(
+                    snapshot: snapshot, source: store.settings.effectiveWeatherSource,
+                    status: store.weather.status, at: Date()
+                ) {
+                    Text(freshness).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("canvas.weather.freshness")
+                }
                 HStack(spacing: 8) {
                     WeatherConditionGlyph(symbolName: snapshot.symbolName, diameter: 30)
                     Text(snapshot.displayText)
@@ -592,6 +615,8 @@ struct SettingsView: View {
             Picker("Background audio", selection: binding(\.backgroundAudio)) { ForEach(BackgroundAudioMode.allCases) { Text($0.title).tag($0) } }
             if store.settings.backgroundAudio == .localFiles {
                 Button { showAudioImporter = true } label: { Label("Add local audio", systemImage: "plus.circle") }
+                    .disabled(audioImportInProgress)
+                if audioImportInProgress { ProgressView("Importing audio…") }
                 Text("\(store.settings.audioFileURLs.count) file\(store.settings.audioFileURLs.count == 1 ? "" : "s") added").font(.footnote).foregroundStyle(.secondary)
                 InlineSliderRow(
                     title: "Audio volume",
@@ -695,17 +720,22 @@ struct SettingsView: View {
         }
     }
     private func importAudio(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result else { return }
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Canvas Audio", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var copied = store.settings.audioFileURLs
-        for url in urls where url.startAccessingSecurityScopedResource() {
-            defer { url.stopAccessingSecurityScopedResource() }
-            let destination = directory.appendingPathComponent(url.lastPathComponent)
-            try? FileManager.default.removeItem(at: destination)
-            if (try? FileManager.default.copyItem(at: url, to: destination)) != nil { copied.append(destination) }
+        guard case .success(let urls) = result else {
+            if case .failure(let error) = result { audioImportError = error.localizedDescription }
+            return
         }
-        store.settingsStore.settings.audioFileURLs = Array(Set(copied))
+        guard !audioImportInProgress else { return }
+        audioImportInProgress = true
+        Task { @MainActor in
+            let imported = await Task.detached(priority: .userInitiated) {
+                CanvasAudioFileStore().importFiles(urls)
+            }.value
+            store.settingsStore.update { $0.audioFileURLs.append(contentsOf: imported.references) }
+            audioImportInProgress = false
+            if !imported.failedFilenames.isEmpty {
+                audioImportError = "Couldn’t import: " + imported.failedFilenames.joined(separator: ", ") + ". Existing tracks were kept. Try a readable audio file."
+            }
+        }
     }
 
     private var weatherSourceBinding: Binding<CanvasWeatherSource> {
@@ -736,7 +766,10 @@ struct SettingsView: View {
 
     private func saveAmbientConnection() {
         CanvasAmbientCredentialStore.saveAPIKey(ambientAPIKey)
-        store.settingsStore.update { $0.ambientDeviceMAC = nil }
+        store.settingsStore.update {
+            $0.ambientDeviceMAC = nil
+            $0.weatherSource = .ambientStation
+        }
         CanvasWeatherConfiguration.clearDiscoveredAmbientDevice()
         ambientStations = []
         ambientStationsError = nil
@@ -802,7 +835,7 @@ struct SettingsView: View {
         Binding(
             get: { store.settings.filters[keyPath: keyPath] ?? fallback },
             set: { value in
-                store.settingsStore.update { $0.filters[keyPath: keyPath] = value }
+                store.settingsStore.update { $0.filters[keyPath: keyPath] = Calendar.current.startOfDay(for: value) }
             }
         )
     }

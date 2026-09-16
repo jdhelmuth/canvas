@@ -327,9 +327,19 @@ struct WeatherOverlayWidget: View {
     }
 
     var body: some View {
-        Group {
-            if let snapshot {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            if let snapshot = snapshot?.removingExpiredAirQuality(at: context.date) {
                 VStack(alignment: .leading, spacing: 8) {
+                    if weatherSource == .ambientStation {
+                        Text("Ambient station")
+                            .font(.caption.weight(.semibold))
+                    }
+                    if let freshness = CanvasWeatherFreshnessPolicy.label(snapshot: snapshot, source: weatherSource, status: status, at: context.date) {
+                        Text(freshness)
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(textOpacity * 0.8))
+                    }
+
                     if settings.effectiveWeatherShowConditions {
                         conditions(snapshot)
                     }
@@ -346,23 +356,11 @@ struct WeatherOverlayWidget: View {
                         }
                     }
 
-                    if settings.effectiveWeatherShowNextHour,
-                       let temperature = snapshot.nextHourTemperature,
-                       let condition = snapshot.nextHourCondition {
-                        HStack(spacing: 7) {
-                            WeatherConditionGlyph(
-                                symbolName: snapshot.nextHourSymbolName ?? "clock",
-                                diameter: 22
-                            )
-                            Text("Next hour")
-                                .fontWeight(.semibold)
-                            Text("\(temperature) · \(condition)")
-                                .foregroundStyle(.white.opacity(textOpacity * 0.78))
-                                .lineLimit(1)
-                        }
-                        .font(.system(size: max(12, weatherSize * 0.48), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Next hour, \(temperature), \(condition)")
+                    nextHour(snapshot)
+                    if let date = snapshot.airQualityUpdatedAt, settings.effectiveWeatherShowAirQuality, snapshot.airQualityIndex != nil {
+                        Text("AQI checked " + date.formatted(date: .omitted, time: .shortened))
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(textOpacity * 0.8))
                     }
 
                     WeatherDataAttributionView(
@@ -386,21 +384,42 @@ struct WeatherOverlayWidget: View {
         .accessibilityIdentifier("canvas.weather.overlay")
     }
 
+    @ViewBuilder
+    private func nextHour(_ snapshot: CanvasWeatherSnapshot) -> some View {
+        if settings.effectiveWeatherShowNextHour,
+           let temperature = snapshot.nextHourTemperature,
+           let condition = snapshot.nextHourCondition {
+            HStack(spacing: 7) {
+                WeatherConditionGlyph(symbolName: snapshot.nextHourSymbolName ?? "clock", diameter: 22)
+                Text("Next hour").fontWeight(.semibold)
+                Text("\(temperature) · \(condition)")
+                    .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                    .lineLimit(1)
+            }
+            .font(.system(size: max(12, weatherSize * 0.48), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Next hour, \(temperature), \(condition)")
+        }
+    }
+
     private func conditions(_ snapshot: CanvasWeatherSnapshot) -> some View {
         let glyphDiameter = min(max(38, weatherSize * 1.85), 62)
+        let hasCondition = snapshot.condition != "Conditions unavailable"
 
         return HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .center, spacing: 0) {
                 WeatherConditionGlyph(
-                    symbolName: snapshot.symbolName,
+                    symbolName: hasCondition ? snapshot.symbolName : "thermometer.medium",
                     diameter: glyphDiameter
                 )
-                Text(snapshot.condition)
-                    .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
-                    .foregroundStyle(.white.opacity(textOpacity * 0.78))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .frame(width: glyphDiameter * 1.28)
+                if hasCondition {
+                    Text(snapshot.condition)
+                        .font(.system(size: max(12, weatherSize * 0.54), weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
+                        .foregroundStyle(.white.opacity(textOpacity * 0.78))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .frame(width: glyphDiameter * 1.28)
+                }
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(snapshot.temperature)
@@ -409,7 +428,7 @@ struct WeatherOverlayWidget: View {
                     .overlayTextStroke(settings: settings, mediaImage: mediaImage, opacity: textOpacity)
                 if settings.effectiveWeatherShowFeelsLike,
                    let apparentTemperature = snapshot.apparentTemperature {
-                    Text(apparentTemperature)
+                    Text("Feels like \(apparentTemperature)")
                         .font(.system(size: min(max(15, weatherSize * 0.78), 30), weight: .medium, design: .rounded))
                         .fontWidth(.condensed)
                         .foregroundStyle(.white.opacity(textOpacity * 0.78))
@@ -420,6 +439,7 @@ struct WeatherOverlayWidget: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(conditionsAccessibilityLabel(for: snapshot))
+        .accessibilityIdentifier("canvas.weather.conditions")
     }
 
     private func conditionsAccessibilityLabel(for snapshot: CanvasWeatherSnapshot) -> String {
@@ -746,7 +766,9 @@ struct WeatherDataAttributionView: View {
             if weatherSource == .ambientStation {
                 Link("Ambient Weather", destination: URL(string: "https://ambientweather.com/faqs/question/view/id/1811/")!)
             }
-            WeatherLegalLink(destination: weatherSource == .weatherKit ? weatherDestination : nil)
+            if weatherSource == .weatherKit {
+                WeatherLegalLink(destination: weatherDestination)
+            }
             if showsAirQuality {
                 Link("AQI: AirNow · preliminary", destination: AirQualityLegalLink.destination)
                     .accessibilityLabel("Preliminary air quality data from AirNow")

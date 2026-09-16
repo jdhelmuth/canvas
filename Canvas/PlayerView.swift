@@ -57,17 +57,22 @@ struct PlayerView: View {
                 }
             }
 #endif
+            guard !Task.isCancelled else { return }
             isLocked = store.settings.lockControls
             scheduleMonitor.start(rules: store.settings.schedules)
             updateNightDimmingSchedule()
-            model.setPlaybackAllowed(playbackGateAllows)
             model.configure(library: store.library, googlePhotos: store.googlePhotos, loader: store.loader, settings: store.settings)
+            model.setPlaybackAllowed(playbackGateAllows)
             store.audio.configure(store.settings)
-            if store.settings.backgroundAudio == .localFiles, !store.settings.videoMuted { store.audio.start() }
+            store.audio.setPlaybackAllowed(playbackGateAllows && model.isPlaying)
+            store.audio.start()
             updateWeather()
             scheduleHide()
         }
         .onDisappear {
+            model.stop()
+            scheduleMonitor.stop()
+            store.audio.setPlaybackAllowed(false)
             hideTask?.cancel()
             transitionCompletionTask?.cancel()
             nightDimmingMonitor.stop()
@@ -79,7 +84,11 @@ struct PlayerView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
         .onChange(of: store.library.libraryRevision) { _, _ in Task { await model.refreshLibrary() } }
         .onChange(of: model.currentAsset?.id) { _, _ in scheduleHide() }
-        .onChange(of: model.isPlaying) { _, _ in scheduleHide() }
+        .onChange(of: model.isPlaying) { _, playing in
+            store.audio.setPlaybackAllowed(playbackGateAllows && playing)
+            if playing { store.audio.start() } else { store.audio.pause() }
+            scheduleHide()
+        }
         .onChange(of: store.settings.overlays.showWeather) { _, _ in updateWeather() }
         .onChange(of: store.settings.effectiveWeatherSource) { _, _ in updateWeather() }
         .onChange(of: store.settings) { _, updated in
@@ -103,6 +112,7 @@ struct PlayerView: View {
         .onChange(of: store.settings.keepAwake) { _, _ in updatePowerState() }
         .onChange(of: playbackGateAllows) { _, allowed in
             model.setPlaybackAllowed(allowed)
+            store.audio.setPlaybackAllowed(allowed && model.isPlaying)
             if allowed { scheduleHide() }
             else { hideTask?.cancel(); controlsVisible = true }
         }
@@ -167,6 +177,15 @@ struct PlayerView: View {
                     ProgressView().tint(.white)
                 }
                 overlay(in: proxy.size)
+                if model.isRecovering, presentedFrame != nil, let message = model.errorMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 12))
+                        .padding(24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
             }
             .background(Color.black)
             .onAppear {
@@ -665,7 +684,7 @@ struct PlayerView: View {
     }
 
     private var playbackGateAllows: Bool {
-        powerAllowsPlayback && scheduleMonitor.isPlaybackAllowed
+        powerAllowsPlayback && scheduleMonitor.isPlaybackAllowed && scenePhase == .active
     }
 
     private func updatePowerState() {

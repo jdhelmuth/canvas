@@ -28,6 +28,14 @@ class LocalChecksTests(unittest.TestCase):
         self.assertEqual(set(checks.scopes_for(['ios/Foo.swift', 'android/A.kt', 'server/cronAuth.js'])),
                          {'ios', 'android', checks.CONFIG['primary']})
 
+    def test_release_changes_select_their_helper_tests(self):
+        for path in ('release/release-requirements.json', 'scripts/app_store_build_preflight.py',
+                     'scripts/test_release_helpers.py', 'scripts/validate_release_requirements.sh',
+                     'ci_scripts/ci_pre_xcodebuild.sh', 'scripts/release_config_value.py'):
+            with self.subTest(path=path):
+                self.assertEqual(checks.scopes_for([path]), ['tools'])
+        self.assertEqual(checks.scopes_for(['release/notes.md']), [])
+
     def test_refuses_unreviewed_or_changed_pr_heads(self):
         good = dict(state='OPEN', isDraft=False, isCrossRepository=False, headRefOid='abc')
         checks.assert_mergeable(good, 'abc')

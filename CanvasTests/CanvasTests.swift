@@ -504,7 +504,13 @@ final class CanvasTests: XCTestCase {
 
     @MainActor
     func testWeatherOverlayWaitsForLocationPermissionBeforeRequestingWeather() {
-        let service = CanvasWeatherService(autoRequestLocation: false)
+        let service = CanvasWeatherService(
+            autoRequestLocation: false,
+            defaults: UserDefaults(suiteName: "WeatherPermissionTest.\(UUID().uuidString)")!,
+            configurationProvider: {
+                CanvasWeatherConfiguration(source: .weatherKit, ambientDeviceMAC: nil, ambientAPIKey: nil)
+            }
+        )
         service.update(showWeather: true)
         XCTAssertEqual(service.status, .needsLocationPermission)
         XCTAssertFalse(service.isLoading)
@@ -915,66 +921,6 @@ final class CanvasTests: XCTestCase {
 
         XCTAssertEqual(snapshot.symbolName, "cloud.fill")
         XCTAssertEqual(snapshot.condition, "Conditions unavailable")
-    }
-
-    func testAmbientValuesWinWhileWeatherKitFillsMissingCategories() {
-        let ambient = CanvasWeatherSnapshot(
-            symbolName: "cloud.rain.fill",
-            condition: "Rain",
-            temperature: "70.3°F",
-            apparentTemperature: "70.3°F",
-            humidityPercent: 96,
-            wind: "SE 2 mph · G 2 mph",
-            uvIndex: 0,
-            dewPoint: "69.3°F",
-            pressure: "29.90 inHg",
-            rainRate: "0.20 in/hr",
-            solarRadiation: "13.73 W/m²",
-            rainToday: "0.40 in",
-            highTemperature: "78°F",
-            lowTemperature: "61°F",
-            updatedAt: Date(timeIntervalSince1970: 100)
-        )
-        let weatherKit = CanvasWeatherSnapshot(
-            symbolName: "cloud.sun.fill",
-            condition: "Partly Cloudy",
-            temperature: "71.8°F",
-            apparentTemperature: "71.8°F",
-            humidityPercent: 50,
-            wind: "NW 8 mph",
-            uvIndex: 4,
-            precipitationChancePercent: 12,
-            highTemperature: "81°F",
-            lowTemperature: "60°F",
-            sunrise: "6:22 AM",
-            sunset: "8:13 PM",
-            nextHourSymbolName: "sun.max.fill",
-            nextHourTemperature: "74°F",
-            nextHourCondition: "Mostly Sunny",
-            updatedAt: Date(timeIntervalSince1970: 200)
-        )
-
-        let merged = ambient.fillingMissingFields(from: weatherKit)
-
-        XCTAssertEqual(merged.symbolName, "cloud.sun.fill")
-        XCTAssertEqual(merged.condition, "Partly Cloudy")
-        XCTAssertEqual(merged.temperature, "70.3°F")
-        XCTAssertEqual(merged.apparentTemperature, "70.3°F")
-        XCTAssertEqual(merged.humidityPercent, 96)
-        XCTAssertEqual(merged.wind, "SE 2 mph · G 2 mph")
-        XCTAssertEqual(merged.uvIndex, 0)
-        XCTAssertEqual(merged.dewPoint, "69.3°F")
-        XCTAssertEqual(merged.pressure, "29.90 inHg")
-        XCTAssertEqual(merged.rainRate, "0.20 in/hr")
-        XCTAssertEqual(merged.solarRadiation, "13.73 W/m²")
-        XCTAssertEqual(merged.rainToday, "0.40 in")
-        XCTAssertEqual(merged.highTemperature, "78.0°F")
-        XCTAssertEqual(merged.lowTemperature, "61.0°F")
-        XCTAssertEqual(merged.precipitationChancePercent, 12)
-        XCTAssertEqual(merged.sunrise, "6:22 AM")
-        XCTAssertEqual(merged.sunset, "8:13 PM")
-        XCTAssertEqual(merged.nextHourCondition, "Mostly Sunny")
-        XCTAssertEqual(merged.updatedAt, Date(timeIntervalSince1970: 100))
     }
 
     func testCachedWeatherDisplayOmitsCacheQualifier() {
@@ -2931,7 +2877,7 @@ final class CanvasTests: XCTestCase {
                 markerVerifiedAlbumIDs: ["same-album-new-identifier"],
                 exactEditableAlbumIDs: ["same-album-new-identifier"]
             ),
-            .reuse("same-album-new-identifier")
+            .failRemoved
         )
         XCTAssertEqual(
             GooglePhotosMirrorAlbumResolutionPolicy.resolve(
@@ -2951,7 +2897,7 @@ final class CanvasTests: XCTestCase {
                 markerVerifiedAlbumIDs: ["marker-verified"],
                 exactEditableAlbumIDs: ["unique-exact"]
             ),
-            .reuse("marker-verified")
+            .failOwnershipUnverified
         )
         XCTAssertEqual(
             GooglePhotosMirrorAlbumResolutionPolicy.resolve(
@@ -2981,7 +2927,7 @@ final class CanvasTests: XCTestCase {
                 markerVerifiedAlbumIDs: ["marker-a", "marker-b"],
                 exactEditableAlbumIDs: ["marker-a", "marker-b"]
             ),
-            .failAmbiguous
+            .failOwnershipUnverified
         )
         XCTAssertEqual(
             GooglePhotosMirrorAlbumResolutionPolicy.resolve(

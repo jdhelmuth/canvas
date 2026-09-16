@@ -11,12 +11,14 @@
 		06ADCAA0434B61EA4864CFB7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2571C01CD7FBD18E30621F77 /* Models.swift */; };
 		0B3756741CA77517FB2BE21B /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 912AC961545646EAF400FA11 /* PlayerView.swift */; };
 		144A52B4B2038CF78818C0B6 /* delicate-arch.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 319981DAE22A4CCDC3F151E7 /* delicate-arch.jpg */; };
+		1518278E82BAA246F177ECBB /* CanvasAudioFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6661F888F7390F8EF2855767 /* CanvasAudioFileStore.swift */; };
 		1AE53AD6647A24078FF5ABB2 /* antennae-galaxies.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A1E7E5BC5C6D109C498CC1E5 /* antennae-galaxies.jpg */; };
 		1C6035F68035422F3FCB0F6E /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BC027B1915975701C7AD946 /* WeatherService.swift */; };
 		1E26FB374DA012E9E8670FA1 /* glacier-bay.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 951B809035E99411769274EE /* glacier-bay.jpg */; };
 		2217263011C962ED34E70955 /* UIComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */; };
 		300B2F79D77FF464586E944A /* yosemite-falls.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2F4D36887B9C8FFBA82C04D3 /* yosemite-falls.jpg */; };
 		332C5C3DD86D1CE3C802F7C9 /* CanvasApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */; };
+		3ED2266719404AC44FA87908 /* SettingsReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A056EA9E5B89A8E7EE3D1C45 /* SettingsReliabilityTests.swift */; };
 		48015318F78204BCC6747736 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A7020D4D196010D78B427FE /* PrivacyInfo.xcprivacy */; };
 		4852B6A5514E4100FF22D4F0 /* pillars-of-creation.jpg in Resources */ = {isa = PBXBuildFile; fileRef = C337C3E726B3A176EDD806B3 /* pillars-of-creation.jpg */; };
 		4969E06A817DED8FEE8E0199 /* golden-gate.jpg in Resources */ = {isa = PBXBuildFile; fileRef = D8C9DE030785099CD68185CC /* golden-gate.jpg */; };
@@ -27,6 +29,7 @@
 		5133881DF5ACE96A74F107F4 /* crab-nebula.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A38CB82A8EAEA2277B2963B0 /* crab-nebula.jpg */; };
 		5C4EBBA2B9AA05F0EA32F259 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3E55871F1C2D83E54A6E27AB /* Assets.xcassets */; };
 		5EBD08290771840F5199F535 /* cosmic-cliffs.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B2F65AD21DF2C006FC295A40 /* cosmic-cliffs.jpg */; };
+		5EC037E2F4FAFD24C4236162 /* PlaybackReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D4CC0D3F2F06FD410A3D92F /* PlaybackReliabilityTests.swift */; };
 		6AAAB99CA854CCE450126836 /* GooglePhotosService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */; };
 		6F0742DA96CDBE9BABBCCA4E /* kenai-glacier.jpg in Resources */ = {isa = PBXBuildFile; fileRef = DCCDB40A53D4B9937B3E4AF9 /* kenai-glacier.jpg */; };
 		72EED23FA3F57501ADAD8E6F /* ATTRIBUTION.md in Resources */ = {isa = PBXBuildFile; fileRef = 2806F8724546FF6718A362CF /* ATTRIBUTION.md */; };
@@ -46,12 +49,14 @@
 		9E6624AC3B1C5E0F6F4634B5 /* MediaRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3BE561BC20E80C66A71AADD /* MediaRenderer.swift */; };
 		A3F473E66902055E2D772C63 /* yellowstone-lake.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2B188B2A2FC43066B602DD7D /* yellowstone-lake.jpg */; };
 		A4E9F5EC503E86CD48F8BDB9 /* montreal-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = C033CD8E62F86C12A379B0A0 /* montreal-night.jpg */; };
+		B3CBDFF72A635B17B87DEB77 /* PhotoSyncReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58521AF67DE3FC4CE4086A1B /* PhotoSyncReliabilityTests.swift */; };
 		B6A836F73CA36D222031AB78 /* san-francisco-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 070F843F21B9DC80E6153E97 /* san-francisco-night.jpg */; };
 		B720295E345F7E5A480E5F2E /* LayoutCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */; };
 		B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */; };
 		BE9612A953DC29173D6A7B28 /* olympic-twilight.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 175EAB8D8D8208BCF80B4FB4 /* olympic-twilight.jpg */; };
 		C6C75FBDD785B60DB5DC09C3 /* olympic-sea-stacks.jpg in Resources */ = {isa = PBXBuildFile; fileRef = F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */; };
 		C84E1E6614EBDF510752F72D /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 141DE4CA1F3AAFF208D74F5E /* RootView.swift */; };
+		D0BA5FE9A8CFB8F883789D66 /* WeatherReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 658228CE8B3B29DF87728805 /* WeatherReliabilityTests.swift */; };
 		D65E0406CF9A5E4050EF8F11 /* lagoon-nebula.jpg in Resources */ = {isa = PBXBuildFile; fileRef = BD0B9017CE22F3F5F7E95242 /* lagoon-nebula.jpg */; };
 		D7EC0C38F8A9BC5F40863EDA /* los-angeles-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 913195214E517C663AB0086C /* los-angeles-night.jpg */; };
 		DBE9FA74FB00F8B5DD6047D0 /* whirlpool-galaxy.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 032B6D801002B79240A16AD8 /* whirlpool-galaxy.jpg */; };
@@ -102,14 +107,18 @@
 		393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledPhotoLibrary.swift; sourceTree = "<group>"; };
 		3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasApp.swift; sourceTree = "<group>"; };
 		3BC027B1915975701C7AD946 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
+		3D4CC0D3F2F06FD410A3D92F /* PlaybackReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackReliabilityTests.swift; sourceTree = "<group>"; };
 		3E55871F1C2D83E54A6E27AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4B48EF22BA55605E981434FF /* gateway-arch.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "gateway-arch.jpg"; sourceTree = "<group>"; };
+		58521AF67DE3FC4CE4086A1B /* PhotoSyncReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncReliabilityTests.swift; sourceTree = "<group>"; };
 		5BA999A7E935189FDA6820EE /* independence-hall.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "independence-hall.jpg"; sourceTree = "<group>"; };
 		5CCF4022578701A33BBB2E24 /* CanvasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasUITests.swift; sourceTree = "<group>"; };
 		5DC3B68247338973D156775B /* FeatureEngines.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureEngines.swift; sourceTree = "<group>"; };
 		5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIComponents.swift; sourceTree = "<group>"; };
 		608E57F92AC03E33C4ADE366 /* yellowstone-inspiration.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "yellowstone-inspiration.jpg"; sourceTree = "<group>"; };
 		6411992ADAE9E9596FC3EE76 /* Canvas.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Canvas.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		658228CE8B3B29DF87728805 /* WeatherReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherReliabilityTests.swift; sourceTree = "<group>"; };
+		6661F888F7390F8EF2855767 /* CanvasAudioFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasAudioFileStore.swift; sourceTree = "<group>"; };
 		6856BE0CCC97B83B3766800E /* joshua-tree-sunset.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "joshua-tree-sunset.jpg"; sourceTree = "<group>"; };
 		8045FCF88B615769B397B576 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		84E2895031A481ABFE0EB164 /* PlaybackViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackViewModel.swift; sourceTree = "<group>"; };
@@ -119,6 +128,7 @@
 		913195214E517C663AB0086C /* los-angeles-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "los-angeles-night.jpg"; sourceTree = "<group>"; };
 		9394E4E7E10FB257F383EE2C /* zion-east.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "zion-east.jpg"; sourceTree = "<group>"; };
 		951B809035E99411769274EE /* glacier-bay.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "glacier-bay.jpg"; sourceTree = "<group>"; };
+		A056EA9E5B89A8E7EE3D1C45 /* SettingsReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsReliabilityTests.swift; sourceTree = "<group>"; };
 		A1E7E5BC5C6D109C498CC1E5 /* antennae-galaxies.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "antennae-galaxies.jpg"; sourceTree = "<group>"; };
 		A38CB82A8EAEA2277B2963B0 /* crab-nebula.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "crab-nebula.jpg"; sourceTree = "<group>"; };
 		A3FED328DC8E9AC497D5DFEE /* Persistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Persistence.swift; sourceTree = "<group>"; };
@@ -158,6 +168,7 @@
 				393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */,
 				21E28B3B120D9AC1C038CCC8 /* Canvas.entitlements */,
 				3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */,
+				6661F888F7390F8EF2855767 /* CanvasAudioFileStore.swift */,
 				5DC3B68247338973D156775B /* FeatureEngines.swift */,
 				DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */,
 				8045FCF88B615769B397B576 /* Info.plist */,
@@ -211,6 +222,10 @@
 			isa = PBXGroup;
 			children = (
 				EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */,
+				58521AF67DE3FC4CE4086A1B /* PhotoSyncReliabilityTests.swift */,
+				3D4CC0D3F2F06FD410A3D92F /* PlaybackReliabilityTests.swift */,
+				A056EA9E5B89A8E7EE3D1C45 /* SettingsReliabilityTests.swift */,
+				658228CE8B3B29DF87728805 /* WeatherReliabilityTests.swift */,
 			);
 			path = CanvasTests;
 			sourceTree = "<group>";
@@ -439,6 +454,7 @@
 				844F92EC8939ABFAFF357BFB /* AudioService.swift in Sources */,
 				EC7A9E1D177CC5FE1025A20A /* BundledPhotoLibrary.swift in Sources */,
 				332C5C3DD86D1CE3C802F7C9 /* CanvasApp.swift in Sources */,
+				1518278E82BAA246F177ECBB /* CanvasAudioFileStore.swift in Sources */,
 				9BCF21322D0FD4CC48A47285 /* FeatureEngines.swift in Sources */,
 				6AAAB99CA854CCE450126836 /* GooglePhotosService.swift in Sources */,
 				B720295E345F7E5A480E5F2E /* LayoutCanvas.swift in Sources */,
@@ -461,6 +477,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */,
+				B3CBDFF72A635B17B87DEB77 /* PhotoSyncReliabilityTests.swift in Sources */,
+				5EC037E2F4FAFD24C4236162 /* PlaybackReliabilityTests.swift in Sources */,
+				3ED2266719404AC44FA87908 /* SettingsReliabilityTests.swift in Sources */,
+				D0BA5FE9A8CFB8F883789D66 /* WeatherReliabilityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -511,12 +531,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 63;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas;
 				PRODUCT_NAME = Canvas;
 				TARGETED_DEVICE_FAMILY = 2;
@@ -532,12 +552,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 63;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas;
 				PRODUCT_NAME = Canvas;
 				TARGETED_DEVICE_FAMILY = 2;

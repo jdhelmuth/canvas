@@ -348,13 +348,11 @@ def main(arguments: list[str]) -> int:
 
     missing = missing_connect_credentials()
     if missing:
-        print(
-            "warning: App Store build preflight skipped; set "
+        raise PreflightError(
+            "App Store build preflight cannot verify uploaded builds; set "
             + ", ".join(missing)
-            + " in Xcode Cloud to enforce colliding-build gates",
-            file=sys.stderr,
+            + " before archiving. No release validation was performed."
         )
-        return 0
 
     app_id = require_environment("ASC_APP_ID")
     issuer_id = require_environment("ASC_ISSUER_ID")

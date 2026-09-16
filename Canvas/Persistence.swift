@@ -20,12 +20,23 @@ enum StoreCaptureClock {
 final class SettingsStore: ObservableObject {
     private static let currentSchema = 5
     @Published var settings: CanvasSettings { didSet { save() } }
+    @Published private(set) var recoveryMessage: String?
     private let defaults: UserDefaults
     private let key = "canvas.settings.v1"
     private let schemaKey = "canvas.settings.schema"
+    private var canPersist = true
+    static let recoveryDataKey = "canvas.settings.recovery.data"
+    private static let recoveryNoticeKey = "canvas.settings.recovery.notice"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        recoveryMessage = defaults.string(forKey: Self.recoveryNoticeKey)
+        if defaults.integer(forKey: schemaKey) > Self.currentSchema {
+            settings = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(CanvasSettings.self, from: $0) } ?? CanvasSettings()
+            canPersist = false
+            recoveryMessage = "Your saved setup belongs to a newer version of Canvas. It has been preserved. Open that version to save changes."
+            return
+        }
         if let data = defaults.data(forKey: key), var decoded = try? JSONDecoder().decode(CanvasSettings.self, from: data) {
             var migrated = false
             // Migrate the original blue placeholder backdrop to the neutral contextual treatment.
@@ -81,13 +92,27 @@ final class SettingsStore: ObservableObject {
             if migrated { save() }
         } else {
             settings = CanvasSettings()
+            if let unreadable = defaults.data(forKey: key) {
+                // Keep the first recovery copy intact across repeated launches.
+                if defaults.data(forKey: Self.recoveryDataKey) == nil {
+                    defaults.set(unreadable, forKey: Self.recoveryDataKey)
+                    defaults.set(defaults.integer(forKey: schemaKey), forKey: "canvas.settings.recovery.schema")
+                }
+                recoveryMessage = "Canvas couldn’t read your saved setup. A recovery copy has been kept on this iPad, and your downloaded photos are unchanged. Default settings are being used."
+                defaults.set(recoveryMessage, forKey: Self.recoveryNoticeKey)
+            }
             defaults.set(Self.currentSchema, forKey: schemaKey)
         }
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(settings) else { return }
+        guard canPersist, let data = try? JSONEncoder().encode(settings) else { return }
         defaults.set(data, forKey: key)
+    }
+
+    func dismissRecoveryNotice() {
+        recoveryMessage = nil
+        defaults.removeObject(forKey: Self.recoveryNoticeKey)
     }
 
     /// Applies a settings edit as one value-type replacement. SwiftUI sliders
@@ -121,11 +146,14 @@ final class AppStore: ObservableObject {
 
     var settings: CanvasSettings { settingsStore.settings }
     init() {
+#if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-reset") {
             UserDefaults.standard.removeObject(forKey: "canvas.settings.v1")
             UserDefaults.standard.removeObject(forKey: "canvas.settings.schema")
         }
+#endif
         settingsStore = SettingsStore()
+#if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-home") {
             settingsStore.settings.hasCompletedOnboarding = true
         }
@@ -171,6 +199,8 @@ final class AppStore: ObservableObject {
             settingsStore.settings.overlays = overlays
         }
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-store-weather-station") {
+            settingsStore.settings.weatherSource = .ambientStation
+            settingsStore.settings.ambientDeviceMAC = "00:10:FA:AA:BB:CC"
             var overlays = settingsStore.settings.overlays
             overlays.showTime = true
             overlays.showWeather = true
@@ -220,6 +250,7 @@ final class AppStore: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-oldest") {
             settingsStore.settings.queueMode = .oldestFirst
         }
+#endif
         library = PhotoLibraryService()
         googlePhotosMirror = GooglePhotosMirrorService()
         googlePhotos = GooglePhotosService()
@@ -232,7 +263,8 @@ final class AppStore: ObservableObject {
             from: settingsStore.settings.selectedAlbums,
             validIDs: validGoogleAlbumIDs
         )
-        if cleanedGoogleSelection != settingsStore.settings.selectedAlbums {
+        if googlePhotos.albumPersistenceError == nil,
+           cleanedGoogleSelection != settingsStore.settings.selectedAlbums {
             var repaired = settingsStore.settings
             repaired.selectedAlbums = cleanedGoogleSelection
             settingsStore.settings = repaired

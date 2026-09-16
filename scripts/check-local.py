@@ -25,9 +25,9 @@ def scopes_for(paths):
             scopes.add('ios')
         elif path.startswith('android/'):
             scopes.add('android')
-        elif path in ('scripts/check-local.py', 'scripts/test-local-checks.py', 'scripts/local-checks.json'):
+        elif path.startswith(('scripts/', 'ci_scripts/', 'release/')) and not path.endswith('.md'):
             scopes.add('tools')
-        elif path.startswith(('docs/', '.github/', 'release/', 'app-store-submission/')) or path.endswith('.md'):
+        elif path.startswith(('docs/', '.github/', 'app-store-submission/')) or path.endswith('.md'):
             continue
         else:
             scopes.add(CONFIG['primary'])
@@ -84,6 +84,8 @@ def main():
     group.add_argument('--platform', choices=list(CONFIG['commands']), help='Run one platform explicitly.')
     group.add_argument('--merge-pr', type=int, help='Check this PR head locally, then squash-merge that exact head.')
     parser.add_argument('--plan', action='store_true', help='Print selected checks without running or merging.')
+    parser.add_argument('--simulator-id', default=os.environ.get('CANVAS_SIMULATOR_ID'),
+                        help='Use this dedicated simulator for native tests (or set CANVAS_SIMULATOR_ID).')
     parser.add_argument('--skip-cloud-build', action='store_true',
                         help='Merge without starting another Xcode Cloud build; keep local checks.')
     args = parser.parse_args()
@@ -128,8 +130,13 @@ def main():
                 devices = json.loads(capture('xcrun', 'simctl', 'list', 'devices', 'available', '-j'))
                 phones = [d for values in devices['devices'].values() for d in values if 'iPad' in d['name']]
                 if not phones:
-                    raise RuntimeError('An available iPhone simulator is required for native tests.')
-                phone = next((d for d in phones if d['state'] == 'Booted'), phones[0])
+                    raise RuntimeError('An available iPad simulator is required for native tests.')
+                if args.simulator_id:
+                    phone = next((d for d in phones if d['udid'] == args.simulator_id), None)
+                    if phone is None:
+                        raise RuntimeError('The selected simulator is not an available iPad.')
+                else:
+                    phone = next((d for d in phones if d['state'] == 'Booted'), phones[0])
                 command[command.index('{simulator}')] = 'platform=iOS Simulator,id=' + phone['udid']
             run(command, step.get('cwd', '.'), step.get('timeout', 900), scope_env)
     if capture('git', 'rev-parse', 'HEAD') != head:

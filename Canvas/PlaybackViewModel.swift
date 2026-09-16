@@ -25,9 +25,15 @@ final class PlaybackViewModel: ObservableObject {
     @Published private(set) var queueCount = 0
     @Published private(set) var currentIndex = 0
     @Published private(set) var elapsed = 0.0
-    private var library: PhotoLibraryService?
-    private var googlePhotos: GooglePhotosService?
-    private var loader: AssetImageLoader?
+    private var mediaItems: ((CanvasSettings) -> [CanvasMediaItem])?
+    private var imageLoader: ((CanvasMediaItem, CGSize) async -> UIImage?)?
+    private var prefetchImages: (([CanvasMediaItem], CGSize) -> Void)?
+    private var sessionActive = true
+    private var reloadTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+    private let recoveryDelay: Duration
+    private var recoveryStartIndex: Int?
+    @Published private(set) var isRecovering = false
     private var settings: CanvasSettings = .init()
     private var queue: [CanvasMediaItem] = []
     private var timerTask: Task<Void, Never>?
@@ -50,10 +56,66 @@ final class PlaybackViewModel: ObservableObject {
     var layoutImages: [UIImage] { displayedFrame?.layoutImages ?? [] }
     var layoutAssets: [CanvasMediaItem] { displayedFrame?.layoutAssets ?? [] }
 
+    init(
+        settings: CanvasSettings = .init(),
+        mediaItems: ((CanvasSettings) -> [CanvasMediaItem])? = nil,
+        imageLoader: ((CanvasMediaItem, CGSize) async -> UIImage?)? = nil,
+        recoveryDelay: Duration = .seconds(30)
+    ) {
+        self.settings = settings
+        self.mediaItems = mediaItems
+        self.imageLoader = imageLoader
+        self.recoveryDelay = recoveryDelay
+    }
+
+    deinit {
+        timerTask?.cancel()
+        loadTask?.cancel()
+        reloadTask?.cancel()
+        retryTask?.cancel()
+    }
+
     func configure(library: PhotoLibraryService, googlePhotos: GooglePhotosService, loader: AssetImageLoader, settings: CanvasSettings) {
         guard !configured else { return }
-        self.library = library; self.googlePhotos = googlePhotos; self.loader = loader; self.settings = settings; configured = true
-        Task { [weak self] in await self?.reload() }
+        self.settings = settings
+        mediaItems = { settings in
+            MediaIdentityMatcher.deduplicated(
+                library.mediaItems(for: settings.selectedAlbums, filters: settings.filters)
+                + googlePhotos.items(for: settings.selectedAlbums, filters: settings.filters)
+                + BundledPhotoLibrary.items(for: settings.selectedAlbums, filters: settings.filters)
+            )
+        }
+        imageLoader = { item, size in await loader.image(for: item, service: library, size: size) }
+        prefetchImages = { items, size in loader.prefetch(items, service: library, size: size) }
+        configured = true
+        sessionActive = true
+        reloadTask = Task { [weak self] in await self?.reload() }
+    }
+
+    /// End the owning presentation, including work that is waiting on a provider.
+    /// A late provider callback cannot publish into a closed slideshow.
+    func stop() {
+        sessionActive = false
+        playbackAllowed = false
+        loadGeneration &+= 1
+        cancelTimer()
+        loadTask?.cancel()
+        loadTask = nil
+        reloadTask?.cancel()
+        reloadTask = nil
+        retryTask?.cancel()
+        retryTask = nil
+        pendingReload = false
+        pendingSettings = nil
+        pendingQueueRebuild = false
+        displayedFrame = nil
+        queue = []
+        queueCount = 0
+        navigationHistory = PlaybackNavigationHistory()
+        mediaItems = nil
+        imageLoader = nil
+        prefetchImages = nil
+        configured = false
     }
 
     func refreshLibrary() async {
@@ -64,6 +126,7 @@ final class PlaybackViewModel: ObservableObject {
     /// loading. Photos can report several changes during startup; each
     /// notification must not cancel and restart the same first frame.
     func reload(settings updatedSettings: CanvasSettings? = nil, rebuildQueue: Bool = false) async {
+        guard sessionActive else { return }
         if reloadInFlight {
             pendingReload = true
             if let updatedSettings { pendingSettings = updatedSettings }
@@ -74,7 +137,7 @@ final class PlaybackViewModel: ObservableObject {
         reloadInFlight = true
         defer {
             reloadInFlight = false
-            if !pendingReload || Task.isCancelled {
+            if !pendingReload || Task.isCancelled || !sessionActive {
                 pendingReload = false
                 pendingSettings = nil
                 pendingQueueRebuild = false
@@ -84,7 +147,7 @@ final class PlaybackViewModel: ObservableObject {
                 pendingReload = false
                 pendingSettings = nil
                 pendingQueueRebuild = false
-                Task { [weak self] in
+                reloadTask = Task { [weak self] in
                     await self?.reload(settings: nextSettings, rebuildQueue: nextQueueRebuild)
                 }
             }
@@ -94,13 +157,10 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private func performReload(settings updatedSettings: CanvasSettings?, rebuildQueue: Bool) async {
-        guard let library else { return }
+        guard let mediaItems, sessionActive else { return }
         if let updatedSettings { settings = updatedSettings }
 
-        let appleItems = library.mediaItems(for: settings.selectedAlbums, filters: settings.filters)
-        let googleItems = googlePhotos?.items(for: settings.selectedAlbums, filters: settings.filters) ?? []
-        let bundledItems = BundledPhotoLibrary.items(for: settings.selectedAlbums, filters: settings.filters)
-        let assets = MediaIdentityMatcher.deduplicated(appleItems + googleItems + bundledItems)
+        let assets = mediaItems(settings)
         let queueCurrentAssetID = queue.indices.contains(currentIndex) ? queue[currentIndex].id : nil
         let displayedAssetID = displayedFrame?.asset.id
         let identityToPreserve = queueCurrentAssetID ?? displayedAssetID
@@ -141,8 +201,9 @@ final class PlaybackViewModel: ObservableObject {
         queue = candidateQueue
         queueCount = queue.count
         currentIndex = candidateIndex
+        recoveryStartIndex = nil
 
-        if canPreserveFrame {
+        if canPreserveFrame && !isRecovering {
             // Keep the current visual frame and its transition route intact;
             // only the future queue may have changed underneath it.
             navigationHistory.reset(to: currentPosition)
@@ -151,6 +212,7 @@ final class PlaybackViewModel: ObservableObject {
         }
 
         cancelTimer()
+        retryTask?.cancel()
         loadTask?.cancel()
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -162,6 +224,7 @@ final class PlaybackViewModel: ObservableObject {
             return
         }
 
+        guard playbackAllowed else { return }
         await loadCurrent(generation: generation, transitionSeed: 1, gestureDirection: 0)
         guard !Task.isCancelled, loadGeneration == generation else { return }
         if displayedFrame != nil, queue.indices.contains(currentIndex) {
@@ -192,15 +255,39 @@ final class PlaybackViewModel: ObservableObject {
     /// play/pause preference. The timer is cancelled while gated so a hidden
     /// slideshow cannot advance items behind the waiting screen.
     func setPlaybackAllowed(_ allowed: Bool) {
+        guard sessionActive else { return }
+        let changed = playbackAllowed != allowed
         playbackAllowed = allowed
         if allowed {
-            startTimer()
+            if changed && needsFrameLoad {
+                scheduleLoad(generation: loadGeneration, transitionSeed: 1, gestureDirection: 0)
+            } else {
+                startTimer()
+            }
         } else {
             cancelTimer()
+            retryTask?.cancel()
+            loadTask?.cancel()
+            if changed { loadGeneration &+= 1 }
         }
     }
 
-    func togglePlaying() { isPlaying.toggle(); if isPlaying { startTimer() } else { cancelTimer() } }
+    private var needsFrameLoad: Bool {
+        isRecovering || (queue.indices.contains(currentIndex) && queue[currentIndex].id != currentAsset?.id)
+    }
+
+    func togglePlaying() {
+        guard sessionActive else { return }
+        isPlaying.toggle()
+        if isPlaying {
+            if needsFrameLoad && playbackAllowed {
+                scheduleLoad(generation: loadGeneration, transitionSeed: 1, gestureDirection: 0)
+            } else { startTimer() }
+        } else {
+            cancelTimer()
+            retryTask?.cancel()
+        }
+    }
     @discardableResult func next() -> Bool { navigateByDisplayedGroup(direction: 1) }
     @discardableResult func previous() -> Bool { navigateByDisplayedGroup(direction: -1) }
 
@@ -249,6 +336,8 @@ final class PlaybackViewModel: ObservableObject {
             // A grouped slideshow has no valid forward destination at the
             // end when repeat is off. Do not fall back to the next raw item;
             // that would expose the second tile of the current group.
+            isPlaying = false
+            cancelTimer()
             return false
         }
         return advance(direction: direction, targetIndex: target, gestureDirection: gestureDirection)
@@ -256,8 +345,10 @@ final class PlaybackViewModel: ObservableObject {
 
     @discardableResult
     private func advance(direction: Int, targetIndex: Int? = nil, gestureDirection: Int = 0) -> Bool {
-        guard playbackAllowed, !queue.isEmpty else { return false }
+        guard sessionActive, playbackAllowed, !queue.isEmpty else { return false }
+        recoveryStartIndex = nil
         cancelTimer()
+        retryTask?.cancel()
         loadTask?.cancel()
         loadGeneration &+= 1
         let generation = loadGeneration
@@ -318,6 +409,9 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private func scheduleLoad(generation: Int, transitionSeed: UInt64, gestureDirection: Int) {
+        guard sessionActive, playbackAllowed else { return }
+        retryTask?.cancel()
+        loadTask?.cancel()
         loadTask = Task { [weak self] in
             guard let self else { return }
             await self.loadCurrent(
@@ -331,8 +425,53 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private func loadCurrent(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async {
-        guard !Task.isCancelled, loadGeneration == generation else { return }
-        guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let library, let loader else { return }
+        // Visit each available item at most once in a recovery pass. Keep the
+        // last good frame visible while skipping unavailable primary images.
+        if let recoveryStartIndex, queue.indices.contains(recoveryStartIndex) {
+            currentIndex = recoveryStartIndex
+        }
+        let firstAttemptIndex = currentIndex
+        var attempted = 0
+        while attempted < queue.count {
+            guard sessionActive, playbackAllowed, !Task.isCancelled, loadGeneration == generation else { return }
+            if await loadFrame(generation: generation, transitionSeed: transitionSeed, gestureDirection: gestureDirection) {
+                isRecovering = false
+                recoveryStartIndex = nil
+                errorMessage = nil
+                if attempted > 0 { navigationHistory.reset(to: currentPosition) }
+                return
+            }
+            guard sessionActive, playbackAllowed, !Task.isCancelled, loadGeneration == generation else { return }
+            attempted += 1
+            guard attempted < queue.count,
+                  let next = PlaybackIndexResolver.nextIndex(current: currentIndex, count: queue.count, direction: 1, repeatEnabled: settings.repeatEnabled) else { break }
+            currentIndex = next
+        }
+        guard sessionActive, !Task.isCancelled, loadGeneration == generation else { return }
+        if let currentAsset, let retainedIndex = queue.firstIndex(where: { $0.id == currentAsset.id }) {
+            currentIndex = retainedIndex
+        }
+        recoveryStartIndex = firstAttemptIndex
+        isRecovering = true
+        errorMessage = "Photos are temporarily unavailable. Canvas will try again shortly."
+        scheduleRecovery(generation: generation)
+    }
+
+    private func scheduleRecovery(generation: Int) {
+        retryTask?.cancel()
+        guard sessionActive, playbackAllowed, isPlaying, !queue.isEmpty else { return }
+        let delay = recoveryDelay
+        retryTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self, self.sessionActive, self.playbackAllowed, self.isPlaying,
+                  self.loadGeneration == generation else { return }
+            self.scheduleLoad(generation: generation, transitionSeed: 1, gestureDirection: 0)
+        }
+    }
+
+    private func loadFrame(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async -> Bool {
+        guard !Task.isCancelled, loadGeneration == generation else { return false }
+        guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let imageLoader else { return false }
         elapsed = 0
         progress = 0
         errorMessage = nil
@@ -342,9 +481,9 @@ final class PlaybackViewModel: ObservableObject {
                 currentMediaDuration = time.seconds
             }
         }
-        guard !Task.isCancelled, loadGeneration == generation else { return }
-        let image = await loader.image(for: asset, service: library, size: CGSize(width: 1800, height: 1800))
-        guard !Task.isCancelled, loadGeneration == generation else { return }
+        guard !Task.isCancelled, loadGeneration == generation else { return false }
+        let image = await imageLoader(asset, CGSize(width: 1800, height: 1800))
+        guard !Task.isCancelled, loadGeneration == generation else { return false }
         if let image {
             // Build the complete displayed group before publishing any of it.
             // Publishing the primary image first and appending a portrait
@@ -358,14 +497,14 @@ final class PlaybackViewModel: ObservableObject {
                 ? companionAssets(after: asset)
                 : []
             for companion in companions {
-                guard !Task.isCancelled, loadGeneration == generation else { return }
-                if let companionImage = await loader.image(for: companion, service: library, size: CGSize(width: 1000, height: 1000)) {
-                    guard !Task.isCancelled, loadGeneration == generation else { return }
+                guard !Task.isCancelled, loadGeneration == generation else { return false }
+                if let companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000)) {
+                    guard !Task.isCancelled, loadGeneration == generation else { return false }
                     loadedImages.append(companionImage)
                     loadedAssets.append(companion)
                 }
             }
-            guard !Task.isCancelled, loadGeneration == generation else { return }
+            guard !Task.isCancelled, loadGeneration == generation else { return false }
             // Commit the complete group in one publication. The previous
             // frame remains visible until this point, so every transition has
             // a real outgoing and incoming surface to animate.
@@ -377,11 +516,10 @@ final class PlaybackViewModel: ObservableObject {
                 transitionSeed: transitionSeed,
                 gestureDirection: gestureDirection
             )
-            loader.prefetch(Array(queue.dropFirst(currentIndex + 1).prefix(4)), service: library, size: CGSize(width: 700, height: 700))
-        } else {
-            displayedFrame = nil
-            errorMessage = "This item is unavailable or still downloading from iCloud."
+            prefetchImages?(Array(queue.dropFirst(currentIndex + 1).prefix(4)), CGSize(width: 700, height: 700))
+            return true
         }
+        return false
     }
 
     private func companionAssets(after asset: CanvasMediaItem) -> [CanvasMediaItem] {
@@ -404,7 +542,7 @@ final class PlaybackViewModel: ObservableObject {
 
     private func startTimer() {
         cancelTimer()
-        guard playbackAllowed, isPlaying, !queue.isEmpty,
+        guard sessionActive, playbackAllowed, isPlaying, !isRecovering, !queue.isEmpty,
               let frame = displayedFrame,
               let currentAsset else { return }
 
@@ -419,10 +557,9 @@ final class PlaybackViewModel: ObservableObject {
         let initialElapsed = min(max(elapsed, 0), duration)
         let startedAt = Date()
         timerTask = Task { [weak self] in
-            guard let self else { return }
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled,
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+                guard let self, self.sessionActive, !Task.isCancelled,
                       self.timerToken == token,
                       self.loadGeneration == generation,
                       self.displayedFrame?.id == frameID,
