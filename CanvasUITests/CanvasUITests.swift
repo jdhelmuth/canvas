@@ -22,8 +22,10 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
         app.staticTexts["Schedule & Power"].tap()
 
+        let form = app.collectionViews.firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 3))
         let nightDimmingToggle = app.switches["automatic-night-dimming-toggle"]
-        for _ in 0..<5 where !nightDimmingToggle.exists { app.swipeUp() }
+        for _ in 0..<5 where !nightDimmingToggle.exists { form.swipeUp() }
         XCTAssertTrue(nightDimmingToggle.waitForExistence(timeout: 3))
         XCTAssertEqual(nightDimmingToggle.value as? String, "1")
         XCTAssertTrue(app.staticTexts["Dim from"].exists)
@@ -37,21 +39,23 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
         app.staticTexts["Clock & Overlays"].tap()
 
+        let form = app.collectionViews.firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 3))
         let strokeGroup = app.staticTexts["Stroke"]
-        for _ in 0..<5 where !strokeGroup.exists { app.swipeUp() }
+        for _ in 0..<5 where !strokeGroup.exists { form.swipeUp() }
         XCTAssertTrue(strokeGroup.waitForExistence(timeout: 3))
         strokeGroup.tap()
 
         let clockStrokeToggle = app.switches["clock-stroke-toggle"]
         let strokeToggle = app.switches["text-stroke-toggle"]
-        for _ in 0..<5 where !clockStrokeToggle.exists || !strokeToggle.exists { app.swipeUp() }
+        for _ in 0..<5 where !clockStrokeToggle.exists || !strokeToggle.exists { form.swipeUp() }
         XCTAssertTrue(clockStrokeToggle.waitForExistence(timeout: 3))
         XCTAssertTrue(strokeToggle.waitForExistence(timeout: 3))
         let strokeControl = strokeToggle.descendants(matching: .switch).firstMatch
         XCTAssertTrue(strokeControl.exists)
         strokeControl.tap()
         let strokeSlider = app.sliders["Stroke thickness-slider"]
-        for _ in 0..<5 where !strokeSlider.exists { app.swipeUp() }
+        for _ in 0..<5 where !strokeSlider.exists { form.swipeUp() }
         XCTAssertTrue(strokeSlider.waitForExistence(timeout: 3))
     }
 
@@ -63,7 +67,9 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
         app.staticTexts["Clock & Overlays"].tap()
 
-        for _ in 0..<6 where !app.staticTexts["Weather & Visibility"].exists { app.swipeUp() }
+        let form = app.collectionViews.firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 3))
+        for _ in 0..<6 where !app.staticTexts["Weather & Visibility"].exists { form.swipeUp() }
         let weatherGroup = app.staticTexts["Weather & Visibility"]
         XCTAssertTrue(weatherGroup.waitForExistence(timeout: 3))
         weatherGroup.tap()
@@ -72,7 +78,7 @@ final class CanvasUITests: XCTestCase {
         let airQuality = app.switches["weather-air-quality-toggle"]
         // Expanding the group can preserve the list near its lower rows. Return
         // to the start of the weather choices before checking the defaults.
-        for _ in 0..<5 where !conditions.exists || !airQuality.exists { app.swipeDown() }
+        for _ in 0..<5 where !conditions.exists || !airQuality.exists { form.swipeDown() }
         XCTAssertTrue(conditions.waitForExistence(timeout: 3))
         XCTAssertTrue(airQuality.waitForExistence(timeout: 3))
         XCTAssertEqual(conditions.value as? String, "1")
@@ -81,7 +87,7 @@ final class CanvasUITests: XCTestCase {
         let humidity = app.switches["Humidity"]
         let wind = app.switches["Wind"]
         let dewPointScale = app.switches["weather-dew-point-scale-toggle"]
-        app.swipeUp()
+        form.swipeUp()
         let weatherSize = app.sliders["Weather size-slider"]
         XCTAssertTrue(weatherSize.waitForExistence(timeout: 3))
         XCTAssertTrue(feelsLike.waitForExistence(timeout: 3))
@@ -287,12 +293,31 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 3))
         app.staticTexts["Clock & Overlays"].tap()
 
+        // On a landscape iPad, the form occupies only the lower half of the
+        // settings sheet. Scroll that form rather than the preview behind it.
+        let settingsForm = app.collectionViews.firstMatch
+        XCTAssertTrue(settingsForm.waitForExistence(timeout: 3))
+        let weatherGroup = settingsForm.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Weather & Visibility")).firstMatch
+        for _ in 0..<12 where !weatherGroup.exists { settingsForm.swipeUp() }
+        XCTAssertTrue(weatherGroup.waitForExistence(timeout: 3))
+        weatherGroup.tap()
+
         let weatherToggle = app.switches["Current weather (opt-in)"]
         for _ in 0..<4 where !weatherToggle.exists {
-            app.swipeUp()
+            settingsForm.swipeDown()
         }
         XCTAssertTrue(weatherToggle.waitForExistence(timeout: 5))
+        guard weatherToggle.exists else { return }
         let wasEnabled = (weatherToggle.value as? String) == "1"
+        defer {
+            if !wasEnabled {
+                for _ in 0..<8 where !weatherToggle.isHittable { settingsForm.swipeDown() }
+                if weatherToggle.exists, (weatherToggle.value as? String) == "1" {
+                    weatherToggle.tap()
+                }
+            }
+        }
         if !wasEnabled {
             weatherToggle.tap()
             let allowWhileUsing = app.buttons["Allow While Using App"]
@@ -301,11 +326,14 @@ final class CanvasUITests: XCTestCase {
             if allowOnce.waitForExistence(timeout: 1) { allowOnce.tap() }
         }
 
-        let status = app.staticTexts["canvas.weather.status"]
+        let status = settingsForm.descendants(matching: .any)
+            .matching(identifier: "canvas.weather.status").firstMatch
+        for _ in 0..<8 where !status.exists { settingsForm.swipeUp() }
         XCTAssertTrue(status.waitForExistence(timeout: 25))
-        XCTAssertEqual(status.label, "Weather status: Weather live")
-
-        if !wasEnabled { weatherToggle.tap() }
+        guard status.exists else { return }
+        let isLive = NSPredicate(format: "label == %@", "Weather status: Weather live")
+        expectation(for: isLive, evaluatedWith: status)
+        waitForExpectations(timeout: 45)
     }
 
     func testGrantPhotosForStoreCapture() throws {

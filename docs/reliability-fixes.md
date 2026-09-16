@@ -1,7 +1,8 @@
 # Canvas reliability fixes
 
 September 15, 2026. Addresses the 16 findings from the audit of commit
-`5c70bda58f877d207e7b8fd546bedea37a2de8cf`. App version remains 1.0 (61).
+`5c70bda58f877d207e7b8fd546bedea37a2de8cf`. The initial implementation retained
+version 1.0 (61); release preparation subsequently advanced to 1.0.1 (62).
 
 ## Changes
 
@@ -57,10 +58,16 @@ setup. A separate unsigned generic-iOS Release build also succeeded. Existing
 Xcode headermap/App Intents metadata warnings do not affect these results.
 The current app was also exercised through its live interactive preview: choosing
 the bundled Landscapes album, starting playback, automatic photo advancement,
-and showing playback controls. The preview remains available for review.
+and showing playback controls.
 
 Deterministic provider and PhotoKit-policy tests cover failure and race cases.
+The follow-up release pass also verified live weather for the connected iPad's
+configured provider using development build 1.0.1 (62), with existing settings
+preserved. The test was repaired to scroll the landscape settings form, expand
+the weather section, and handle iPadOS 27 accessibility element types.
 Real-account Google-to-Apple mirroring, Apple cloud downloads/hidden assets, and
-live WeatherKit/Ambient/AirNow behavior still require physical-iPad smoke checks
-before distribution. No production service, personal photo library, release
-version, or store submission was changed by this work.
+the full fresh-install/upgrade TestFlight checklist remain release gates before
+App Review. Xcode Cloud build 62 is valid, App Store eligible, and available to
+the existing internal TestFlight group. App Review submission is still pending;
+see `release/1.0.1.md` for the provider evidence and the subsequent simulator
+infrastructure limitation while validating test-only corrections.
