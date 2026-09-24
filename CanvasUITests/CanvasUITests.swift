@@ -142,6 +142,48 @@ final class CanvasUITests: XCTestCase {
         add(attachment)
     }
 
+    func testBatteryDateAndClockStayTogetherWithTallWeather() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--canvas-ui-reset", "--canvas-ui-weather-frame",
+            "--canvas-ui-store-weather-station", "--canvas-ui-clock-group"
+        ]
+        app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            let window = app.windows.firstMatch
+            let rotated = NSPredicate { _, _ in
+                orientation == .portrait
+                    ? window.frame.height > window.frame.width
+                    : window.frame.width > window.frame.height
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: rotated, object: window)], timeout: 5), .completed)
+            let clock = app.otherElements["canvas.clock.overlay"]
+            let date = app.staticTexts["canvas.date.overlay"]
+            let battery = app.descendants(matching: .any).matching(identifier: "canvas.battery.overlay").firstMatch
+            let weather = app.otherElements["canvas.weather.overlay"]
+            for element in [clock, date, battery, weather] {
+                XCTAssertTrue(element.waitForExistence(timeout: 5))
+            }
+            // Check actual rendered adjacency, not only the ordering policy.
+            XCTAssertEqual(date.frame.minY - battery.frame.maxY, 3, accuracy: 2)
+            XCTAssertEqual(clock.frame.minY - date.frame.maxY, 3, accuracy: 2)
+            XCTAssertGreaterThanOrEqual(clock.frame.minY, 0)
+            XCTAssertLessThanOrEqual(weather.frame.maxY, window.frame.maxY)
+            if orientation == .portrait {
+                XCTAssertGreaterThan(weather.frame.minY, clock.frame.maxY)
+            } else {
+                XCTAssertGreaterThan(weather.frame.minX, clock.frame.maxX)
+                XCTAssertGreaterThan(weather.frame.height, clock.frame.height + date.frame.height + battery.frame.height)
+            }
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "Compact clock group - \(orientation == .portrait ? "portrait" : "landscape")"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     func testConnectedStationShowsOnlyPWSConditionsEvenWithLegacyLocalForecast() {
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame", "--canvas-ui-store-weather-station"]

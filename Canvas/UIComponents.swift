@@ -660,10 +660,11 @@ struct DewPointScaleView: View {
 /// Shared clock/weather composition for the live frame and Settings preview.
 /// Landscape keeps the requested side-by-side treatment; portrait moves the
 /// weather below the clock so the digital time has the full canvas width.
-struct WeatherClockRow: View {
-    let date: Date
+/// Keep supporting labels inside the clock column: weather height must never
+/// add space between the battery/date and the clock.
+struct WeatherClockRow<ClockContent: View>: View {
+    @ViewBuilder let clock: () -> ClockContent
     let settings: OverlaySettings
-    let mediaImage: UIImage?
     let weather: WeatherOverlayWidget
     let canvasSize: CGSize
 
@@ -674,8 +675,7 @@ struct WeatherClockRow: View {
         Group {
             if shouldStack {
                 VStack(alignment: .leading, spacing: 10) {
-                    ClockOverlayView(date: date, settings: settings, mediaImage: mediaImage)
-                        .accessibilityIdentifier("canvas.clock.overlay")
+                    clock()
                     Rectangle()
                         .fill(Color.white.opacity(0.22))
                         .frame(width: 48, height: 1)
@@ -684,8 +684,7 @@ struct WeatherClockRow: View {
                 }
             } else {
                 HStack(alignment: .center, spacing: WeatherClockLayoutPolicy.horizontalSpacing) {
-                    ClockOverlayView(date: date, settings: settings, mediaImage: mediaImage)
-                        .accessibilityIdentifier("canvas.clock.overlay")
+                    clock()
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Color.white.opacity(0.22))
                         .frame(width: WeatherClockLayoutPolicy.dividerWidth, height: min(max(clockSize * 0.78, 54), 132))

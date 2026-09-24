@@ -227,6 +227,13 @@ final class AppStore: ObservableObject {
             overlays.weatherShowNextHour = false
             settingsStore.settings.overlays = overlays
         }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-clock-group") {
+            settingsStore.settings.overlays.showBattery = true
+            settingsStore.settings.overlays.showDate = true
+            settingsStore.settings.overlays.showAlbum = false
+            settingsStore.settings.overlays.showWeekday = false
+            settingsStore.settings.overlays.showItemCount = false
+        }
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-expanded") {
             settingsStore.settings.overlays.weatherShowFeelsLike = true
             settingsStore.settings.overlays.weatherShowHumidity = true

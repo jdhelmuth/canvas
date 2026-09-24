@@ -1013,12 +1013,12 @@ private struct ClockOverlayPreview: View {
         )
         ZStack {
             if !items.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(items) { item in
-                        if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
-                            if item == .clock, pairsClockAndWeather {
-                                previewClockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
-                            } else {
+                Group {
+                    if pairsClockAndWeather {
+                        previewClockAndWeatherRow(items: items, date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
+                    } else {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(items) { item in
                                 previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                             }
                         }
@@ -1068,15 +1068,21 @@ private struct ClockOverlayPreview: View {
     }
 
     private func previewClockAndWeatherRow(
+        items: [OverlayStackItem],
         date: Date,
         settings: OverlaySettings,
         textOpacity: Double,
         canvasSize: CGSize
     ) -> some View {
         WeatherClockRow(
-            date: date,
+            clock: {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(items.filter { $0 != .weather }) { item in
+                        previewOverlayItem(item, date: date, settings: settings, textOpacity: textOpacity)
+                    }
+                }
+            },
             settings: settings,
-            mediaImage: previewImages.first,
             weather: WeatherOverlayWidget(
                 snapshot: store.weather.snapshot,
                 status: store.weather.status,
@@ -1105,6 +1111,7 @@ private struct ClockOverlayPreview: View {
             Text(settings.effectiveDateFormat.string(from: date))
                 .font(.system(size: settings.fontSize * 0.64, weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
                 .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+                .accessibilityIdentifier("canvas.date.overlay")
         case .weekday:
             Text(date, format: .dateTime.weekday(.wide))
                 .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
@@ -1121,6 +1128,8 @@ private struct ClockOverlayPreview: View {
             Label("91%", systemImage: "battery.75percent")
                 .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
                 .overlayTextStroke(settings: settings, mediaImage: previewImages.first, opacity: textOpacity)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("canvas.battery.overlay")
         case .weather:
             previewWeatherWidget(settings: settings, textOpacity: textOpacity)
         case .location, .caption:

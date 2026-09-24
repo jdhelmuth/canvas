@@ -437,12 +437,12 @@ struct PlayerView: View {
         let date = StoreCaptureClock.date
         return ZStack {
             if !items.isEmpty {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(items) { item in
-                        if WeatherClockLayoutPolicy.shouldRenderStandalone(item, paired: pairsClockAndWeather) {
-                            if item == .clock, pairsClockAndWeather {
-                                clockAndWeatherRow(date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
-                            } else {
+                Group {
+                    if pairsClockAndWeather {
+                        clockAndWeatherRow(items: items, date: date, settings: settings, textOpacity: opacity.text, canvasSize: size)
+                    } else {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(items) { item in
                                 overlayItem(item, date: date, settings: settings, textOpacity: opacity.text)
                             }
                         }
@@ -485,15 +485,21 @@ struct PlayerView: View {
     }
 
     private func clockAndWeatherRow(
+        items: [OverlayStackItem],
         date: Date,
         settings: OverlaySettings,
         textOpacity: Double,
         canvasSize: CGSize
     ) -> some View {
         WeatherClockRow(
-            date: date,
+            clock: {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(items.filter { $0 != .weather }) { item in
+                        overlayItem(item, date: date, settings: settings, textOpacity: textOpacity)
+                    }
+                }
+            },
             settings: settings,
-            mediaImage: model.currentImage,
             weather: WeatherOverlayWidget(
                 snapshot: store.weather.snapshot,
                 status: store.weather.status,
@@ -537,6 +543,7 @@ struct PlayerView: View {
             Text(settings.effectiveDateFormat.string(from: date))
                 .font(.system(size: settings.fontSize * 0.64, weight: settings.effectiveTextWeight.fontWeight, design: .rounded))
                 .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+                .accessibilityIdentifier("canvas.date.overlay")
         case .album:
             if let title = model.currentAsset?.albumTitle {
                 Text(title)
@@ -571,6 +578,8 @@ struct PlayerView: View {
             )
             .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
             .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("canvas.battery.overlay")
         case .weather:
             weatherWidget(settings: settings, textOpacity: textOpacity)
         }
