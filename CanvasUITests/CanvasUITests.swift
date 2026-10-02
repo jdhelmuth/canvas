@@ -307,7 +307,10 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(duration.waitForExistence(timeout: 5))
     }
 
-    func testGooglePhotosConnectionEntryIsConfigured() {
+    func testGooglePhotosConnectionAndAlbumVisibilityPersistence() {
+        // A failed toggle must stop here, rather than making the next tap
+        // enable it and producing misleading failures for the opposite state.
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]
         app.launch()
@@ -320,17 +323,42 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Landscapes"].exists)
         XCTAssertTrue(app.staticTexts["Cityscapes"].exists)
         XCTAssertTrue(app.staticTexts["Abstract"].exists)
-        let emptyAlbumControl = emptyAlbumToggle.descendants(matching: .switch).firstMatch
-        XCTAssertTrue(emptyAlbumControl.exists)
+        func expectEmptyAlbums(_ value: String) {
+            let expected = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", value),
+                object: emptyAlbumToggle
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [expected], timeout: 5), .completed)
+        }
+        func toggleEmptyAlbums(to value: String) {
+            // SwiftUI exposes both the labelled row and its native switch.
+            // The row's center is not the switch's tappable control on iPad.
+            let control = emptyAlbumToggle.descendants(matching: .switch).firstMatch
+            let ready = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "hittable == true AND enabled == true"),
+                object: control
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+            control.tap()
+            expectEmptyAlbums(value)
+        }
         XCTAssertEqual(emptyAlbumToggle.value as? String, "0")
-        emptyAlbumControl.tap()
-        let enabledExpectation = expectation(for: NSPredicate(format: "value == %@", "1"), evaluatedWith: emptyAlbumToggle)
-        wait(for: [enabledExpectation], timeout: 2)
-        XCTAssertEqual(emptyAlbumToggle.value as? String, "1")
-        emptyAlbumControl.tap()
-        let disabledExpectation = expectation(for: NSPredicate(format: "value == %@", "0"), evaluatedWith: emptyAlbumToggle)
-        wait(for: [disabledExpectation], timeout: 2)
-        XCTAssertEqual(emptyAlbumToggle.value as? String, "0")
+        toggleEmptyAlbums(to: "1")
+        app.navigationBars["Choose albums"].buttons["Done"].tap()
+        app.terminate()
+        // Relaunch without reset and verify the nondefault value: an off
+        // value would also pass if persistence silently fell back to defaults.
+        app.launchArguments = ["--canvas-ui-home"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Manage albums"].waitForExistence(timeout: 5))
+        app.buttons["Manage albums"].tap()
+        XCTAssertTrue(app.navigationBars["Choose albums"].waitForExistence(timeout: 3))
+        expectEmptyAlbums("1")
+        toggleEmptyAlbums(to: "0")
+        app.navigationBars["Choose albums"].buttons["Done"].tap()
+        app.buttons["Manage albums"].tap()
+        XCTAssertTrue(app.navigationBars["Choose albums"].waitForExistence(timeout: 3))
+        expectEmptyAlbums("0")
         let albumList = app.collectionViews.firstMatch
         let googleImport = app.buttons["Add or refresh a Google album"]
         for _ in 0..<6 where !googleImport.exists { albumList.swipeUp() }
