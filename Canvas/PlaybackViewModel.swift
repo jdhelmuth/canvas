@@ -16,6 +16,7 @@ final class PlaybackViewModel: ObservableObject {
         let layoutAssets: [CanvasMediaItem]
         let transitionSeed: UInt64
         let gestureDirection: Int
+        let isLayoutRefresh: Bool
     }
 
     @Published private(set) var isPlaying = true
@@ -50,6 +51,7 @@ final class PlaybackViewModel: ObservableObject {
     private var pendingReload = false
     private var pendingSettings: CanvasSettings?
     private var pendingQueueRebuild = false
+    private var pendingLayoutRefresh = false
 
     var currentAsset: CanvasMediaItem? { displayedFrame?.asset }
     var currentImage: UIImage? { displayedFrame?.image }
@@ -108,6 +110,7 @@ final class PlaybackViewModel: ObservableObject {
         pendingReload = false
         pendingSettings = nil
         pendingQueueRebuild = false
+        pendingLayoutRefresh = false
         displayedFrame = nil
         queue = []
         queueCount = 0
@@ -203,7 +206,7 @@ final class PlaybackViewModel: ObservableObject {
         currentIndex = candidateIndex
         recoveryStartIndex = nil
 
-        if canPreserveFrame && !isRecovering {
+        if canPreserveFrame && !isRecovering && !pendingLayoutRefresh {
             // Keep the current visual frame and its transition route intact;
             // only the future queue may have changed underneath it.
             navigationHistory.reset(to: currentPosition)
@@ -214,6 +217,7 @@ final class PlaybackViewModel: ObservableObject {
         cancelTimer()
         retryTask?.cancel()
         loadTask?.cancel()
+        pendingLayoutRefresh = false
         loadGeneration &+= 1
         let generation = loadGeneration
         navigationHistory = PlaybackNavigationHistory()
@@ -273,7 +277,7 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private var needsFrameLoad: Bool {
-        isRecovering || (queue.indices.contains(currentIndex) && queue[currentIndex].id != currentAsset?.id)
+        pendingLayoutRefresh || isRecovering || (queue.indices.contains(currentIndex) && queue[currentIndex].id != currentAsset?.id)
     }
 
     func togglePlaying() {
@@ -291,12 +295,19 @@ final class PlaybackViewModel: ObservableObject {
     @discardableResult func next() -> Bool { navigateByDisplayedGroup(direction: 1) }
     @discardableResult func previous() -> Bool { navigateByDisplayedGroup(direction: -1) }
 
-    /// Updates the actual fullscreen canvas used by LayoutCanvas. Keeping the
-    /// size here lets a gesture resolve the same orientation-aware group that
-    /// is currently visible, including after rotation.
+    /// Rotation can change the visible companions without moving the primary
+    /// photo. Refresh that group before navigation can count its new tiles.
     func updateCanvasSize(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
+        guard sessionActive, size.width > 0, size.height > 0, size != canvasSize else { return }
+        let previousGroup = currentGroupIndices
         canvasSize = size
+        guard currentGroupIndices != previousGroup else { return }
+        pendingLayoutRefresh = true
+        cancelTimer()
+        retryTask?.cancel()
+        loadTask?.cancel()
+        loadGeneration &+= 1
+        scheduleLoad(generation: loadGeneration, transitionSeed: 1, gestureDirection: 0)
     }
 
     /// Horizontal gestures and timed steps navigate by displayed groups for
@@ -305,6 +316,7 @@ final class PlaybackViewModel: ObservableObject {
     /// rendered as a single UIKit surface.
     @discardableResult
     func navigateByDisplayedGroup(direction: Int, gestureDirection: Int = 0) -> Bool {
+        guard sessionActive, playbackAllowed, !pendingLayoutRefresh else { return false }
         // If the user is moving through frames that were already shown, replay
         // the recorded route before asking the current queue for a new target.
         // This is what keeps Back tied to playback history after a reshuffle.
@@ -323,16 +335,25 @@ final class PlaybackViewModel: ObservableObject {
         let targetSize = canvasSize.width > 0 && canvasSize.height > 0
             ? canvasSize
             : UIScreen.main.bounds.size
-        guard let target = PlaybackAdvancePolicy.destinationIndex(
-            imageSizes: imageSizes,
-            currentIndex: currentIndex,
-            direction: direction,
-            layout: settings.layout,
-            canvasSize: targetSize,
-            repeatEnabled: settings.repeatEnabled,
-            usesDisplayedGroup: true,
-            singleMediaIndices: singleMediaIndices
-        ) else {
+        let destination: Int?
+        if direction > 0, let last = currentGroupIndices.last {
+            // After rotation the primary can be between the queue's usual
+            // group starts (for example [b,c] at index 1). Move beyond the
+            // actual group instead of replaying c at the next global start.
+            destination = last + 1 < queue.count ? last + 1 : (settings.repeatEnabled ? 0 : nil)
+        } else {
+            destination = PlaybackAdvancePolicy.destinationIndex(
+                imageSizes: imageSizes,
+                currentIndex: currentIndex,
+                direction: direction,
+                layout: settings.layout,
+                canvasSize: targetSize,
+                repeatEnabled: settings.repeatEnabled,
+                usesDisplayedGroup: true,
+                singleMediaIndices: singleMediaIndices
+            )
+        }
+        guard let target = destination else {
             // A grouped slideshow has no valid forward destination at the
             // end when repeat is off. Do not fall back to the next raw item;
             // that would expose the second tile of the current group.
@@ -438,7 +459,9 @@ final class PlaybackViewModel: ObservableObject {
                 isRecovering = false
                 recoveryStartIndex = nil
                 errorMessage = nil
-                if attempted > 0 { navigationHistory.reset(to: currentPosition) }
+                if attempted > 0 || navigationHistory.positions.isEmpty {
+                    navigationHistory.reset(to: currentPosition)
+                }
                 return
             }
             guard sessionActive, playbackAllowed, !Task.isCancelled, loadGeneration == generation else { return }
@@ -452,6 +475,7 @@ final class PlaybackViewModel: ObservableObject {
             currentIndex = retainedIndex
         }
         recoveryStartIndex = firstAttemptIndex
+        pendingLayoutRefresh = false
         isRecovering = true
         errorMessage = "Photos are temporarily unavailable. Canvas will try again shortly."
         scheduleRecovery(generation: generation)
@@ -472,8 +496,11 @@ final class PlaybackViewModel: ObservableObject {
     private func loadFrame(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async -> Bool {
         guard !Task.isCancelled, loadGeneration == generation else { return false }
         guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let imageLoader else { return false }
-        elapsed = 0
-        progress = 0
+        let retainedFrame = pendingLayoutRefresh && displayedFrame?.asset.id == asset.id ? displayedFrame : nil
+        if retainedFrame == nil {
+            elapsed = 0
+            progress = 0
+        }
         errorMessage = nil
         currentMediaDuration = asset.appleAsset?.duration ?? 0
         if currentMediaDuration <= 0, asset.kind == .video, let url = asset.localURL {
@@ -482,7 +509,12 @@ final class PlaybackViewModel: ObservableObject {
             }
         }
         guard !Task.isCancelled, loadGeneration == generation else { return false }
-        let image = await imageLoader(asset, CGSize(width: 1800, height: 1800))
+        let image: UIImage?
+        if let retainedFrame {
+            image = retainedFrame.image
+        } else {
+            image = await imageLoader(asset, CGSize(width: 1800, height: 1800))
+        }
         guard !Task.isCancelled, loadGeneration == generation else { return false }
         if let image {
             // Build the complete displayed group before publishing any of it.
@@ -498,7 +530,15 @@ final class PlaybackViewModel: ObservableObject {
                 : []
             for companion in companions {
                 guard !Task.isCancelled, loadGeneration == generation else { return false }
-                if let companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000)) {
+                let companionImage: UIImage?
+                if let retainedFrame,
+                   let index = retainedFrame.layoutAssets.firstIndex(where: { $0.id == companion.id }),
+                   retainedFrame.layoutImages.indices.contains(index) {
+                    companionImage = retainedFrame.layoutImages[index]
+                } else {
+                    companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000))
+                }
+                if let companionImage {
                     guard !Task.isCancelled, loadGeneration == generation else { return false }
                     loadedImages.append(companionImage)
                     loadedAssets.append(companion)
@@ -514,8 +554,10 @@ final class PlaybackViewModel: ObservableObject {
                 layoutImages: loadedImages,
                 layoutAssets: loadedAssets,
                 transitionSeed: transitionSeed,
-                gestureDirection: gestureDirection
+                gestureDirection: gestureDirection,
+                isLayoutRefresh: retainedFrame != nil
             )
+            pendingLayoutRefresh = false
             prefetchImages?(Array(queue.dropFirst(currentIndex + 1).prefix(4)), CGSize(width: 700, height: 700))
             return true
         }
@@ -523,7 +565,11 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private func companionAssets(after asset: CanvasMediaItem) -> [CanvasMediaItem] {
-        guard settings.layout != .single, settings.layout != .fitBlurred, settings.layout != .intelligentFill, settings.layout != .solidBackground else { return [] }
+        guard PlaybackMediaSurfacePolicy.allowsCompanions(for: asset.kind) else { return [] }
+        return currentGroupIndices.dropFirst().compactMap { queue.indices.contains($0) ? queue[$0] : nil }
+    }
+
+    private var currentGroupIndices: [Int] {
         let imageSizes = queue.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
         let singleMediaIndices = Set(queue.indices.filter { PlaybackMediaSurfacePolicy.usesSingleTile(for: queue[$0].kind) })
         let targetSize = canvasSize.width > 0 && canvasSize.height > 0
@@ -536,13 +582,12 @@ final class PlaybackViewModel: ObservableObject {
             canvasSize: targetSize,
             singleMediaIndices: singleMediaIndices
         )
-        guard group.indices.first == currentIndex else { return [] }
-        return group.indices.dropFirst().compactMap { queue.indices.contains($0) ? queue[$0] : nil }
+        return group.indices
     }
 
     private func startTimer() {
         cancelTimer()
-        guard sessionActive, playbackAllowed, isPlaying, !isRecovering, !queue.isEmpty,
+        guard sessionActive, playbackAllowed, isPlaying, !isRecovering, !pendingLayoutRefresh, !queue.isEmpty,
               let frame = displayedFrame,
               let currentAsset else { return }
 

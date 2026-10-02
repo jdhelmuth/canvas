@@ -363,6 +363,19 @@ struct PlayerView: View {
             return
         }
 
+        if frame.isLayoutRefresh && current.asset.id == frame.asset.id {
+            // Regroup the same photo in place. Rotation is not a new slide
+            // and must not replay a random transition or keep an old tile.
+            finishFrameTransition()
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                activeTransitionStyle = .cut
+                presentedFrame = frame
+            }
+            return
+        }
+
         // Resolve the complete transition once and keep it stable until the
         // compositor's completion boundary. Random settings, reduce motion,
         // or another view update cannot mutate an animation in flight.

@@ -174,6 +174,359 @@ final class PlaybackReliabilityTests: XCTestCase {
         model.stop()
     }
 
+    func testRotationLoadsNewVisibleCompanionBeforeNextCanSkipIt() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { _, _ in UIImage() })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a"])
+
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "b"] }
+        XCTAssertEqual(model.currentIndex, 0)
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "c" }
+    }
+
+    func testRotationWhileGatedRefreshesGroupWhenPlaybackBecomesAllowed() async {
+        var value = settings
+        value.layout = .automatic
+        let items = [item("a"), item("b"), item("c")]
+        var requests = 0
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { _, _ in
+            requests += 1
+            return UIImage()
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.togglePlaying()
+        model.setPlaybackAllowed(false)
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(requests, 1)
+        model.setPlaybackAllowed(true)
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "b"] }
+        XCTAssertFalse(model.isPlaying, "Rotation must preserve the person's pause preference")
+    }
+
+    func testRotationBlocksImmediateNextUntilNewCompanionIsVisible() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        var companionCompletion: CheckedContinuation<UIImage?, Never>?
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "b" {
+                return await withCheckedContinuation { companionCompletion = $0 }
+            }
+            return UIImage()
+        })
+        defer {
+            model.stop()
+            companionCompletion?.resume(returning: nil)
+        }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        let originalFrame = model.displayedFrame?.id
+
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        XCTAssertFalse(model.next(), "A swipe cannot skip a companion that has not appeared yet")
+        XCTAssertTrue(model.isPlaying, "Waiting for rotation must not pause the slideshow")
+        XCTAssertEqual(model.currentIndex, 0)
+        await waitUntil { companionCompletion != nil }
+        XCTAssertEqual(model.displayedFrame?.id, originalFrame)
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a"])
+        XCTAssertFalse(model.next())
+
+        companionCompletion?.resume(returning: UIImage())
+        companionCompletion = nil
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "b"] }
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "c" }
+    }
+
+    func testRotatingBackRejectsLateCompanionAndRestoresNavigation() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        var companionCompletion: CheckedContinuation<UIImage?, Never>?
+        var delayCompanion = true
+        var companionReturned = false
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "b", delayCompanion {
+                let image = await withCheckedContinuation { companionCompletion = $0 }
+                companionReturned = true
+                return image
+            }
+            return UIImage()
+        })
+        defer {
+            model.stop()
+            companionCompletion?.resume(returning: nil)
+        }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { companionCompletion != nil }
+        guard let pendingCompanion = companionCompletion else { return }
+
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        delayCompanion = false
+        companionCompletion = nil
+        pendingCompanion.resume(returning: UIImage())
+        await waitUntil { companionReturned }
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a"], "A stale landscape load must not add a hidden companion")
+        XCTAssertEqual(model.currentIndex, 0)
+        XCTAssertTrue(model.isPlaying)
+        XCTAssertTrue(model.next(), "Returning to the original layout must clear the pending regroup")
+        await waitUntil { model.currentAsset?.id == "b" }
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["b"])
+    }
+
+    func testRotationAtOddIndexAdvancesPastTheActualVisiblePair() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c"), item("d")]
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { _, _ in UIImage() })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "b" }
+        XCTAssertEqual(model.currentIndex, 1)
+
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { model.layoutAssets.map(\.id) == ["b", "c"] }
+        XCTAssertEqual(model.currentIndex, 1, "Rotation must retain the person's current primary photo")
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "d" }
+        XCTAssertEqual(model.currentIndex, 3)
+        XCTAssertFalse(model.next())
+        XCTAssertFalse(model.isPlaying)
+    }
+
+    func testResizeWithUnchangedGroupPreservesFrameWithoutLoadingAgain() async {
+        var value = settings
+        value.layout = .automatic
+        let items = [item("a"), item("b"), item("c")]
+        var requests = 0
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { _, _ in
+            requests += 1
+            return UIImage()
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        let originalFrame = model.displayedFrame?.id
+
+        model.updateCanvasSize(CGSize(width: 800, height: 1200))
+        model.updateCanvasSize(CGSize(width: 900, height: 1300))
+        model.updateCanvasSize(CGSize(width: 900, height: 1300))
+        model.updateCanvasSize(.zero)
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(model.displayedFrame?.id, originalFrame)
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a"])
+        XCTAssertEqual(requests, 1, "Resizing the same visible group should not request its photos again")
+        XCTAssertTrue(model.isPlaying)
+    }
+
+    func testRotationPreservesElapsedTimeAndProgressWhilePaused() async {
+        var value = settings
+        value.layout = .automatic
+        let items = [item("a"), item("b"), item("c")]
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { _, _ in UIImage() })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        await waitUntil { model.elapsed > 0 }
+        model.togglePlaying()
+        let pausedElapsed = model.elapsed
+        let pausedProgress = model.progress
+
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "b"] }
+        XCTAssertFalse(model.isPlaying)
+        XCTAssertEqual(model.elapsed, pausedElapsed, accuracy: 0.001)
+        XCTAssertEqual(model.progress, pausedProgress, accuracy: 0.00001)
+        XCTAssertEqual(model.currentAsset?.id, "a")
+    }
+
+    func testRotationDuringFirstLoadRejectsStalePrimaryAndPreservesInitialHistory() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        let currentImage = UIImage()
+        var primaryRequests = 0
+        var firstPrimaryCompletion: CheckedContinuation<UIImage?, Never>?
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "a" {
+                primaryRequests += 1
+                if primaryRequests == 1 {
+                    return await withCheckedContinuation { firstPrimaryCompletion = $0 }
+                }
+                return currentImage
+            }
+            return UIImage()
+        })
+        defer {
+            model.stop()
+            firstPrimaryCompletion?.resume(returning: nil)
+        }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        let initialLoad = Task { await model.reload() }
+        await waitUntil { firstPrimaryCompletion != nil }
+        XCTAssertNil(model.displayedFrame)
+
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "b"] }
+        let rotatedFrame = model.displayedFrame?.id
+        XCTAssertTrue(model.currentImage === currentImage)
+
+        // The original provider result deliberately ignores cancellation and
+        // arrives after the complete landscape frame has been published.
+        firstPrimaryCompletion?.resume(returning: UIImage())
+        firstPrimaryCompletion = nil
+        await initialLoad.value
+        XCTAssertEqual(model.displayedFrame?.id, rotatedFrame)
+        XCTAssertTrue(model.currentImage === currentImage)
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a", "b"])
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "c" }
+        XCTAssertTrue(model.previous())
+        await waitUntil { model.currentAsset?.id == "a" }
+        XCTAssertEqual(model.currentIndex, 0)
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a", "b"])
+    }
+
+    func testFailedRotationCompanionDoesNotLoopOrKeepNavigationBlocked() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        var requests: [String] = []
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            requests.append(item.id)
+            return item.id == "b" ? nil : UIImage()
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { requests.contains("b") }
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a"])
+        XCTAssertFalse(model.isRecovering, "A usable primary remains visible when its companion is unavailable")
+        let settledRequests = requests
+
+        model.updateCanvasSize(CGSize(width: 1300, height: 900))
+        model.updateCanvasSize(CGSize(width: 1200, height: 800))
+        model.setPlaybackAllowed(false)
+        model.setPlaybackAllowed(true)
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(requests, settledRequests, "A failed companion must not trigger repeated loads for the same group")
+        XCTAssertEqual(requests.filter { $0 == "b" }.count, 1)
+        XCTAssertTrue(model.isPlaying)
+        XCTAssertTrue(model.next(), "A failed companion must release the pending rotation gate")
+        await waitUntil { model.currentAsset?.id == "c" }
+        XCTAssertFalse(model.isRecovering)
+    }
+
+    func testExhaustedRotationLoadReleasesNavigationWhilePaused() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        var firstPendingCompletion: CheckedContinuation<UIImage?, Never>?
+        var pendingRequests = 0
+        var pendingAvailable = false
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "a" { return UIImage() }
+            if item.id == "b" {
+                pendingRequests += 1
+                if pendingRequests == 1 {
+                    return await withCheckedContinuation { firstPendingCompletion = $0 }
+                }
+                return pendingAvailable ? UIImage() : nil
+            }
+            return nil
+        })
+        defer {
+            model.stop()
+            firstPendingCompletion?.resume(returning: nil)
+        }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.togglePlaying()
+        XCTAssertTrue(model.next())
+        await waitUntil { firstPendingCompletion != nil }
+
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { model.isRecovering }
+        XCTAssertEqual(model.currentAsset?.id, "a")
+        XCTAssertEqual(model.currentIndex, 0)
+        XCTAssertFalse(model.isPlaying)
+        firstPendingCompletion?.resume(returning: nil)
+        firstPendingCompletion = nil
+
+        XCTAssertTrue(model.previous(), "An exhausted regroup must not block manual recovery through Back")
+        await waitUntil { !model.isRecovering }
+        XCTAssertEqual(model.currentAsset?.id, "a")
+        pendingAvailable = true
+        XCTAssertTrue(model.next(), "Manual Next must work after the rotation load has finished unsuccessfully")
+        await waitUntil { model.currentAsset?.id == "b" }
+        XCTAssertEqual(model.currentIndex, 1)
+        XCTAssertFalse(model.isRecovering)
+        XCTAssertFalse(model.isPlaying)
+    }
+
+    func testLibraryRefreshRejectsRemovedCompanionFromPendingRotation() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let a = item("a"), b = item("b"), c = item("c"), d = item("d")
+        var items = [a, b, c, d]
+        var companionCompletion: CheckedContinuation<UIImage?, Never>?
+        var companionReturned = false
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "b" {
+                let image = await withCheckedContinuation { companionCompletion = $0 }
+                companionReturned = true
+                return image
+            }
+            return UIImage()
+        })
+        defer {
+            model.stop()
+            companionCompletion?.resume(returning: nil)
+        }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { companionCompletion != nil }
+        guard let pendingCompanion = companionCompletion else { return }
+
+        items = [a, c, d]
+        await model.refreshLibrary()
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "c"] }
+        let refreshedFrame = model.displayedFrame?.id
+        companionCompletion = nil
+        pendingCompanion.resume(returning: UIImage())
+        await waitUntil { companionReturned }
+        XCTAssertEqual(model.displayedFrame?.id, refreshedFrame)
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a", "c"], "A removed companion must not reappear from an old rotation request")
+        XCTAssertEqual(model.queueCount, 3)
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "d" }
+    }
+
     func testOptimizedGroupsKeepBoundariesAndNeighborSemantics() {
         let portrait = CGSize(width: 100, height: 200)
         let landscape = CGSize(width: 200, height: 100)
