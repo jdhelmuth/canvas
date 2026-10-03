@@ -52,6 +52,7 @@ final class PlaybackViewModel: ObservableObject {
     private var pendingSettings: CanvasSettings?
     private var pendingQueueRebuild = false
     private var pendingLayoutRefresh = false
+    private var pendingFrameReload = false
 
     var currentAsset: CanvasMediaItem? { displayedFrame?.asset }
     var currentImage: UIImage? { displayedFrame?.image }
@@ -111,6 +112,7 @@ final class PlaybackViewModel: ObservableObject {
         pendingSettings = nil
         pendingQueueRebuild = false
         pendingLayoutRefresh = false
+        pendingFrameReload = false
         displayedFrame = nil
         queue = []
         queueCount = 0
@@ -206,7 +208,7 @@ final class PlaybackViewModel: ObservableObject {
         currentIndex = candidateIndex
         recoveryStartIndex = nil
 
-        if canPreserveFrame && !isRecovering && !pendingLayoutRefresh {
+        if canPreserveFrame && !isRecovering && !pendingLayoutRefresh && !pendingFrameReload {
             // Keep the current visual frame and its transition route intact;
             // only the future queue may have changed underneath it.
             navigationHistory.reset(to: currentPosition)
@@ -217,12 +219,16 @@ final class PlaybackViewModel: ObservableObject {
         cancelTimer()
         retryTask?.cancel()
         loadTask?.cancel()
+        // A gated reload still invalidates the frame. Keep that obligation
+        // separate from rotation, which is allowed to reuse the current image.
+        pendingFrameReload = true
         pendingLayoutRefresh = false
         loadGeneration &+= 1
         let generation = loadGeneration
         navigationHistory = PlaybackNavigationHistory()
 
         guard !queue.isEmpty else {
+            pendingFrameReload = false
             displayedFrame = nil
             errorMessage = "Choose an album with playable media to start Canvas."
             return
@@ -277,7 +283,7 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     private var needsFrameLoad: Bool {
-        pendingLayoutRefresh || isRecovering || (queue.indices.contains(currentIndex) && queue[currentIndex].id != currentAsset?.id)
+        pendingLayoutRefresh || pendingFrameReload || isRecovering || (queue.indices.contains(currentIndex) && queue[currentIndex].id != currentAsset?.id)
     }
 
     func togglePlaying() {
@@ -316,7 +322,7 @@ final class PlaybackViewModel: ObservableObject {
     /// rendered as a single UIKit surface.
     @discardableResult
     func navigateByDisplayedGroup(direction: Int, gestureDirection: Int = 0) -> Bool {
-        guard sessionActive, playbackAllowed, !pendingLayoutRefresh else { return false }
+        guard sessionActive, playbackAllowed, !pendingLayoutRefresh, !pendingFrameReload else { return false }
         // If the user is moving through frames that were already shown, replay
         // the recorded route before asking the current queue for a new target.
         // This is what keeps Back tied to playback history after a reshuffle.
@@ -476,6 +482,7 @@ final class PlaybackViewModel: ObservableObject {
         }
         recoveryStartIndex = firstAttemptIndex
         pendingLayoutRefresh = false
+        pendingFrameReload = false
         isRecovering = true
         errorMessage = "Photos are temporarily unavailable. Canvas will try again shortly."
         scheduleRecovery(generation: generation)
@@ -496,7 +503,7 @@ final class PlaybackViewModel: ObservableObject {
     private func loadFrame(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async -> Bool {
         guard !Task.isCancelled, loadGeneration == generation else { return false }
         guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let imageLoader else { return false }
-        let retainedFrame = pendingLayoutRefresh && displayedFrame?.asset.id == asset.id ? displayedFrame : nil
+        let retainedFrame = pendingLayoutRefresh && !pendingFrameReload && !isRecovering && displayedFrame?.asset.id == asset.id ? displayedFrame : nil
         if retainedFrame == nil {
             elapsed = 0
             progress = 0
@@ -558,6 +565,7 @@ final class PlaybackViewModel: ObservableObject {
                 isLayoutRefresh: retainedFrame != nil
             )
             pendingLayoutRefresh = false
+            pendingFrameReload = false
             prefetchImages?(Array(queue.dropFirst(currentIndex + 1).prefix(4)), CGSize(width: 700, height: 700))
             return true
         }
@@ -587,7 +595,7 @@ final class PlaybackViewModel: ObservableObject {
 
     private func startTimer() {
         cancelTimer()
-        guard sessionActive, playbackAllowed, isPlaying, !isRecovering, !pendingLayoutRefresh, !queue.isEmpty,
+        guard sessionActive, playbackAllowed, isPlaying, !isRecovering, !pendingLayoutRefresh, !pendingFrameReload, !queue.isEmpty,
               let frame = displayedFrame,
               let currentAsset else { return }
 

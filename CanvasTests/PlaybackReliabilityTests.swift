@@ -214,6 +214,73 @@ final class PlaybackReliabilityTests: XCTestCase {
         XCTAssertFalse(model.isPlaying, "Rotation must preserve the person's pause preference")
     }
 
+    func testRotationWhileGatedSurvivesLibraryRefreshBeforeResume() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        var requests: [String] = []
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            requests.append(item.id)
+            return UIImage()
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.togglePlaying()
+        model.setPlaybackAllowed(false)
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+
+        await model.refreshLibrary()
+        XCTAssertEqual(requests, ["a"], "A library notification must not load photos while playback is gated")
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a"])
+        model.setPlaybackAllowed(true)
+        XCTAssertFalse(model.next(), "Resume must publish the pending pair before navigation can skip its companion")
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "b"] }
+        XCTAssertEqual(model.currentIndex, 0)
+        XCTAssertFalse(model.isPlaying)
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "c" }
+    }
+
+    func testGatedSettingsReloadSurvivesRefreshAndDoesNotReuseImageAfterRotation() async {
+        var value = settings
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        let originalImage = UIImage()
+        let refreshedImage = UIImage()
+        var primaryImage = originalImage
+        var primaryRequests = 0
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "a" {
+                primaryRequests += 1
+                return primaryImage
+            }
+            return UIImage()
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.togglePlaying()
+        model.setPlaybackAllowed(false)
+        primaryImage = refreshedImage
+        value.layout = .automatic
+        await model.updateSettings(value)
+        await model.refreshLibrary()
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        XCTAssertEqual(primaryRequests, 1)
+        XCTAssertTrue(model.currentImage === originalImage)
+
+        model.setPlaybackAllowed(true)
+        XCTAssertFalse(model.next())
+        await waitUntil { model.layoutAssets.map(\.id) == ["a", "b"] }
+        XCTAssertTrue(model.currentImage === refreshedImage, "Rotation must not reuse an image invalidated by a full settings reload")
+        XCTAssertEqual(primaryRequests, 2)
+        XCTAssertFalse(model.isPlaying)
+        XCTAssertTrue(model.next())
+        await waitUntil { model.currentAsset?.id == "c" }
+    }
+
     func testRotationBlocksImmediateNextUntilNewCompanionIsVisible() async {
         var value = settings
         value.layout = .automatic
@@ -437,6 +504,48 @@ final class PlaybackReliabilityTests: XCTestCase {
         XCTAssertTrue(model.next(), "A failed companion must release the pending rotation gate")
         await waitUntil { model.currentAsset?.id == "c" }
         XCTAssertFalse(model.isRecovering)
+    }
+
+    func testRotationDuringExhaustedReloadKeepsRecoveryUntilFreshImagesLoad() async {
+        var value = settings
+        value.layout = .automatic
+        value.repeatEnabled = false
+        let items = [item("a"), item("b"), item("c")]
+        let originalImage = UIImage()
+        let recoveredImage = UIImage()
+        var availableImage: UIImage? = originalImage
+        var requests: [String] = []
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            requests.append(item.id)
+            return availableImage
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1024, height: 1366))
+        await model.reload()
+        model.togglePlaying()
+        let originalFrame = model.displayedFrame?.id
+        availableImage = nil
+        await model.reload(rebuildQueue: true)
+        XCTAssertTrue(model.isRecovering)
+        XCTAssertEqual(model.displayedFrame?.id, originalFrame)
+        let requestsBeforeRotation = requests.count
+
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await waitUntil { requests.count >= requestsBeforeRotation + items.count }
+        XCTAssertEqual(Array(requests.suffix(items.count)), ["a", "b", "c"])
+        XCTAssertTrue(model.isRecovering, "Reusing an old primary during rotation must not count as successful recovery")
+        XCTAssertEqual(model.displayedFrame?.id, originalFrame)
+        XCTAssertTrue(model.currentImage === originalImage)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertFalse(model.isPlaying)
+
+        availableImage = recoveredImage
+        model.setPlaybackAllowed(false)
+        model.setPlaybackAllowed(true)
+        await waitUntil { !model.isRecovering && model.layoutAssets.map(\.id) == ["a", "b"] }
+        XCTAssertTrue(model.currentImage === recoveredImage)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.isPlaying)
     }
 
     func testExhaustedRotationLoadReleasesNavigationWhilePaused() async {
