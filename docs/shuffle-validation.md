@@ -128,3 +128,26 @@ before starting the unit suite if needed. Do not reset a physical iPad.
   tab for this task. In-app browser automation is unavailable in this delegated
   environment, so browser-stream pixels could not be independently verified;
   the native simulator screenshot and health checks passed.
+
+## Confirmed physical iPad cause and repair — October 10 follow-up
+
+Direct in-app PhotoKit diagnostics confirmed full Photos authorization (`authorized`, raw value 3). Both saved user-album IDs were stale and no longer resolved: Gianna — Canvas and Joey — Canvas. The old enumeration silently skipped unresolved IDs, leaving Favorites alone. Favorites contained 101 stills, 160 Live Photos, and 8 videos, explaining the original 101-item eligible queue with Live Photos and videos disabled. This was not a 1,000-item fetch limit or limited Photos access. The exact event that replaced the albums is unknown; iCloud image availability does not explain unresolved collection identifiers.
+
+Each missing album had exactly one current same-name, same-type, nonshared user-album match. An explicit two-ID repair updated only `selectedAlbums`; every other current setting, including all filters, compared equal before and after. Live Photos had already been enabled in the live saved configuration before this repair; this task did not toggle that setting or broaden Photos permissions. No Photos assets or album memberships were edited.
+
+Direct iPad counts after repair:
+
+| Selection | Raw count | Eligible with current filters |
+| --- | ---: | ---: |
+| Favorites | 269 | 261 |
+| Gianna — Canvas | 1,356 | 1,356 |
+| Joey — Canvas | 242 | 242 |
+| Unique union | **1,546** | **1,538** |
+
+There are 321 overlapping album memberships. The distinct union consists of 600 ordinary photos, 938 Live Photos, and 8 excluded videos. No fetched item was rejected for screenshots, bursts, hidden state, or another filter. The earlier Mac count of 1,547 included one hidden Live Photo absent from this iPad collection enumeration; Mac counts are not substituted for the direct iPad result.
+
+The physical app checkpoint now contains exactly 1,538 distinct IDs. Previously displayed IDs remained consumed as new album members were appended. A full 1,538-item physical cycle was not watched; full-cycle coverage remains backed by the >1,000-asset regression tests.
+
+Canvas now visibly warns in Home, Albums & Filters, and the player when a saved Apple album cannot be resolved. It preserves missing selections and never automatically replaces them by title. Explicit support repair requires full existing authorization, a missing saved identifier, an exact requested replacement ID, and exactly one matching title/type/shared-status candidate. Ambiguity or partial access refuses the repair. Metadata diagnostics and the explicit repair launch option are Debug-only, opt-in, and do not request permissions or download image data.
+
+Validation: all **254 unit tests passed**, including six new album-resolution/repair regressions. Both signed Debug device and unsigned Release device builds succeeded. The missing-album player banner was visually verified on the physical iPad before repair. Logs and direct before/after reports are under `device-install/` beside the repo. No merge, remote push, public release, or credential change occurred.

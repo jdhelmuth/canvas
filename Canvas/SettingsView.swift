@@ -144,6 +144,9 @@ struct SettingsView: View {
 
     private var albumsFiltersSection: some View {
         Section("Albums & Filters") {
+            if let warning = store.library.selectionWarning(for: store.settings.selectedAlbums) {
+                Label(warning, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            }
             Button { showAlbumPicker = true } label: { Label("Selected albums", systemImage: "rectangle.stack") ; Spacer(); Text("\(store.settings.selectedAlbums.count)").foregroundStyle(.secondary) }
             Toggle("Include still photos", isOn: filterBinding(\.includePhotos))
             Toggle("Favorites only", isOn: binding(\.filters.favoritesOnly))

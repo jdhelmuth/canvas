@@ -33,6 +33,20 @@ struct RootView: View {
             Text(store.settingsStore.recoveryMessage ?? "")
         }
 #if DEBUG
+        .task(id: "canvas-album-diagnostics") {
+            let arguments = ProcessInfo.processInfo.arguments
+            if let index = arguments.firstIndex(of: "--canvas-repair-album-ids"), arguments.indices.contains(index + 1) {
+                do {
+                    let mapping = try JSONDecoder().decode([String: String].self, from: Data(arguments[index + 1].utf8))
+                    let repaired = try AlbumSelectionResolution.repairing(store.settings.selectedAlbums, mapping: mapping,
+                        available: store.library.albums, authorization: store.library.authorization)
+                    store.settingsStore.update { $0.selectedAlbums = repaired }
+                } catch { print("Canvas album repair refused: \(error)") }
+            }
+            if arguments.contains("--canvas-album-diagnostics") {
+                store.library.writeAlbumDiagnostics(settings: store.settings)
+            }
+        }
         .task(id: "canvas-ui-showcase-root") {
             guard ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") else { return }
             if ProcessInfo.processInfo.arguments.contains("--canvas-ui-request-photos") {
@@ -197,6 +211,10 @@ struct LibraryHomeView: View {
                 GeometryReader { viewport in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 26) {
+                            if let warning = store.library.selectionWarning(for: store.settings.selectedAlbums) {
+                                Label(warning, systemImage: "exclamationmark.triangle")
+                                    .font(.callout).foregroundStyle(.orange)
+                            }
                             content(albumAreaHeight: HomeContentGeometry.albumAreaHeight(
                                 viewportHeight: viewport.size.height,
                                 fixedContentHeight: 250,

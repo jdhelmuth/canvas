@@ -30,6 +30,43 @@ enum PhotoAuthorizationState: Equatable {
     }
 }
 
+/// Collection identifiers, not names or cached counts, define a selection.
+/// Missing selections remain saved until the user explicitly repairs them.
+enum AlbumSelectionResolution {
+    enum RepairError: Error { case fullAccessRequired, invalidMapping, ambiguousReplacement }
+
+    static func missing(_ selected: [AlbumReference], available: [AlbumReference]) -> [AlbumReference] {
+        let ids = Set(available.filter { $0.source == .applePhotos }.map(\.id))
+        return selected.filter { $0.source == .applePhotos && !ids.contains($0.id) }
+    }
+
+    static func warning(selected: [AlbumReference], available: [AlbumReference], authorization: PhotoAuthorizationState) -> String? {
+        guard selected.contains(where: { $0.source == .applePhotos }) else { return nil }
+        guard authorization.canRead else { return "Selected Apple Photos albums are unavailable. Review Photos access in Settings." }
+        let unavailable = missing(selected, available: available)
+        guard !unavailable.isEmpty else { return nil }
+        let names = unavailable.map(\.title).joined(separator: ", ")
+        return "Missing selected albums: \(names). These albums are not in this slideshow. Open Selected albums to choose them again or review Photos access."
+    }
+
+    /// Only an explicit old-ID/new-ID mapping may repair a selection. A title
+    /// alone never triggers automatic substitution, including after sync.
+    static func repairing(_ selected: [AlbumReference], mapping: [String: String], available: [AlbumReference], authorization: PhotoAuthorizationState) throws -> [AlbumReference] {
+        guard authorization == .authorized else { throw RepairError.fullAccessRequired }
+        let unresolved = missing(selected, available: available)
+        guard !mapping.isEmpty, Set(mapping.keys).isSubset(of: Set(unresolved.map(\.id))) else { throw RepairError.invalidMapping }
+        return try selected.map { original in
+            guard let replacementID = mapping[original.id] else { return original }
+            let candidates = available.filter {
+                $0.source == original.source && $0.title == original.title && $0.subtype == original.subtype
+                    && $0.isSmart == original.isSmart && $0.isShared == original.isShared
+            }
+            guard candidates.count == 1, candidates[0].id == replacementID else { throw RepairError.ambiguousReplacement }
+            return candidates[0]
+        }
+    }
+}
+
 struct GoogleApplePhotosMirrorResult: Equatable {
     let albumID: String
     let assetIDsByGoogleID: [String: String]
@@ -431,6 +468,10 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         if current.canRead { refreshAlbums() } else { albums = [] }
     }
 
+    func selectionWarning(for selected: [AlbumReference]) -> String? {
+        AlbumSelectionResolution.warning(selected: selected, available: albums, authorization: authorization)
+    }
+
     func refreshAlbums() {
         guard authorization.canRead else { albums = []; return }
         var result: [AlbumReference] = []
@@ -452,6 +493,64 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     }
 
 #if DEBUG
+    /// Opt-in, metadata-only support report. Never requests Photos access or
+    /// downloads image data, and never changes saved album selections.
+    func writeAlbumDiagnostics(settings: CanvasSettings) {
+        var unique: [String: PHAsset] = [:]
+        var selected: [[String: Any]] = []
+        for reference in settings.selectedAlbums where reference.source == .applePhotos {
+            let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [reference.id], options: nil).firstObject
+            let fetch = collection.map { PHAsset.fetchAssets(in: $0, options: Self.assetFetchOptions(includeHidden: true)) }
+            fetch?.enumerateObjects { asset, _, _ in unique[asset.localIdentifier] = asset }
+            selected.append(["id": reference.id, "title": reference.title,
+                "resolved": collection != nil, "rawCount": fetch?.count ?? 0,
+                "eligibleCount": assets(for: [reference], filters: settings.filters).count])
+        }
+        let matching = albums.filter { candidate in
+            settings.selectedAlbums.contains { $0.source == .applePhotos && $0.title == candidate.title }
+        }
+        var allMatching: [String: PHAsset] = [:]
+        let candidates: [[String: Any]] = matching.map { reference in
+            if let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [reference.id], options: nil).firstObject {
+                PHAsset.fetchAssets(in: collection, options: Self.assetFetchOptions(includeHidden: true))
+                    .enumerateObjects { asset, _, _ in allMatching[asset.localIdentifier] = asset }
+            }
+            return ["id": reference.id, "title": reference.title, "subtype": reference.subtype,
+                "isSmart": reference.isSmart, "isShared": reference.isShared,
+                "rawCount": reference.estimatedCount,
+                "eligibleCount": assets(for: [reference], filters: settings.filters).count]
+        }
+        func breakdown(_ values: [String: PHAsset]) -> [String: Any] {
+            var kinds: [String: Int] = [:]
+            var reasons: [String: Int] = [:]
+            for asset in values.values {
+                let kind: MediaKind = asset.mediaType == .video ? .video : (asset.mediaSubtypes.contains(.photoLive) ? .livePhoto : .photo)
+                kinds[kind.rawValue, default: 0] += 1
+                let descriptor = descriptors(for: [asset])[0]
+                let reason: String
+                if asset.isHidden && !settings.filters.includeHidden { reason = "hidden" }
+                else if kind == .video && !settings.filters.includeVideos { reason = "video" }
+                else if kind == .livePhoto && !settings.filters.includeLivePhotos { reason = "livePhoto" }
+                else if kind == .photo && !settings.filters.includePhotos { reason = "photo" }
+                else if descriptor.isScreenshot && !settings.filters.includeScreenshots { reason = "screenshot" }
+                else if descriptor.isBurst && !settings.filters.includeBursts { reason = "burst" }
+                else if !settings.filters.accepts(descriptor) { reason = "otherFilter" }
+                else { reason = "eligible" }
+                reasons[reason, default: 0] += 1
+            }
+            return ["uniqueCount": values.count, "mediaKinds": kinds, "exclusiveFilterOutcomes": reasons]
+        }
+        let report: [String: Any] = ["authorizationRawValue": PHPhotoLibrary.authorizationStatus(for: .readWrite).rawValue,
+            "selected": selected, "selectedUnion": breakdown(unique),
+            "sameNamedCandidates": candidates, "candidateUnion": breakdown(allMatching)]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("canvas-album-diagnostics.json")
+            try data.write(to: url, options: .atomic)
+        } catch { print("Canvas album diagnostics could not be saved: \(error.localizedDescription)") }
+    }
+
     func prepareStoreShowcase() async -> [AlbumReference] {
         refreshAuthorization()
         guard authorization.canManageGoogleMirrorAlbums else { return [] }

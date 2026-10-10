@@ -45,6 +45,14 @@ struct PlayerView: View {
         // determines each tile's viewport receives the entire display.
         .ignoresSafeArea()
         .canvasPlaybackSystemChrome()
+        .overlay(alignment: .top) {
+            if let warning = store.library.selectionWarning(for: store.settings.selectedAlbums) {
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.white).padding(12)
+                    .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(24).allowsHitTesting(false)
+            }
+        }
         .task {
             UIDevice.current.beginGeneratingDeviceOrientationNotifications()
             store.weather.setActive(true)

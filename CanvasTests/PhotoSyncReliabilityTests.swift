@@ -145,3 +145,47 @@ final class PhotoSyncReliabilityTests: XCTestCase {
         XCTAssertTrue(PhotoLibraryService.assetFetchOptions(includeHidden: true).includeHiddenAssets)
     }
 }
+
+@MainActor
+final class AlbumSelectionResolutionTests: XCTestCase {
+    private func album(_ id: String, title: String = "Family", source: PhotoSource = .applePhotos, shared: Bool = false) -> AlbumReference {
+        AlbumReference(id: id, title: title, subtype: 2, estimatedCount: 1_400, isSmart: false, isShared: shared, source: source)
+    }
+
+    func testSameNameDoesNotResolveMissingIdentifierOrChangeSelection() {
+        let selected = [album("old"), album("google", source: .googlePhotos)]
+        XCTAssertEqual(AlbumSelectionResolution.missing(selected, available: [album("new")]), [selected[0]])
+        XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [album("new")], authorization: .authorized)!.contains("Family"))
+        XCTAssertEqual(selected[0].id, "old")
+    }
+
+    func testRenamedExistingAlbumResolvesByIdentity() {
+        XCTAssertTrue(AlbumSelectionResolution.missing([album("same")], available: [album("same", title: "Renamed")]).isEmpty)
+        XCTAssertNil(AlbumSelectionResolution.warning(selected: [album("same")], available: [album("same", title: "Renamed")], authorization: .authorized))
+    }
+
+    func testExplicitUniqueRepairPreservesUnrelatedSelectionAndOrder() throws {
+        let selected = [album("favorites", title: "Favorites"), album("old"), album("google", source: .googlePhotos)]
+        let repaired = try AlbumSelectionResolution.repairing(selected, mapping: ["old": "new"], available: [selected[0], album("new")], authorization: .authorized)
+        XCTAssertEqual(repaired, [selected[0], album("new"), selected[2]])
+    }
+
+    func testRepairRejectsAmbiguityWrongTypeAndWrongMappedID() {
+        for available in [[album("new"), album("duplicate")], [album("new", shared: true)], [album("other")]] {
+            XCTAssertThrowsError(try AlbumSelectionResolution.repairing([album("old")], mapping: ["old": "new"], available: available, authorization: .authorized))
+        }
+    }
+
+    func testRepairCannotReplaceResolvedOrUnknownSelection() {
+        XCTAssertThrowsError(try AlbumSelectionResolution.repairing([album("old")], mapping: ["old": "new"], available: [album("old"), album("new")], authorization: .authorized))
+        XCTAssertThrowsError(try AlbumSelectionResolution.repairing([album("old")], mapping: ["unselected": "new"], available: [album("new")], authorization: .authorized))
+    }
+
+    func testLimitedOrDeniedAccessNeverAllowsRepair() {
+        for authorization in [PhotoAuthorizationState.limited, .denied, .restricted, .notDetermined] {
+            XCTAssertThrowsError(try AlbumSelectionResolution.repairing([album("old")], mapping: ["old": "new"], available: [album("new")], authorization: authorization))
+            XCTAssertNotNil(AlbumSelectionResolution.warning(selected: [album("old")], available: [], authorization: authorization))
+        }
+        XCTAssertNil(AlbumSelectionResolution.warning(selected: [album("google", source: .googlePhotos)], available: [], authorization: .denied))
+    }
+}
