@@ -557,6 +557,9 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     static func assetFetchOptions(includeHidden: Bool) -> PHFetchOptions {
         let options = PHFetchOptions()
         options.includeHiddenAssets = includeHidden
+        // Zero means the entire album, including assets whose image data is
+        // only in iCloud. Image cache/prefetch limits never limit membership.
+        options.fetchLimit = 0
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         return options
     }
@@ -609,21 +612,37 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     }
 
     func requestImage(for asset: PHAsset, targetSize: CGSize, contentMode: PHImageContentMode = PhotoLibraryService.displayImageContentMode) async throws -> UIImage {
-        try await withTaskCancellationHandler {
+        let request = PhotoImageRequest()
+        let timeout = Task {
+            do { try await Task.sleep(for: .seconds(60)) } catch { return }
+            request.finish(.failure(PhotoLibraryError.imageUnavailable))
+        }
+        defer { timeout.cancel() }
+        let manager = imageManager
+        return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
+                request.install(continuation)
+                guard !Task.isCancelled else {
+                    request.finish(.failure(CancellationError()))
+                    return
+                }
                 let options = PHImageRequestOptions()
                 options.deliveryMode = .highQualityFormat
                 options.resizeMode = .fast
                 options.isNetworkAccessAllowed = true
-                imageManager.requestImage(for: asset, targetSize: targetSize, contentMode: contentMode, options: options) { image, info in
-                    if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled { return }
-                    if let error = info?[PHImageErrorKey] as? Error { continuation.resume(throwing: error); return }
-                    guard let image else { continuation.resume(throwing: PhotoLibraryError.imageUnavailable); return }
-                    continuation.resume(returning: image)
+                let requestID = manager.requestImage(for: asset, targetSize: targetSize, contentMode: contentMode, options: options) { image, info in
+                    if info?[PHImageCancelledKey] as? Bool == true {
+                        request.finish(.failure(CancellationError()))
+                    } else if let error = info?[PHImageErrorKey] as? Error {
+                        request.finish(.failure(error))
+                    } else if info?[PHImageResultIsDegradedKey] as? Bool != true {
+                        request.finish(image.map { .success($0) } ?? .failure(PhotoLibraryError.imageUnavailable))
+                    }
                 }
+                request.installCancellation { manager.cancelImageRequest(requestID) }
             }
         } onCancel: {
-            self.imageManager.stopCachingImages(for: [], targetSize: .zero, contentMode: contentMode, options: nil)
+            request.finish(.failure(CancellationError()))
         }
     }
 
@@ -1456,5 +1475,44 @@ final class AssetImageLoader: ObservableObject {
             cost = max(1, width * height * 4)
         }
         cache.setObject(image, forKey: key, cost: cost)
+    }
+}
+
+/// PhotoKit callbacks can race cancellation (including before a request ID is
+/// returned). Resume exactly once and cancel the actual request, so cancelled
+/// prefetches and stalled iCloud downloads cannot strand playback forever.
+final class PhotoImageRequest: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<UIImage, Error>?
+    private var result: Result<UIImage, Error>?
+    private var cancellation: (() -> Void)?
+
+    func install(_ continuation: CheckedContinuation<UIImage, Error>) {
+        lock.lock()
+        let result = self.result
+        if result == nil { self.continuation = continuation }
+        lock.unlock()
+        if let result { continuation.resume(with: result) }
+    }
+
+    func installCancellation(_ cancellation: @escaping () -> Void) {
+        lock.lock()
+        let finished = result != nil
+        if !finished { self.cancellation = cancellation }
+        lock.unlock()
+        if finished { cancellation() }
+    }
+
+    func finish(_ result: Result<UIImage, Error>) {
+        lock.lock()
+        guard self.result == nil else { lock.unlock(); return }
+        self.result = result
+        let continuation = self.continuation
+        let cancellation = self.cancellation
+        self.continuation = nil
+        self.cancellation = nil
+        lock.unlock()
+        continuation?.resume(with: result)
+        cancellation?()
     }
 }

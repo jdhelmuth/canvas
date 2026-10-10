@@ -44,9 +44,11 @@ struct QueueBuilder {
         guard next.count > 1, !previousIDs.isEmpty else { return next }
 
         let previous = Set(previousIDs)
-        if let firstUnseenIndex = next.firstIndex(where: { !previous.contains($0.id) }) {
-            return rotated(next, startingAt: firstUnseenIndex)
-        }
+        let other = next.filter { !previous.contains($0.id) }
+        // Partition the whole outgoing group, even when the existing order is
+        // reused. After download recovery its tiles may be scattered through
+        // that order; a rotation alone could immediately repeat a companion.
+        if !other.isEmpty { return other + next.filter { previous.contains($0.id) } }
 
         // Every available item may have been in the outgoing displayed group
         // for a very small library. A repeat is unavoidable in that case, but
@@ -127,7 +129,7 @@ struct QueueBuilder {
         using generator: inout SeededGenerator
     ) -> [CanvasMediaItem] {
         let bands = Dictionary(grouping: assets, by: orientationKey)
-        var bandKeys = Array(bands.keys)
+        var bandKeys = bands.keys.sorted()
         var shuffledBands: [String: [CanvasMediaItem]] = [:]
         var positions: [String: Int] = [:]
         for key in bandKeys {
@@ -159,7 +161,7 @@ struct QueueBuilder {
         using generator: inout SeededGenerator
     ) -> [CanvasMediaItem] {
         var buckets = Dictionary(grouping: assets, by: libraryKey)
-        var activeKeys = Array(buckets.keys)
+        var activeKeys = buckets.keys.sorted()
         for key in activeKeys {
             buckets[key]?.shuffle(using: &generator)
         }
@@ -243,5 +245,36 @@ struct SeededGenerator: RandomNumberGenerator {
         z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
         z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
         return z ^ (z >> 31)
+    }
+}
+
+/// Durable shuffle bookkeeping uses identities, never a cache size or queue
+/// index. Only committed visible tiles are consumed; failed downloads remain
+/// pending until they load or leave the eligible selection.
+struct ShuffleCycle: Codable {
+    var orderedIDs: [String] = []
+    var displayedIDs: Set<String> = []
+    var lastGroupIDs: [String] = []
+
+    mutating func reconcile(_ orderedAssets: [CanvasMediaItem]) {
+        let eligible = Set(orderedAssets.map(\.id))
+        var known = Set<String>()
+        orderedIDs = orderedIDs.filter { eligible.contains($0) && known.insert($0).inserted }
+        orderedIDs += orderedAssets.map(\.id).filter { known.insert($0).inserted }
+    }
+
+    func pendingIDs() -> [String] {
+        orderedIDs.filter { !displayedIDs.contains($0) }
+    }
+
+    mutating func recordDisplayed(_ ids: [String]) {
+        displayedIDs.formUnion(ids)
+        lastGroupIDs = ids
+    }
+
+    mutating func beginNextCycle(_ orderedAssets: [CanvasMediaItem]) {
+        orderedIDs = []
+        displayedIDs = []
+        reconcile(orderedAssets)
     }
 }

@@ -764,3 +764,402 @@ final class AudioReliabilityTests: XCTestCase {
         XCTAssertFalse(audio.isPlaying)
     }
 }
+
+@MainActor
+final class FullShuffleTests: XCTestCase {
+    private var settings: CanvasSettings {
+        var value = CanvasSettings()
+        value.queueMode = .shuffle
+        value.layout = .single
+        value.photoDuration = 1000
+        value.shuffleEachLoop = true
+        return value
+    }
+
+    private func items(_ count: Int) -> [CanvasMediaItem] {
+        (0..<count).map { index in
+            CanvasMediaItem(id: "apple:\(index)", source: .applePhotos, kind: .photo,
+                creationDate: nil, filename: "\(index).jpg", isFavorite: false,
+                pixelWidth: 100, pixelHeight: 200, albumTitle: "Album \(index % 3)",
+                appleAsset: nil, localURL: nil, contentHash: nil, libraryID: "album-\(index % 3)")
+        }
+    }
+
+    private func settle(_ model: PlaybackViewModel, after frame: UUID?) async {
+        for _ in 0..<1000 {
+            if model.displayedFrame?.id != frame || model.isRecovering { return }
+            await Task.yield()
+        }
+        XCTFail("Playback failed to settle")
+    }
+
+    func testOver1300UniquePhotosAcrossOverlappingAlbumsAndRestart() async throws {
+        let suite = "canvas-shuffle-test-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ShuffleCycleStore(defaults: defaults)
+        let all = items(1307)
+        let overlapping = all + Array(all[100..<900]) + Array(all[800...])
+        var value = settings
+        var model = PlaybackViewModel(settings: value, mediaItems: { _ in overlapping },
+                                      imageLoader: { _, _ in UIImage() }, cycleStore: store)
+        defer { model.stop() }
+        await model.reload()
+        XCTAssertEqual(model.queueCount, 1307)
+        var seen = Set<String>()
+        for index in 0..<1307 {
+            let id = try XCTUnwrap(model.currentAsset?.id)
+            XCTAssertTrue(seen.insert(id).inserted, "Repeated \(id) at \(index)")
+            if index == 503 {
+                model.stop()
+                // A new persistence object and model simulate process relaunch.
+                model = PlaybackViewModel(settings: value, mediaItems: { _ in overlapping },
+                    imageLoader: { _, _ in UIImage() }, cycleStore: ShuffleCycleStore(defaults: defaults))
+                await model.reload()
+            } else if index < 1306 {
+                if index == 201 {
+                    value.photoDuration = 2000
+                    await model.updateSettings(value)
+                    model.setPlaybackAllowed(false)
+                    model.setPlaybackAllowed(true)
+                    await model.refreshLibrary()
+                }
+                let old = model.displayedFrame?.id
+                XCTAssertTrue(model.next())
+                await settle(model, after: old)
+            }
+        }
+        XCTAssertEqual(seen, Set(all.map(\.id)))
+        let last = model.currentAsset?.id
+        let old = model.displayedFrame?.id
+        XCTAssertTrue(model.next())
+        await settle(model, after: old)
+        XCTAssertNotEqual(model.currentAsset?.id, last)
+        XCTAssertEqual(store.load()?.displayedIDs.count, 1)
+    }
+
+    func testFailedCloudPhotosRemainPendingAcrossRestartUntilRecovered() async throws {
+        let suite = "canvas-shuffle-test-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let all = items(31)
+        let failed = Set(all.prefix(5).map(\.id))
+        var available = false
+        var model = PlaybackViewModel(settings: settings, mediaItems: { _ in all }, imageLoader: { item, _ in
+            available || !failed.contains(item.id) ? UIImage() : nil
+        }, cycleStore: ShuffleCycleStore(defaults: defaults))
+        defer { model.stop() }
+        await model.reload()
+        var seen = Set<String>()
+        for _ in 0..<26 {
+            XCTAssertTrue(seen.insert(try XCTUnwrap(model.currentAsset?.id)).inserted)
+            let old = model.displayedFrame?.id
+            XCTAssertTrue(model.next())
+            await settle(model, after: old)
+        }
+        XCTAssertTrue(model.isRecovering)
+        XCTAssertEqual(seen.count, 26)
+        XCTAssertEqual(ShuffleCycleStore(defaults: defaults).load()?.pendingIDs().count, 5)
+        model.stop()
+        available = true
+        model = PlaybackViewModel(settings: settings, mediaItems: { _ in all },
+            imageLoader: { _, _ in UIImage() }, cycleStore: ShuffleCycleStore(defaults: defaults))
+        await model.reload()
+        for index in 0..<5 {
+            XCTAssertTrue(seen.insert(try XCTUnwrap(model.currentAsset?.id)).inserted)
+            if index < 4 {
+                let old = model.displayedFrame?.id
+                XCTAssertTrue(model.next())
+                await settle(model, after: old)
+            }
+        }
+        XCTAssertEqual(seen, Set(all.map(\.id)))
+    }
+
+    func testFailedCompanionIsNotConsumedAndGetsItsOwnTurn() async throws {
+        var value = settings
+        value.layout = .pairHorizontal
+        let all = items(7)
+        var requests = 0
+        var failedID: String?
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in all }, imageLoader: { item, _ in
+            requests += 1
+            if requests == 2 { failedID = item.id; return nil }
+            return UIImage()
+        })
+        defer { model.stop() }
+        await model.reload()
+        XCTAssertEqual(model.layoutAssets.count, 1)
+        var seen = Set(model.layoutAssets.map(\.id))
+        for _ in 0..<all.count {
+            if seen.count >= all.count { break }
+            let old = model.displayedFrame?.id
+            XCTAssertTrue(model.next())
+            await settle(model, after: old)
+            for asset in model.layoutAssets { XCTAssertTrue(seen.insert(asset.id).inserted) }
+        }
+        XCTAssertEqual(seen.count, all.count)
+        XCTAssertTrue(seen.contains(try XCTUnwrap(failedID)))
+    }
+
+    func testMembershipAndLayoutChangesPreserveSeenPhotos() async throws {
+        var value = settings
+        var all = items(20)
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in all }, imageLoader: { _, _ in UIImage() })
+        defer { model.stop() }
+        await model.reload()
+        var seen = Set<String>()
+        for _ in 0..<8 {
+            seen.insert(try XCTUnwrap(model.currentAsset?.id))
+            let old = model.displayedFrame?.id
+            XCTAssertTrue(model.next())
+            await settle(model, after: old)
+        }
+        seen.formUnion(model.layoutAssets.map(\.id))
+        let retained = model.currentAsset?.id
+        all = all.filter { seen.contains($0.id) || $0.id != "apple:19" }
+        all += Array(items(25).suffix(5))
+        value.layout = .pairHorizontal
+        value.selectedAlbums = [AlbumReference(id: "changed-selection", title: "Changed album", subtype: 0,
+            estimatedCount: all.count, isSmart: false, isShared: false)]
+        await model.updateSettings(value)
+        XCTAssertEqual(model.currentAsset?.id, retained)
+        for asset in model.layoutAssets where asset.id != retained {
+            XCTAssertTrue(seen.insert(asset.id).inserted)
+        }
+        await model.refreshLibrary()
+        for _ in 0..<all.count {
+            if seen.intersection(Set(all.map(\.id))).count >= all.count { break }
+            let old = model.displayedFrame?.id
+            XCTAssertTrue(model.next())
+            await settle(model, after: old)
+            for asset in model.layoutAssets { XCTAssertTrue(seen.insert(asset.id).inserted) }
+        }
+        XCTAssertEqual(seen.intersection(Set(all.map(\.id))).count, all.count)
+    }
+
+    func testFullGroupedCycleAndBoundaryAvoidOutgoingTiles() async throws {
+        var value = settings
+        value.layout = .gridFour
+        let all = items(1308)
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in all }, imageLoader: { _, _ in UIImage() })
+        defer { model.stop() }
+        await model.reload()
+        var seen = Set<String>()
+        for _ in 0..<all.count {
+            if seen.count >= all.count { break }
+            for asset in model.layoutAssets { XCTAssertTrue(seen.insert(asset.id).inserted) }
+            if seen.count < all.count {
+                let old = model.displayedFrame?.id
+                XCTAssertTrue(model.next())
+                await settle(model, after: old)
+            }
+        }
+        XCTAssertEqual(seen.count, all.count)
+        let outgoing = Set(model.layoutAssets.map(\.id))
+        let old = model.displayedFrame?.id
+        XCTAssertTrue(model.next())
+        await settle(model, after: old)
+        XCTAssertTrue(outgoing.isDisjoint(with: model.layoutAssets.map(\.id)))
+    }
+
+    func testSuspendedLoadDoesNotConsumeUnpublishedPhoto() async throws {
+        let suite = "canvas-shuffle-test-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ShuffleCycleStore(defaults: defaults)
+        let all = items(10)
+        var completion: CheckedContinuation<UIImage?, Never>?
+        var requests = 0
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in all }, imageLoader: { _, _ in
+            requests += 1
+            if requests == 1 { return await withCheckedContinuation { completion = $0 } }
+            return UIImage()
+        }, cycleStore: store)
+        defer { model.stop() }
+        let initial = Task { await model.reload() }
+        for _ in 0..<1000 {
+            if completion != nil { break }
+            await Task.yield()
+        }
+        let pending = try XCTUnwrap(completion)
+        model.setPlaybackAllowed(false)
+        pending.resume(returning: UIImage())
+        await initial.value
+        XCTAssertNil(model.displayedFrame)
+        XCTAssertEqual(store.load()?.displayedIDs.count, 0)
+        XCTAssertEqual(store.load()?.pendingIDs().count, 10)
+        model.setPlaybackAllowed(true)
+        await settle(model, after: nil)
+        XCTAssertEqual(store.load()?.displayedIDs.count, 1)
+    }
+
+    func testRepeatDisabledStopsAfterCompleteShuffle() async {
+        var value = settings
+        value.repeatEnabled = false
+        let all = items(12)
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in all }, imageLoader: { _, _ in UIImage() })
+        defer { model.stop() }
+        await model.reload()
+        for _ in 1..<all.count {
+            let old = model.displayedFrame?.id
+            XCTAssertTrue(model.next())
+            await settle(model, after: old)
+        }
+        XCTAssertFalse(model.next())
+        XCTAssertFalse(model.isPlaying)
+    }
+
+    func testFailedDestinationDoesNotBecomeForwardHistoryAfterBack() async throws {
+        let all = items(4)
+        var permitted = Set<String>()
+        var requests = 0
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in all }, imageLoader: { item, _ in
+            requests += 1
+            if permitted.count < 2 { permitted.insert(item.id) }
+            return permitted.contains(item.id) ? UIImage() : nil
+        })
+        defer { model.stop() }
+        await model.reload()
+        let first = model.currentAsset?.id
+        var old = model.displayedFrame?.id
+        XCTAssertTrue(model.next())
+        await settle(model, after: old)
+        let second = model.currentAsset?.id
+        XCTAssertNotEqual(first, second)
+        old = model.displayedFrame?.id
+        XCTAssertTrue(model.next())
+        await settle(model, after: old)
+        XCTAssertTrue(model.isRecovering)
+        old = model.displayedFrame?.id
+        XCTAssertTrue(model.previous())
+        for _ in 0..<1000 {
+            if model.currentAsset?.id == first && !model.isRecovering { break }
+            await Task.yield()
+        }
+        XCTAssertEqual(model.currentAsset?.id, first)
+        old = model.displayedFrame?.id
+        XCTAssertTrue(model.next())
+        await settle(model, after: old)
+        XCTAssertEqual(model.currentAsset?.id, second)
+        let frameBeforeFailure = model.displayedFrame?.id
+        let countBeforeFailure = requests
+        XCTAssertTrue(model.next())
+        await settle(model, after: frameBeforeFailure)
+        XCTAssertTrue(model.isRecovering)
+        XCTAssertEqual(model.displayedFrame?.id, frameBeforeFailure)
+        XCTAssertEqual(requests - countBeforeFailure, 2, "Retry only the two unseen photos")
+    }
+
+    func testCompletedNonRepeatingShuffleRestoresFinalPhotoPaused() async throws {
+        let suite = "canvas-shuffle-test-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let all = items(3)
+        let store = ShuffleCycleStore(defaults: defaults)
+        var cycle = ShuffleCycle()
+        cycle.reconcile(all)
+        cycle.recordDisplayed(all.map(\.id))
+        cycle.recordDisplayed([all.last!.id])
+        store.save(cycle)
+        var value = settings
+        value.repeatEnabled = false
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in all },
+            imageLoader: { _, _ in UIImage() }, cycleStore: store)
+        defer { model.stop() }
+        await model.reload()
+        XCTAssertEqual(model.currentAsset?.id, all.last?.id)
+        XCTAssertFalse(model.isPlaying)
+        XCTAssertFalse(model.next())
+    }
+
+    func testPhotoKitEnumerationHasNoFetchLimit() {
+        XCTAssertEqual(PhotoLibraryService.assetFetchOptions(includeHidden: false).fetchLimit, 0)
+    }
+}
+
+final class PhotoImageRequestTests: XCTestCase {
+    func testCancellationBeforeRegistrationResumesAndCancelsLateRequest() async {
+        let request = PhotoImageRequest()
+        request.finish(.failure(CancellationError()))
+        var cancellations = 0
+        request.installCancellation { cancellations += 1 }
+        do {
+            let _: UIImage = try await withCheckedThrowingContinuation { request.install($0) }
+            XCTFail("Cancelled request must throw")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(cancellations, 1)
+    }
+
+    func testLateCallbacksCannotResumeTwice() async throws {
+        let request = PhotoImageRequest()
+        let expected = UIImage()
+        let image: UIImage = try await withCheckedThrowingContinuation {
+            request.install($0)
+            request.finish(.success(expected))
+            request.finish(.failure(CancellationError()))
+            request.finish(.success(UIImage()))
+        }
+        XCTAssertTrue(image === expected)
+    }
+}
+
+@MainActor
+final class ShuffleCycleStateTests: XCTestCase {
+    private func item(_ id: String) -> CanvasMediaItem {
+        CanvasMediaItem(id: id, source: .applePhotos, kind: .photo, creationDate: nil,
+            filename: id, isFavorite: false, pixelWidth: 100, pixelHeight: 100,
+            albumTitle: "Test", appleAsset: nil, localURL: nil, contentHash: nil)
+    }
+
+    func testBoundaryAfterRecoveryAvoidsScatteredOutgoingTilesWithoutReshuffling() {
+        let all = ["a", "b", "c", "d", "e", "f"].map(item)
+        let next = QueueBuilder.buildNextCycle(all, mode: .albumOrder, previousIDs: ["a", "c"])
+        XCTAssertEqual(next.map(\.id), ["b", "d", "e", "f", "a", "c"])
+    }
+
+    func testRemoveAndReaddDoesNotForgetAlreadyShownIDs() {
+        var cycle = ShuffleCycle()
+        cycle.reconcile([item("a"), item("b"), item("c")])
+        cycle.recordDisplayed(["b"])
+        cycle.reconcile([item("c"), item("a"), item("d")])
+        cycle.reconcile([item("b"), item("c"), item("a"), item("d")])
+        XCTAssertEqual(cycle.pendingIDs(), ["a", "c", "d"])
+    }
+
+    func testEmptyProviderRefreshRetainsCoverage() {
+        var cycle = ShuffleCycle()
+        cycle.reconcile([item("a"), item("b")])
+        cycle.recordDisplayed(["a"])
+        cycle.reconcile([])
+        cycle.reconcile([item("a"), item("b")])
+        XCTAssertEqual(cycle.pendingIDs(), ["b"])
+    }
+
+    func testRefreshDuringRecoveryNeverReloadsAlreadyShownPhoto() async {
+        var value = CanvasSettings()
+        value.queueMode = .shuffle
+        value.layout = .single
+        value.photoDuration = 1000
+        let all = [item("a"), item("b")]
+        var shown: String?
+        var requests: [String] = []
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in all }, imageLoader: { item, _ in
+            requests.append(item.id)
+            return shown == nil || shown == item.id ? UIImage() : nil
+        })
+        defer { model.stop() }
+        await model.reload()
+        shown = model.currentAsset?.id
+        XCTAssertTrue(model.next())
+        for _ in 0..<1000 {
+            if model.isRecovering { break }
+            await Task.yield()
+        }
+        XCTAssertTrue(model.isRecovering)
+        requests = []
+        await model.refreshLibrary()
+        XCTAssertTrue(model.isRecovering)
+        XCTAssertFalse(requests.contains(shown!))
+    }
+}

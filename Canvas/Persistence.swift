@@ -324,3 +324,24 @@ final class AppStore: ObservableObject {
         return true
     }
 }
+
+/// A single checkpoint follows the active selection. Album/filter edits are
+/// reconciled against current eligible IDs instead of restarting the cycle.
+/// Store IDs only: no image data, credentials, or PhotoKit objects.
+@MainActor
+final class ShuffleCycleStore {
+    private let defaults: UserDefaults
+    private let key = "canvas.shuffle-cycle.v1"
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load() -> ShuffleCycle? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(ShuffleCycle.self, from: data)
+    }
+
+    func save(_ cycle: ShuffleCycle) {
+        guard let data = try? JSONEncoder().encode(cycle) else { return }
+        defaults.set(data, forKey: key)
+    }
+}

@@ -39,6 +39,10 @@ final class PlaybackViewModel: ObservableObject {
     private var queue: [CanvasMediaItem] = []
     private var timerTask: Task<Void, Never>?
     private var loadTask: Task<Void, Never>?
+    private var shuffleCycle = ShuffleCycle()
+    private var cycleStore: ShuffleCycleStore?
+    private var restoredCycle = false
+    private var replayingHistory = false
     private var previousIDs: [String] = []
     private var navigationHistory = PlaybackNavigationHistory()
     private var configured = false
@@ -63,12 +67,14 @@ final class PlaybackViewModel: ObservableObject {
         settings: CanvasSettings = .init(),
         mediaItems: ((CanvasSettings) -> [CanvasMediaItem])? = nil,
         imageLoader: ((CanvasMediaItem, CGSize) async -> UIImage?)? = nil,
-        recoveryDelay: Duration = .seconds(30)
+        recoveryDelay: Duration = .seconds(30),
+        cycleStore: ShuffleCycleStore? = nil
     ) {
         self.settings = settings
         self.mediaItems = mediaItems
         self.imageLoader = imageLoader
         self.recoveryDelay = recoveryDelay
+        self.cycleStore = cycleStore
     }
 
     deinit {
@@ -81,6 +87,7 @@ final class PlaybackViewModel: ObservableObject {
     func configure(library: PhotoLibraryService, googlePhotos: GooglePhotosService, loader: AssetImageLoader, settings: CanvasSettings) {
         guard !configured else { return }
         self.settings = settings
+        if cycleStore == nil { cycleStore = ShuffleCycleStore() }
         mediaItems = { settings in
             MediaIdentityMatcher.deduplicated(
                 library.mediaItems(for: settings.selectedAlbums, filters: settings.filters)
@@ -163,14 +170,35 @@ final class PlaybackViewModel: ObservableObject {
 
     private func performReload(settings updatedSettings: CanvasSettings?, rebuildQueue: Bool) async {
         guard let mediaItems, sessionActive else { return }
+        let previousMode = settings.queueMode
         if let updatedSettings { settings = updatedSettings }
+        if settings.queueMode == .shuffle && !restoredCycle {
+            shuffleCycle = cycleStore?.load() ?? ShuffleCycle()
+            restoredCycle = true
+        }
+        if previousMode != settings.queueMode && settings.queueMode == .shuffle {
+            shuffleCycle = ShuffleCycle()
+        }
 
         let assets = mediaItems(settings)
         let queueCurrentAssetID = queue.indices.contains(currentIndex) ? queue[currentIndex].id : nil
         let displayedAssetID = displayedFrame?.asset.id
         let identityToPreserve = queueCurrentAssetID ?? displayedAssetID
         let candidateQueue: [CanvasMediaItem]
-        if rebuildQueue {
+        if settings.queueMode == .shuffle {
+            let ordered = QueueBuilder.build(assets, mode: .shuffle, repeatEnabled: true,
+                                             shuffleSeed: Int.random(in: Int.min...Int.max))
+            shuffleCycle.reconcile(ordered)
+            let byID = Dictionary(ordered.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            // A completed saved cycle may start a new one on reopening.
+            let retainsCurrent = identityToPreserve.map { byID[$0] != nil } ?? false
+            if !retainsCurrent && !ordered.isEmpty && shuffleCycle.pendingIDs().isEmpty && settings.repeatEnabled {
+                shuffleCycle.beginNextCycle(QueueBuilder.buildNextCycle(ordered, mode: .shuffle,
+                    previousIDs: shuffleCycle.lastGroupIDs, shuffleSeed: Int.random(in: Int.min...Int.max)))
+            }
+            candidateQueue = shuffleCycle.orderedIDs.compactMap { byID[$0] }
+            cycleStore?.save(shuffleCycle)
+        } else if rebuildQueue {
             candidateQueue = QueueBuilder.build(
                 assets,
                 mode: settings.queueMode,
@@ -190,8 +218,20 @@ final class PlaybackViewModel: ObservableObject {
                 shuffleSeed: Int.random(in: Int.min...Int.max)
             )
         }
+        let preservedID = identityToPreserve.flatMap { id in candidateQueue.contains { $0.id == id } ? id : nil }
+        let completedShuffle = settings.queueMode == .shuffle && !candidateQueue.isEmpty
+            && !settings.repeatEnabled && shuffleCycle.pendingIDs().isEmpty
+        let completedFrameID = completedShuffle
+            ? (shuffleCycle.lastGroupIDs.first(where: { id in candidateQueue.contains { $0.id == id } })
+                ?? candidateQueue.last?.id) : nil
+        let resumeID = settings.queueMode == .shuffle
+            ? ((isRecovering ? nil : preservedID) ?? shuffleCycle.pendingIDs().first ?? completedFrameID)
+            : identityToPreserve
+        // Reopening a finished non-repeating slideshow shows its final photo
+        // paused, rather than leaving an empty player waiting for an image.
+        if completedShuffle { isPlaying = false }
         let candidateIndex = PlaybackQueueIdentity.index(
-            for: identityToPreserve,
+            for: resumeID,
             in: candidateQueue,
             fallbackIndex: currentIndex
         )
@@ -203,6 +243,7 @@ final class PlaybackViewModel: ObservableObject {
             forceReload: rebuildQueue
         )
 
+        replayingHistory = false
         queue = candidateQueue
         queueCount = queue.count
         currentIndex = candidateIndex
@@ -234,6 +275,11 @@ final class PlaybackViewModel: ObservableObject {
             return
         }
 
+        if settings.queueMode == .shuffle && resumeID == nil && !queue.isEmpty {
+            isPlaying = false
+            pendingFrameReload = false
+            return
+        }
         guard playbackAllowed else { return }
         await loadCurrent(generation: generation, transitionSeed: 1, gestureDirection: 0)
         guard !Task.isCancelled, loadGeneration == generation else { return }
@@ -244,9 +290,8 @@ final class PlaybackViewModel: ObservableObject {
     }
 
     /// Applies a settings edit to an already-presented frame. Duration edits
-    /// restart only the current timer; queue/filter/layout edits rebuild the
-    /// queue and image companions so the control changes the actual frame,
-    /// not just the settings screen.
+    /// restart only the current timer. Selection and layout edits reconcile
+    /// the shuffle cycle and reload companions without forgetting coverage.
     func updateSettings(_ updatedSettings: CanvasSettings) async {
         let requiresReload = settings.selectedAlbums != updatedSettings.selectedAlbums
             || settings.filters != updatedSettings.filters
@@ -330,6 +375,10 @@ final class PlaybackViewModel: ObservableObject {
             return advance(direction: direction, gestureDirection: gestureDirection)
         }
 
+        if settings.queueMode == .shuffle && direction > 0 {
+            return advanceShuffle(gestureDirection: gestureDirection)
+        }
+
         // Even a one-photo frame needs group-aware navigation: its previous
         // queue item may be the second tile of the portrait pair immediately
         // before it. Non-photo media remain single-surface boundaries.
@@ -382,6 +431,7 @@ final class PlaybackViewModel: ObservableObject {
         if let currentAsset { previousIDs.append(currentAsset.id); if previousIDs.count > 30 { previousIDs.removeFirst() } }
 
         if let historicalPosition = navigationHistory.move(direction: direction) {
+            replayingHistory = true
             queue = historicalPosition.queue
             queueCount = queue.count
             currentIndex = historicalPosition.currentIndex
@@ -431,6 +481,41 @@ final class PlaybackViewModel: ObservableObject {
         return true
     }
 
+    private func advanceShuffle(gestureDirection: Int) -> Bool {
+        let byID = Dictionary(queue.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var pending = shuffleCycle.pendingIDs()
+        if pending.isEmpty {
+            guard settings.repeatEnabled else {
+                isPlaying = false
+                cancelTimer()
+                return false
+            }
+            let nextCycle = settings.shuffleEachLoop
+                ? QueueBuilder.buildNextCycle(queue, mode: .shuffle, previousIDs: shuffleCycle.lastGroupIDs,
+                                               shuffleSeed: Int.random(in: Int.min...Int.max))
+                : QueueBuilder.buildNextCycle(shuffleCycle.orderedIDs.compactMap { byID[$0] }, mode: .albumOrder,
+                                               previousIDs: shuffleCycle.lastGroupIDs)
+            shuffleCycle.beginNextCycle(nextCycle)
+            pending = shuffleCycle.pendingIDs()
+        }
+        queue = shuffleCycle.orderedIDs.compactMap { byID[$0] }
+        queueCount = queue.count
+        guard let id = pending.first, let index = queue.firstIndex(where: { $0.id == id }) else { return false }
+        replayingHistory = false
+        recoveryStartIndex = nil
+        cancelTimer()
+        retryTask?.cancel()
+        loadTask?.cancel()
+        loadGeneration &+= 1
+        currentIndex = index
+        cycleStore?.save(shuffleCycle)
+        // Record history only after a frame is actually published. A failed
+        // destination must not become a replayable forward-history entry.
+        scheduleLoad(generation: loadGeneration, transitionSeed: UInt64.random(in: UInt64.min...UInt64.max),
+                     gestureDirection: gestureDirection)
+        return true
+    }
+
     private var currentPosition: PlaybackHistoryPosition {
         PlaybackHistoryPosition(queue: queue, currentIndex: currentIndex)
     }
@@ -459,22 +544,36 @@ final class PlaybackViewModel: ObservableObject {
         }
         let firstAttemptIndex = currentIndex
         var attempted = 0
+        var attemptedIDs = Set<String>()
         while attempted < queue.count {
+            if queue.indices.contains(currentIndex) { attemptedIDs.insert(queue[currentIndex].id) }
             guard sessionActive, playbackAllowed, !Task.isCancelled, loadGeneration == generation else { return }
             if await loadFrame(generation: generation, transitionSeed: transitionSeed, gestureDirection: gestureDirection) {
                 isRecovering = false
                 recoveryStartIndex = nil
                 errorMessage = nil
-                if attempted > 0 || navigationHistory.positions.isEmpty {
+                if settings.queueMode == .shuffle && !replayingHistory {
+                    if navigationHistory.positions.last != currentPosition {
+                        navigationHistory.append(currentPosition)
+                    }
+                } else if attempted > 0 || navigationHistory.positions.isEmpty {
                     navigationHistory.reset(to: currentPosition)
                 }
                 return
             }
             guard sessionActive, playbackAllowed, !Task.isCancelled, loadGeneration == generation else { return }
             attempted += 1
-            guard attempted < queue.count,
-                  let next = PlaybackIndexResolver.nextIndex(current: currentIndex, count: queue.count, direction: 1, repeatEnabled: settings.repeatEnabled) else { break }
-            currentIndex = next
+            guard attempted < queue.count else { break }
+            if settings.queueMode == .shuffle && !replayingHistory {
+                guard let next = queue.firstIndex(where: {
+                    !shuffleCycle.displayedIDs.contains($0.id) && !attemptedIDs.contains($0.id)
+                }) else { break }
+                currentIndex = next
+            } else {
+                guard let next = PlaybackIndexResolver.nextIndex(current: currentIndex, count: queue.count,
+                    direction: 1, repeatEnabled: settings.repeatEnabled) else { break }
+                currentIndex = next
+            }
         }
         guard sessionActive, !Task.isCancelled, loadGeneration == generation else { return }
         if let currentAsset, let retainedIndex = queue.firstIndex(where: { $0.id == currentAsset.id }) {
@@ -564,6 +663,10 @@ final class PlaybackViewModel: ObservableObject {
                 gestureDirection: gestureDirection,
                 isLayoutRefresh: retainedFrame != nil
             )
+            if settings.queueMode == .shuffle && !replayingHistory {
+                shuffleCycle.recordDisplayed(loadedAssets.map(\.id))
+                cycleStore?.save(shuffleCycle)
+            }
             pendingLayoutRefresh = false
             pendingFrameReload = false
             prefetchImages?(Array(queue.dropFirst(currentIndex + 1).prefix(4)), CGSize(width: 700, height: 700))
@@ -590,7 +693,12 @@ final class PlaybackViewModel: ObservableObject {
             canvasSize: targetSize,
             singleMediaIndices: singleMediaIndices
         )
-        return group.indices
+        guard settings.queueMode == .shuffle && !replayingHistory else { return group.indices }
+        let retainedIDs = Set(displayedFrame?.layoutAssets.map(\.id) ?? [])
+        return group.indices.filter { index in
+            index == currentIndex || !shuffleCycle.displayedIDs.contains(queue[index].id)
+                || (displayedFrame?.asset.id == queue[currentIndex].id && retainedIDs.contains(queue[index].id))
+        }
     }
 
     private func startTimer() {
