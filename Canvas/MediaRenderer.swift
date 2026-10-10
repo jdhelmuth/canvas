@@ -41,14 +41,23 @@ struct LivePhotoAssetView: UIViewRepresentable {
     let loop: Bool
     let muted: Bool
     let framingMode: MediaFramingMode
+#if DEBUG
+    var diagnosticTick = 0
+#endif
     func makeUIView(context: Context) -> PHLivePhotoView {
         let view = PHLivePhotoView()
         view.contentMode = framingMode == .fitWithBorder ? .scaleAspectFit : .scaleAspectFill
         view.clipsToBounds = true
+        // Slideshow controls own playback; the default long-press recognizer
+        // otherwise bypasses the coordinator's single-play lifecycle.
+        view.playbackGestureRecognizer.isEnabled = false
         return view
     }
     func updateUIView(_ view: PHLivePhotoView, context: Context) {
         let coordinator = context.coordinator
+#if DEBUG
+        LivePhotoDiagnostics.record("update", view: view, detail: "playing=\(isPlaying) loop=\(loop) active=\(coordinator.playbackState.phase)")
+#endif
         view.delegate = coordinator
         view.contentMode = framingMode == .fitWithBorder ? .scaleAspectFit : .scaleAspectFill
         VideoAudioState.apply(to: view, muted: muted)
@@ -73,7 +82,7 @@ struct LivePhotoAssetView: UIViewRepresentable {
             targetSize: UIScreen.main.bounds.size,
             contentMode: PhotoKitSourceFramingPolicy.contentMode,
             options: options
-        ) { [weak view, weak coordinator] photo, _ in
+        ) { [weak view, weak coordinator] photo, info in
             DispatchQueue.main.async {
                 guard let view, let coordinator,
                       LivePhotoPlaybackPolicy.acceptsLoadedPhoto(
@@ -82,10 +91,15 @@ struct LivePhotoAssetView: UIViewRepresentable {
                           requestGeneration: generation,
                           currentGeneration: coordinator.requestGeneration
                       ) else { return }
+                guard (info?[PHImageResultIsDegradedKey] as? Bool) != true else { return }
                 coordinator.requestID = nil
-                guard let photo else { return }
+                guard (info?[PHImageCancelledKey] as? Bool) != true,
+                      info?[PHImageErrorKey] == nil,
+                      let photo, view.livePhoto == nil else { return }
                 view.livePhoto = photo
-                coordinator.playbackActive = false
+#if DEBUG
+                LivePhotoDiagnostics.record("loaded", view: view)
+#endif
                 if coordinator.isPlaying { coordinator.startPlaybackIfNeeded(view) }
             }
         }
@@ -102,27 +116,32 @@ struct LivePhotoAssetView: UIViewRepresentable {
         var requestGeneration = 0
         var loop = false
         var isPlaying = false
-        var playbackActive = false
+        var playbackState = LivePhotoPlaybackState()
 
         func beginLoading(assetID: String, view: PHLivePhotoView) -> Int {
             cancelPendingRequest()
             requestGeneration &+= 1
             loadedID = assetID
-            playbackActive = false
+            view.delegate = nil
             view.stopPlayback()
+            playbackState = LivePhotoPlaybackState()
+            view.delegate = self
             view.livePhoto = nil
             return requestGeneration
         }
 
         func startPlaybackIfNeeded(_ view: PHLivePhotoView) {
-            guard LivePhotoPlaybackPolicy.shouldStartPlayback(isPlaying: isPlaying, playbackActive: playbackActive) else { return }
-            playbackActive = true
+            guard playbackState.startIfNeeded(isPlaying: isPlaying, loop: loop,
+                                               hasLivePhoto: view.livePhoto != nil) else { return }
+#if DEBUG
+            LivePhotoDiagnostics.record("start", view: view)
+#endif
             view.startPlayback(with: .full)
         }
 
         func stopPlayback(_ view: PHLivePhotoView) {
+            guard playbackState.stopIfNeeded() else { return }
             view.stopPlayback()
-            playbackActive = false
         }
 
         func invalidate(_ view: PHLivePhotoView) {
@@ -131,10 +150,10 @@ struct LivePhotoAssetView: UIViewRepresentable {
             loadedID = nil
             isPlaying = false
             loop = false
-            playbackActive = false
+            view.delegate = nil
             view.stopPlayback()
             view.livePhoto = nil
-            view.delegate = nil
+            playbackState = LivePhotoPlaybackState()
         }
 
         private func cancelPendingRequest() {
@@ -145,8 +164,10 @@ struct LivePhotoAssetView: UIViewRepresentable {
         }
 
         func livePhotoView(_ livePhotoView: PHLivePhotoView, didEndPlaybackWith playbackStyle: PHLivePhotoViewPlaybackStyle) {
-            playbackActive = false
-            guard LivePhotoPlaybackPolicy.shouldRestartAfterPlayback(loop: loop, isPlaying: isPlaying) else { return }
+            guard playbackState.didEnd() else { return }
+#if DEBUG
+            LivePhotoDiagnostics.record("end", view: livePhotoView)
+#endif
             startPlaybackIfNeeded(livePhotoView)
         }
     }
@@ -218,3 +239,93 @@ struct LocalVideoView: View {
         .onDisappear { player?.pause() }
     }
 }
+
+#if DEBUG
+/// Opt-in, read-only device exercise. It never creates a playback queue or saves settings.
+@MainActor
+enum LivePhotoDiagnostics {
+    static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("--canvas-live-photo-check") }
+    static var caseName = ""
+    static let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("live-photo-check", isDirectory: true)
+    static func record(_ event: String, view: PHLivePhotoView, detail: String = "") {
+        guard enabled else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let size = view.livePhoto?.size ?? .zero
+        let line = "\(Date().timeIntervalSince1970) \(caseName) \(event) bounds=\(view.bounds.size) intrinsic=\(view.intrinsicContentSize) photo=\(size) mode=\(view.contentMode.rawValue) \(detail)\n"
+        let file = directory.appendingPathComponent("events.txt")
+        if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: nil) }
+        if let handle = try? FileHandle(forWritingTo: file) {
+            try? handle.seekToEnd(); try? handle.write(contentsOf: Data(line.utf8)); try? handle.close()
+        }
+    }
+    static func capture(_ name: String) {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first(where: \.isKeyWindow) else { return }
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: false)
+        }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? image.pngData()?.write(to: directory.appendingPathComponent("\(name).png"))
+    }
+}
+
+struct LivePhotoDiagnosticView: View {
+    @EnvironmentObject private var store: AppStore
+    @State private var assets: [PHAsset] = []
+    @State private var tick = 0
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    var body: some View {
+        GeometryReader { proxy in
+            let caseIndex = tick / 12
+            let phase = tick % 12
+            let finished = caseIndex >= assets.count * 4
+            let index = assets.isEmpty ? 0 : (caseIndex / 4) % assets.count
+            let fit = caseIndex % 2 == 0
+            let portrait = caseIndex % 4 >= 2
+            let size = portrait ? CGSize(width: proxy.size.height * 0.72, height: proxy.size.height) : proxy.size
+            ZStack {
+                Color.black
+                if !assets.isEmpty && !finished {
+                    LivePhotoAssetView(asset: assets[index], isPlaying: phase >= 2 && phase != 6,
+                        loop: false, muted: true, framingMode: fit ? .fitWithBorder : .fillZoom,
+                        diagnosticTick: tick)
+                        .id(caseIndex)
+                        .frame(width: size.width, height: size.height)
+                }
+                VStack {
+                    Text(finished ? "Live Photo check complete" : "Live Photo \(caseIndex + 1) · \(fit ? "Fit" : "Fill") · \(portrait ? "portrait" : "landscape") · \(phase)")
+                        .padding(8).background(.black.opacity(0.7))
+                    Spacer()
+                }.foregroundStyle(.white)
+            }.frame(width: proxy.size.width, height: proxy.size.height)
+            .onReceive(timer) { _ in
+                guard !finished else { return }
+                LivePhotoDiagnostics.caseName = "case-\(caseIndex)"
+                if [1, 3, 5, 7, 10].contains(phase) {
+                    LivePhotoDiagnostics.capture("case-\(caseIndex)-second-\(phase)")
+                }
+                tick += 1
+            }
+        }.ignoresSafeArea()
+        .task {
+            UIApplication.shared.isIdleTimerDisabled = true
+            var candidates: [PHAsset] = []
+            var seen = Set<String>()
+            for album in store.settings.selectedAlbums where album.source == .applePhotos {
+                guard let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album.id], options: nil).firstObject else { continue }
+                let options = PHFetchOptions()
+                options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+                PHAsset.fetchAssets(in: collection, options: options).enumerateObjects { asset, _, _ in
+                    if asset.mediaSubtypes.contains(.photoLive), seen.insert(asset.localIdentifier).inserted { candidates.append(asset) }
+                }
+            }
+            let portrait = candidates.first { $0.pixelWidth < $0.pixelHeight }
+            let landscape = candidates.first { $0.pixelWidth > $0.pixelHeight }
+            assets = [portrait, landscape].compactMap { $0 }
+            LivePhotoDiagnostics.caseName = "case-0"
+        }
+    }
+}
+#endif

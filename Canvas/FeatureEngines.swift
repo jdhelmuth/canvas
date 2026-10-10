@@ -566,14 +566,6 @@ enum CanvasAirQualityCategory: String, CaseIterable, Sendable {
 /// Guards the UIKit-backed Live Photo bridge against restarting playback on
 /// every SwiftUI update and against late results from a previous asset.
 enum LivePhotoPlaybackPolicy {
-    static func shouldStartPlayback(isPlaying: Bool, playbackActive: Bool) -> Bool {
-        isPlaying && !playbackActive
-    }
-
-    static func shouldRestartAfterPlayback(loop: Bool, isPlaying: Bool) -> Bool {
-        loop && isPlaying
-    }
-
     static func acceptsLoadedPhoto(
         assetID: String,
         currentAssetID: String?,
@@ -581,6 +573,37 @@ enum LivePhotoPlaybackPolicy {
         currentGeneration: Int
     ) -> Bool {
         assetID == currentAssetID && requestGeneration == currentGeneration
+    }
+}
+
+/// One presentation of a Live Photo. A completed nonlooping clip stays still
+/// through clock/settings updates and pause/resume. Interrupted clips may resume
+/// only after PhotoKit acknowledges stopPlayback, avoiding overlapping starts.
+struct LivePhotoPlaybackState {
+    enum Phase { case ready, playing, stopping, completed }
+    private(set) var phase: Phase = .ready
+
+    mutating func startIfNeeded(isPlaying: Bool, loop: Bool, hasLivePhoto: Bool) -> Bool {
+        guard isPlaying, hasLivePhoto,
+              phase == .ready || (phase == .completed && loop) else { return false }
+        phase = .playing
+        return true
+    }
+
+    mutating func stopIfNeeded() -> Bool {
+        guard phase == .playing else { return false }
+        phase = .stopping
+        return true
+    }
+
+    @discardableResult
+    mutating func didEnd() -> Bool {
+        switch phase {
+        case .playing: phase = .completed
+        case .stopping: phase = .ready
+        case .ready, .completed: return false
+        }
+        return true
     }
 }
 

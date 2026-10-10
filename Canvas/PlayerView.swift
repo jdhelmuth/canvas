@@ -247,6 +247,7 @@ struct PlayerView: View {
         return frameSurface(
             frame,
             in: size,
+            playsLivePhoto: role == .incoming && model.isPlaying,
             gestureScale: role == .incoming ? gestureZoom : InteractivePhotoZoomPolicy.restingScale
         )
         // Give every frame a non-negotiable viewport before applying visual
@@ -261,6 +262,7 @@ struct PlayerView: View {
     private func frameSurface(
         _ frame: PlaybackViewModel.DisplayedFrame,
         in size: CGSize,
+        playsLivePhoto: Bool,
         gestureScale: CGFloat
     ) -> some View {
         let item = frame.asset
@@ -293,11 +295,13 @@ struct PlayerView: View {
                 playbackBackdrop(for: frame)
                 LivePhotoAssetView(
                     asset: asset,
-                    isPlaying: model.isPlaying,
+                    isPlaying: playsLivePhoto,
                     loop: store.settings.loopLivePhotos,
                     muted: store.settings.videoMuted,
                     framingMode: store.settings.effectiveFramingMode
                 )
+                .id(asset.localIdentifier)
+                .frame(width: size.width, height: size.height)
                 singleSurfaceCaptureDate(for: frame, in: size)
             }
         } else {

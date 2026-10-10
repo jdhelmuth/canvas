@@ -1803,13 +1803,52 @@ final class CanvasTests: XCTestCase {
     }
 
     func testLivePhotoPlaybackPolicyPreventsRestartLoopsAndStaleLoads() {
-        XCTAssertFalse(LivePhotoPlaybackPolicy.shouldStartPlayback(isPlaying: true, playbackActive: true))
-        XCTAssertTrue(LivePhotoPlaybackPolicy.shouldStartPlayback(isPlaying: true, playbackActive: false))
-        XCTAssertTrue(LivePhotoPlaybackPolicy.shouldRestartAfterPlayback(loop: true, isPlaying: true))
-        XCTAssertFalse(LivePhotoPlaybackPolicy.shouldRestartAfterPlayback(loop: true, isPlaying: false))
         XCTAssertTrue(LivePhotoPlaybackPolicy.acceptsLoadedPhoto(assetID: "live-2", currentAssetID: "live-2", requestGeneration: 4, currentGeneration: 4))
         XCTAssertFalse(LivePhotoPlaybackPolicy.acceptsLoadedPhoto(assetID: "live-1", currentAssetID: "live-2", requestGeneration: 3, currentGeneration: 4))
         XCTAssertFalse(LivePhotoPlaybackPolicy.acceptsLoadedPhoto(assetID: "live-2", currentAssetID: "live-2", requestGeneration: 3, currentGeneration: 4))
+    }
+
+    func testLivePhotoPlaysOnceThroughUpdatesAndPauseResumeAfterCompletion() {
+        var state = LivePhotoPlaybackState()
+        XCTAssertFalse(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: false))
+        XCTAssertTrue(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        for _ in 0..<60 {
+            XCTAssertFalse(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        }
+        XCTAssertTrue(state.didEnd())
+        for _ in 0..<60 {
+            XCTAssertFalse(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        }
+        XCTAssertFalse(state.stopIfNeeded())
+        XCTAssertFalse(state.startIfNeeded(isPlaying: false, loop: false, hasLivePhoto: true))
+        XCTAssertFalse(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        XCTAssertEqual(state.phase, .completed)
+    }
+
+    func testLivePhotoInterruptedPlaybackWaitsForStopBeforeResuming() {
+        var state = LivePhotoPlaybackState()
+        XCTAssertTrue(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        XCTAssertTrue(state.stopIfNeeded())
+        XCTAssertFalse(state.stopIfNeeded())
+        // Resume can arrive before PhotoKit's asynchronous stop callback.
+        XCTAssertFalse(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        XCTAssertTrue(state.didEnd())
+        XCTAssertTrue(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        XCTAssertTrue(state.didEnd())
+        XCTAssertFalse(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+    }
+
+    func testLivePhotoLoopsOnlyWhenEnabledAndIgnoresDuplicateEndCallbacks() {
+        var state = LivePhotoPlaybackState()
+        XCTAssertFalse(state.didEnd())
+        for _ in 0..<3 {
+            XCTAssertTrue(state.startIfNeeded(isPlaying: true, loop: true, hasLivePhoto: true))
+            XCTAssertTrue(state.didEnd())
+            XCTAssertFalse(state.didEnd())
+        }
+        XCTAssertFalse(state.startIfNeeded(isPlaying: true, loop: false, hasLivePhoto: true))
+        XCTAssertFalse(state.startIfNeeded(isPlaying: false, loop: true, hasLivePhoto: true))
+        XCTAssertTrue(state.startIfNeeded(isPlaying: true, loop: true, hasLivePhoto: true))
     }
 
     func testAppleAlbumCategoriesMergeCloudSharedIntoSharedWithoutLosingSelections() {

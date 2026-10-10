@@ -9,7 +9,9 @@ struct RootView: View {
     var body: some View {
         Group {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
+            if ProcessInfo.processInfo.arguments.contains("--canvas-live-photo-check") {
+                LivePhotoDiagnosticView()
+            } else if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
                 || ProcessInfo.processInfo.arguments.contains("--canvas-ui-play") {
                 PlayerView()
             } else if store.settings.hasCompletedOnboarding {
