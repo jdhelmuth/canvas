@@ -1,6 +1,18 @@
 import XCTest
 
 final class CanvasUITests: XCTestCase {
+    override func tearDownWithError() throws {
+        // Finish app/process transitions while XCTest automation is still alive.
+        // iOS 26.5 can crash SpringBoard when session invalidation races these
+        // transitions; the host monitor independently detects any recurrence.
+        let app = XCUIApplication()
+        if app.state != .notRunning { app.terminate() }
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCTAssertTrue(springboard.wait(for: .runningForeground, timeout: 5))
+        try super.tearDownWithError()
+    }
+
     func testOnboardingFirstScreen() {
         let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset"]; app.launch()
         XCTAssertTrue(app.staticTexts["Canvas"].waitForExistence(timeout: 5))
@@ -478,4 +490,54 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(tapped || app.buttons["start-your-frame"].waitForExistence(timeout: 8) || app.descendants(matching: .any)["start-your-frame"].waitForExistence(timeout: 2))
         sleep(2)
     }
+
+    func testSlideshowLifecycleStress() throws {
+        continueAfterFailure = false
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: "/tmp/canvas-lifecycle-stress.flag"),
+            "Create /tmp/canvas-lifecycle-stress.flag to run the longer playback test."
+        )
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]
+        app.launch()
+        XCTAssertTrue(app.buttons["choose-albums-empty-state"].waitForExistence(timeout: 5))
+        app.buttons["choose-albums-empty-state"].tap()
+        for title in ["Landscapes", "Cityscapes", "Abstract"] {
+            XCTAssertTrue(app.staticTexts[title].waitForExistence(timeout: 5))
+            app.staticTexts[title].tap()
+        }
+        app.buttons["Done"].tap()
+        let start = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Start your frame")).firstMatch
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        start.tap()
+        XCTAssertTrue(app.otherElements["Canvas slideshow"].waitForExistence(timeout: 10))
+        // Two minutes of timer-driven playback, with screenshots retained for
+        // visual confirmation that real media and transitions were exercised.
+        for sample in 0..<6 {
+            sleep(20)
+            XCTAssertEqual(app.state, .runningForeground)
+            XCTAssertFalse(app.staticTexts["Choose an album with playable media to start Canvas."].exists)
+            XCTAssertFalse(app.staticTexts["Unavailable"].exists)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "Sustained slideshow \(sample)"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        app.launchArguments = ["--canvas-ui-play"]
+        for cycle in 0..<6 {
+            XCUIDevice.shared.press(.home)
+            let background = NSPredicate { _, _ in
+                app.state == .runningBackground || app.state == .runningBackgroundSuspended
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: background, object: nil)], timeout: 5), .completed)
+            sleep(2)
+            app.activate()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+            app.terminate()
+            XCTAssertTrue(app.wait(for: .notRunning, timeout: 5))
+            app.launch()
+            XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5), "Relaunch \(cycle)")
+        }
+    }
+
 }

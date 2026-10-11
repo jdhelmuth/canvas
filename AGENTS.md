@@ -3,6 +3,11 @@
 Run `git fetch origin main` and `python3 scripts/check-local.py --base origin/main`
 before pushing changes. Install locked dependencies and required toolchains when
 needed; never skip failed checks. Native checks require the existing project setup. Use `--plan` to inspect check selection.
+For native checks, pass `--simulator-id <Canvas-UUID>` or set
+`CANVAS_SIMULATOR_ID` to the dedicated, already healthy Canvas simulator.
+Keep one test owner per device. The runner observes SpringBoard through session
+teardown; a simulator failure must be investigated even if XCTest reports success.
+See `docs/springboard-investigation.md` for evidence and recovery limits.
 
 For an exact, clean PR head, run `python3 scripts/check-local.py --merge-pr NUMBER`.
 For integration of an already-built public release, add `--skip-cloud-build`.

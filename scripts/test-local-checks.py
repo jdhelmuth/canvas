@@ -101,5 +101,93 @@ class LocalChecksTests(unittest.TestCase):
             capture.assert_not_called()
 
 
+class SimulatorSessionTests(unittest.TestCase):
+    def setUp(self):
+        import simulator_session
+        self.module = simulator_session
+        self.udid = '11111111-2222-4333-8444-555555555555'
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        temporary_root = patch.object(self.module.tempfile, 'gettempdir', return_value=directory.name)
+        temporary_root.start()
+        self.addCleanup(temporary_root.stop)
+        self.health = {'name': 'Canvas iPad', 'springboard_pid': 123}
+
+    def test_healthy_session_records_evidence(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.module, 'health_check', return_value=self.health), \
+             patch.object(self.module, 'springboard_pid', return_value=123):
+            report = Path(directory) / 'evidence.json'
+            with self.module.SimulatorSession(self.udid, report, settle_seconds=0).observe():
+                pass
+            self.assertTrue(json.loads(report.read_text())['healthy'])
+
+    def test_restart_after_successful_test_fails_validation(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.module, 'health_check', return_value=self.health), \
+             patch.object(self.module, 'springboard_pid', return_value=456):
+            report = Path(directory) / 'evidence.json'
+            with self.assertRaisesRegex(RuntimeError, 'SpringBoard restarted'):
+                with self.module.SimulatorSession(self.udid, report, settle_seconds=0).observe():
+                    pass  # xcodebuild returned zero, as it did in the real incident.
+            self.assertFalse(json.loads(report.read_text())['healthy'])
+
+    def test_transient_failure_is_not_erased_by_later_recovery(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.module, 'health_check', return_value=self.health), \
+             patch.object(self.module, 'springboard_pid', side_effect=[RuntimeError('missing PID'), 123]):
+            session = self.module.SimulatorSession(self.udid, Path(directory) / 'evidence.json', settle_seconds=0)
+            with self.assertRaisesRegex(RuntimeError, 'missing PID'):
+                with session.observe():
+                    session.sample()
+
+    def test_unhealthy_start_never_runs_test_body(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.module, 'health_check', side_effect=RuntimeError('no display')):
+            report = Path(directory) / 'evidence.json'
+            with self.assertRaisesRegex(RuntimeError, 'no display'):
+                with self.module.SimulatorSession(self.udid, report, settle_seconds=0).observe():
+                    self.fail('Must not run on an unhealthy simulator')
+            self.assertIn('no display', json.loads(report.read_text())['errors'])
+
+    def test_final_display_failure_is_not_a_pass(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.module, 'health_check', side_effect=[self.health, RuntimeError('no display')]), \
+             patch.object(self.module, 'springboard_pid', return_value=123):
+            with self.assertRaisesRegex(RuntimeError, 'no display'):
+                with self.module.SimulatorSession(self.udid, Path(directory) / 'evidence.json', settle_seconds=0).observe():
+                    pass
+
+    def test_device_lock_refuses_overlapping_checks(self):
+        with self.module.device_lock(self.udid):
+            with self.assertRaisesRegex(RuntimeError, 'Another Canvas check'):
+                with self.module.device_lock(self.udid):
+                    self.fail('A second check must not take ownership')
+
+    def test_test_failure_propagates_with_healthy_simulator(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(self.module, 'health_check', return_value=self.health), \
+             patch.object(self.module, 'springboard_pid', return_value=123):
+            with self.assertRaisesRegex(RuntimeError, 'test failed'):
+                with self.module.SimulatorSession(self.udid, Path(directory) / 'evidence.json', settle_seconds=0).observe():
+                    raise RuntimeError('test failed')
+
+    def test_native_checks_require_explicit_device_and_clear_old_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / 'checks.json'
+            report.write_text('{"passed":true}')
+            def capture(*args):
+                if args == ('git', 'rev-parse', '--git-path', 'local-checks.json'): return str(report)
+                return 'abc'
+            with patch.object(checks, 'capture', side_effect=capture), \
+                 patch.dict('os.environ', {}, clear=True), \
+                 patch.object(sys, 'argv', ['check-local.py', '--platform', 'ios']), \
+                 patch.object(checks, 'run') as run:
+                with self.assertRaisesRegex(RuntimeError, 'require --simulator-id'):
+                    checks.main()
+                run.assert_not_called()
+                self.assertFalse(report.exists())
+
+
 if __name__ == '__main__':
     unittest.main()
