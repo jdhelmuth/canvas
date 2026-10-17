@@ -542,9 +542,9 @@ struct WeatherOverlayWidget: View {
     }
 }
 
-/// A quiet, color-only reference that keeps the current dew point visible
-/// without adding another labeled weather card to the clock composition.
-struct DewPointScaleView: View {
+/// One quiet right-edge scale, using the selected provider reading only.
+struct WeatherScaleView: View {
+    let metric: WeatherScaleMetric
     let snapshot: CanvasWeatherSnapshot?
     let textOpacity: Double
 
@@ -556,10 +556,10 @@ struct DewPointScaleView: View {
     private let chartOpacity: Double = 0.68
 
     var body: some View {
-        if let snapshot, let dewPointF = snapshot.dewPointF, dewPointF.isFinite {
+        if let reading = metric.fahrenheit(in: snapshot) {
             GeometryReader { canvasProxy in
                 VStack(spacing: 6) {
-                    Text("DEW POINT")
+                    Text(metric.title.uppercased())
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .tracking(1.1)
                         .foregroundStyle(.white.opacity(textOpacity * 0.68))
@@ -567,20 +567,26 @@ struct DewPointScaleView: View {
                     GeometryReader { proxy in
                         let height = max(proxy.size.height, 1)
                         let markerY = min(
-                            max(DewPointScalePolicy.yPosition(forFahrenheit: dewPointF, height: height), 10),
+                            max(metric.yPosition(forFahrenheit: reading, height: height), 10),
                             max(height - 10, 10)
                         )
 
                         ZStack(alignment: .topLeading) {
                             ZStack(alignment: .topLeading) {
-                                VStack(spacing: 0) {
-                                    ForEach(Array(DewPointComfortBand.allCases.reversed())) { band in
-                                        band.tint
-                                            .opacity(0.9)
-                                            .frame(
-                                                width: barWidth,
-                                                height: height * CGFloat(band.spanFahrenheit / DewPointScalePolicy.spanFahrenheit)
-                                            )
+                                Group {
+                                    if metric == .dewPoint {
+                                        VStack(spacing: 0) {
+                                            ForEach(Array(DewPointComfortBand.allCases.reversed())) { band in
+                                                band.tint
+                                                    .opacity(0.9)
+                                                    .frame(
+                                                        width: barWidth,
+                                                        height: height * CGFloat(band.spanFahrenheit / DewPointScalePolicy.spanFahrenheit)
+                                                    )
+                                            }
+                                        }
+                                    } else {
+                                        LinearGradient(colors: [.red, .orange, .yellow, .cyan, .blue], startPoint: .top, endPoint: .bottom)
                                     }
                                 }
                                 .clipShape(RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous))
@@ -595,7 +601,7 @@ struct DewPointScaleView: View {
                             }
                             .opacity(chartOpacity)
 
-                            ForEach(DewPointScalePolicy.tickValuesFahrenheit, id: \.self) { value in
+                            ForEach(metric.tickValuesFahrenheit, id: \.self) { value in
                                 HStack(spacing: 6) {
                                     Rectangle()
                                         .fill(.white.opacity(textOpacity * 0.46))
@@ -608,7 +614,7 @@ struct DewPointScaleView: View {
                                 .frame(width: tickGroupWidth, height: 20, alignment: .leading)
                                 .position(
                                     x: barX + barWidth + 5 + tickGroupWidth / 2,
-                                    y: min(max(DewPointScalePolicy.yPosition(forFahrenheit: value, height: height), 10), height - 10)
+                                    y: min(max(metric.yPosition(forFahrenheit: value, height: height), 10), height - 10)
                                 )
                             }
 
@@ -618,7 +624,7 @@ struct DewPointScaleView: View {
                                 .shadow(color: .black.opacity(0.72), radius: 2)
                                 .position(x: barX + barWidth / 2 + 1, y: markerY)
 
-                            Text(snapshot.dewPoint ?? tickLabel(forFahrenheit: dewPointF))
+                            Text(CanvasWeatherTemperatureFormatter.string(from: reading))
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white.opacity(textOpacity * 0.98))
                                 .lineLimit(1)
@@ -637,12 +643,12 @@ struct DewPointScaleView: View {
             }
             .frame(minWidth: scaleWidth, maxWidth: scaleWidth, maxHeight: .infinity)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Dew point comfort scale")
-            .accessibilityValue(
-                "(snapshot.dewPoint ?? tickLabel(forFahrenheit: dewPointF)), (DewPointScalePolicy.comfortBand(forFahrenheit: dewPointF).accessibilityLabel)"
-            )
-            .accessibilityHint("Color bands show the dew point comfort range. The marker shows the current reading.")
-            .accessibilityIdentifier("canvas.dew-point.scale")
+            .accessibilityLabel("\(metric.title) scale")
+            .accessibilityValue(CanvasWeatherTemperatureFormatter.string(from: reading))
+            .accessibilityHint(metric == .dewPoint
+                ? "Color bands show the dew point comfort range. The marker shows the current reading."
+                : "Colors run from cold at the bottom to hot at the top. Readings outside the scale stay at the nearest edge.")
+            .accessibilityIdentifier("canvas.weather.scale")
         }
     }
 

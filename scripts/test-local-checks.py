@@ -113,6 +113,36 @@ class SimulatorSessionTests(unittest.TestCase):
         self.addCleanup(temporary_root.stop)
         self.health = {'name': 'Canvas iPad', 'springboard_pid': 123}
 
+    def test_faulty_runtime_is_rejected_before_starting_automation(self):
+        devices = {'devices': {'runtime-old': [{'udid': self.udid, 'state': 'Booted'}]}}
+        runtimes = {'runtimes': [{'identifier': 'runtime-old', 'isAvailable': True,
+                                 'runtimeRoot': '/actual-runtime', 'buildversion': '23F77'}]}
+        with patch.object(self.module, 'command', side_effect=[json.dumps(devices), json.dumps(runtimes),
+                'UUID: 711229F6-7A68-3A82-A27A-0439C2E1D62A (arm64) binary']) as command:
+            with self.assertRaisesRegex(RuntimeError, 'confirmed SpringBoard XCTest'):
+                self.module.health_check(self.udid)
+            self.assertIn('/actual-runtime/', command.call_args.args[-1])
+            self.assertEqual(command.call_count, 3)
+
+    def test_other_runtime_records_binary_identity(self):
+        devices = {'devices': {'runtime-new': [{'udid': self.udid}]}}
+        runtimes = {'runtimes': [{'identifier': 'runtime-new', 'isAvailable': True,
+                                 'runtimeRoot': '/new-runtime', 'buildversion': 'new-build'}]}
+        identity = '2AFDDABB-38F9-38F3-B805-AC3B60BDF165'
+        with patch.object(self.module, 'command', side_effect=[json.dumps(runtimes),
+                'UUID: ' + identity + ' (arm64) binary']):
+            result = self.module.automation_runtime(devices, self.udid)
+        self.assertEqual(result['automation_uuids'], [identity])
+        self.assertEqual(result['build'], 'new-build')
+
+    def test_unidentifiable_automation_runtime_fails_closed(self):
+        devices = {'devices': {'runtime': [{'udid': self.udid}]}}
+        runtimes = {'runtimes': [{'identifier': 'runtime', 'isAvailable': True,
+                                 'runtimeRoot': '/runtime'}]}
+        with patch.object(self.module, 'command', side_effect=[json.dumps(runtimes), '']):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot identify'):
+                self.module.automation_runtime(devices, self.udid)
+
     def test_healthy_session_records_evidence(self):
         with tempfile.TemporaryDirectory() as directory, \
              patch.object(self.module, 'health_check', return_value=self.health), \

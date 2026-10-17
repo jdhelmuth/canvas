@@ -487,6 +487,40 @@ enum DewPointComfortBand: String, CaseIterable, Identifiable {
     }
 }
 
+enum WeatherScaleMetric: String, Codable, CaseIterable, Identifiable {
+    case dewPoint, temperature, feelsLike
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .dewPoint: "Dew point"
+        case .temperature: "Temperature"
+        case .feelsLike: "Feels like"
+        }
+    }
+
+    func fahrenheit(in snapshot: CanvasWeatherSnapshot?) -> Double? {
+        let value: Double?
+        switch self {
+        case .dewPoint: value = snapshot?.dewPointF
+        case .temperature: value = snapshot?.temperatureF
+        case .feelsLike: value = snapshot?.apparentTemperatureF
+        }
+        // Missing feels-like data must never silently become actual temperature.
+        return value.flatMap { $0.isFinite ? $0 : nil }
+    }
+
+    var tickValuesFahrenheit: [Double] {
+        self == .dewPoint ? DewPointScalePolicy.tickValuesFahrenheit : [-20, 0, 20, 40, 60, 80, 100, 120]
+    }
+
+    func yPosition(forFahrenheit value: Double, height: CGFloat) -> CGFloat {
+        if self == .dewPoint { return DewPointScalePolicy.yPosition(forFahrenheit: value, height: height) }
+        guard value.isFinite else { return height / 2 }
+        return height * (1 - CGFloat(min(max((value + 20) / 140, 0), 1)))
+    }
+}
+
 enum DewPointScalePolicy {
     static let minimumFahrenheit = DewPointComfortBand.allCases.map(\.lowerFahrenheit).min() ?? 30
     static let maximumFahrenheit = DewPointComfortBand.allCases.map(\.upperFahrenheit).max() ?? 80

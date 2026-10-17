@@ -250,6 +250,11 @@ final class AppStore: ObservableObject {
         }
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-dew-point-scale") {
             settingsStore.settings.overlays.weatherShowDewPointScale = true
+            settingsStore.settings.overlays.weatherScaleMetric = .dewPoint
+        }
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-feels-like-scale") {
+            settingsStore.settings.overlays.weatherShowDewPointScale = true
+            settingsStore.settings.overlays.weatherScaleMetric = .feelsLike
         }
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-single-layout") {
             settingsStore.settings.layout = .single

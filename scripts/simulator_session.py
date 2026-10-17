@@ -10,6 +10,12 @@ import threading
 import time
 import uuid
 
+# Confirmed in the October 10 and October 17 SpringBoard reports. Checking the
+# actual runtime binary avoids confusing Xcode's newer framework with the one
+# SpringBoard loads. A different UUID is not a guarantee of runtime health;
+# keep the PID/display monitor and teardown observation below.
+FAULTY_AUTOMATION_UUIDS = {'711229F6-7A68-3A82-A27A-0439C2E1D62A'}
+
 
 def command(*args):
     result = subprocess.run(args, capture_output=True, text=True, timeout=15)
@@ -26,11 +32,37 @@ def springboard_pid(udid):
     return int(match[1])
 
 
+def automation_runtime(devices, udid):
+    identifiers = [identifier for identifier, group in devices['devices'].items()
+                   if any(device['udid'] == udid for device in group)]
+    if len(identifiers) != 1:
+        raise RuntimeError('Cannot identify the selected simulator runtime.')
+    runtimes = json.loads(command('xcrun', 'simctl', 'list', 'runtimes', '-j'))['runtimes']
+    matches = [runtime for runtime in runtimes if runtime['identifier'] == identifiers[0]
+               and runtime.get('isAvailable')]
+    if len(matches) != 1 or not matches[0].get('runtimeRoot'):
+        raise RuntimeError('Cannot inspect the selected simulator runtime.')
+    runtime = matches[0]
+    binary = Path(runtime['runtimeRoot']) / 'Developer/Library/PrivateFrameworks/XCTAutomationSupport.framework/XCTAutomationSupport'
+    output = command('xcrun', 'dwarfdump', '--uuid', str(binary))
+    identities = re.findall(r'UUID: ([0-9A-Fa-f-]{36}) \(([^)]+)\)', output)
+    if not identities:
+        raise RuntimeError('Cannot identify the runtime XCTAutomationSupport binary.')
+    if any(identity.upper() in FAULTY_AUTOMATION_UUIDS for identity, _ in identities):
+        raise RuntimeError('This simulator runtime contains the confirmed SpringBoard XCTest '
+                           'teardown defect. Upgrade this device to a validated runtime before '
+                           'running tests; restarting it does not repair the framework. '
+                           'See docs/springboard-investigation.md.')
+    return {'identifier': runtime['identifier'], 'build': runtime.get('buildversion'),
+            'automation_uuids': [identity.upper() for identity, _ in identities]}
+
+
 def health_check(udid):
     devices = json.loads(command('xcrun', 'simctl', 'list', 'devices', 'available', '-j'))
     device = next((d for group in devices['devices'].values() for d in group if d['udid'] == udid), None)
     if not device or device['state'] != 'Booted':
         raise RuntimeError('The explicitly selected Canvas simulator must already be booted and healthy.')
+    runtime = automation_runtime(devices, udid)
     initial_pid = springboard_pid(udid)
     # simctl refuses the screenshot if the display is unavailable. Validate its
     # PNG signature and nonzero dimensions as well, without retaining UI pixels.
@@ -43,7 +75,7 @@ def health_check(udid):
             raise RuntimeError('Simulator did not produce a valid display frame.')
     if springboard_pid(udid) != initial_pid:
         raise RuntimeError('SpringBoard restarted during display check.')
-    return {'name': device['name'], 'springboard_pid': initial_pid}
+    return {'name': device['name'], 'springboard_pid': initial_pid, 'runtime': runtime}
 
 
 @contextlib.contextmanager

@@ -483,7 +483,8 @@ struct PlayerView: View {
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(for: settings.position)).padding(24)
             }
             if settings.effectiveWeatherShowDewPointScale {
-                DewPointScaleView(
+                WeatherScaleView(
+                    metric: settings.effectiveWeatherScaleMetric,
                     snapshot: store.weather.snapshot,
                     textOpacity: opacity.text
                 )

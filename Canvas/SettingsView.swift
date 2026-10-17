@@ -470,12 +470,21 @@ struct SettingsView: View {
                     Toggle("UV index", isOn: optionalOverlayBinding(\.weatherShowUVIndex, default: false))
                     Toggle("Dew point", isOn: optionalOverlayBinding(\.weatherShowDewPoint, default: false))
                     Toggle(
-                        "Dew point comfort scale",
+                        "Right-side weather scale",
                         isOn: optionalOverlayBinding(\.weatherShowDewPointScale, default: false)
                     )
-                    .accessibilityIdentifier("weather-dew-point-scale-toggle")
-                    .accessibilityHint("Show a color-banded dew point reference scale on the right edge of the canvas.")
-                    Text("The scale uses color bands for comfort and marks the current dew point with a numeric marker.")
+                    .accessibilityIdentifier("weather-scale-toggle")
+                    .accessibilityHint("Show one weather scale on the right edge of the canvas.")
+                    if store.settings.overlays.effectiveWeatherShowDewPointScale {
+                        Picker("Scale reading", selection: optionalOverlayBinding(\.weatherScaleMetric, default: store.settings.overlays.effectiveWeatherScaleMetric)) {
+                            ForEach(WeatherScaleMetric.allCases) { metric in
+                                Text(metric.title).tag(metric)
+                            }
+                        }
+                        .accessibilityIdentifier("weather-scale-metric")
+                        .accessibilityValue(store.settings.overlays.effectiveWeatherScaleMetric.title)
+                    }
+                    Text("Choose dew point, temperature, or feels like. The scale stays hidden when that reading is unavailable. Precipitation stays with the weather details.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     if store.settings.effectiveWeatherSource == .ambientStation {
@@ -1058,7 +1067,8 @@ private struct ClockOverlayPreview: View {
             }
 
             if settings.effectiveWeatherShowDewPointScale {
-                DewPointScaleView(
+                WeatherScaleView(
+                    metric: settings.effectiveWeatherScaleMetric,
                     snapshot: store.weather.snapshot,
                     textOpacity: opacity.text
                 )

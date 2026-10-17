@@ -545,6 +545,80 @@ final class CanvasTests: XCTestCase {
         XCTAssertEqual(CanvasWeatherSnapshot.preview.temperature, "74.0°F")
     }
 
+    func testWeatherScaleUsesDistinctProviderReadingsWithoutSubstitution() throws {
+        let reading = try JSONDecoder().decode(CanvasAmbientReading.self, from: Data(#"{"tempF":40.25,"apparentTempF":28.125,"dewPointF":21.5}"#.utf8))
+        let snapshot = AmbientWeatherCanvasProvider.snapshot(from: reading)
+        XCTAssertEqual(WeatherScaleMetric.temperature.fahrenheit(in: snapshot), 40.25)
+        XCTAssertEqual(WeatherScaleMetric.feelsLike.fahrenheit(in: snapshot), 28.125)
+        XCTAssertEqual(WeatherScaleMetric.dewPoint.fahrenheit(in: snapshot), 21.5)
+        let restored = try JSONDecoder().decode(CanvasWeatherSnapshot.self, from: JSONEncoder().encode(snapshot))
+        XCTAssertEqual(restored.apparentTemperatureF, 28.125)
+        XCTAssertEqual(restored.temperatureF, 40.25)
+        let hot = try JSONDecoder().decode(CanvasAmbientReading.self, from: Data(#"{"tempF":95,"apparentTempF":108}"#.utf8))
+        XCTAssertEqual(WeatherScaleMetric.feelsLike.fahrenheit(in: AmbientWeatherCanvasProvider.snapshot(from: hot)), 108)
+    }
+
+    func testWeatherScaleHidesMissingAndNonfiniteValues() throws {
+        let reading = try JSONDecoder().decode(CanvasAmbientReading.self, from: Data(#"{"tempF":72}"#.utf8))
+        let snapshot = AmbientWeatherCanvasProvider.snapshot(from: reading)
+        XCTAssertNil(WeatherScaleMetric.feelsLike.fahrenheit(in: snapshot))
+        XCTAssertNil(WeatherScaleMetric.dewPoint.fahrenheit(in: snapshot))
+        XCTAssertEqual(WeatherScaleMetric.temperature.fahrenheit(in: snapshot), 72)
+        for metric in WeatherScaleMetric.allCases { XCTAssertNil(metric.fahrenheit(in: nil)) }
+        let invalid = CanvasWeatherSnapshot(symbolName: "cloud", condition: "Cloudy", temperature: "—", apparentTemperatureF: .infinity)
+        XCTAssertNil(WeatherScaleMetric.feelsLike.fahrenheit(in: invalid))
+    }
+
+    func testWeatherScaleHandlesColdHeatAndOutOfRangeReadings() {
+        for metric in [WeatherScaleMetric.temperature, .feelsLike] {
+            XCTAssertEqual(metric.yPosition(forFahrenheit: -50, height: 280), 280)
+            XCTAssertEqual(metric.yPosition(forFahrenheit: -20, height: 280), 280)
+            XCTAssertEqual(metric.yPosition(forFahrenheit: 50, height: 280), 140)
+            XCTAssertEqual(metric.yPosition(forFahrenheit: 120, height: 280), 0)
+            XCTAssertEqual(metric.yPosition(forFahrenheit: 140, height: 280), 0)
+            XCTAssertGreaterThan(metric.yPosition(forFahrenheit: 20, height: 280), metric.yPosition(forFahrenheit: 95, height: 280))
+        }
+    }
+
+    func testWeatherScaleLegacySnapshotsAndLocalizedUnits() throws {
+        let legacy = Data(#"{"symbolName":"cloud","condition":"Cloudy","temperature":"10°C","apparentTemperature":"−5,5°C","updatedAt":0}"#.utf8)
+        let snapshot = try JSONDecoder().decode(CanvasWeatherSnapshot.self, from: legacy)
+        XCTAssertEqual(try XCTUnwrap(snapshot.temperatureF), 50, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(snapshot.apparentTemperatureF), 22.1, accuracy: 0.001)
+        let us = CanvasWeatherTemperatureFormatter.string(from: 32, locale: Locale(identifier: "en_US"))
+        let metric = CanvasWeatherTemperatureFormatter.string(from: 32, locale: Locale(identifier: "fr_FR"))
+        XCTAssertTrue(us.contains("32.0") && us.contains("F"))
+        XCTAssertTrue(metric.contains("0,0") && metric.contains("C"))
+    }
+
+    @MainActor
+    func testWeatherScaleSelectionPersistsAcrossStoreRestart() throws {
+        let suite = "WeatherScaleTest.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for metric in WeatherScaleMetric.allCases {
+            let store = SettingsStore(defaults: defaults)
+            store.update {
+                $0.overlays.weatherShowDewPointScale = true
+                $0.overlays.weatherScaleMetric = metric
+            }
+            let restarted = SettingsStore(defaults: defaults)
+            XCTAssertTrue(restarted.settings.overlays.effectiveWeatherShowDewPointScale)
+            XCTAssertEqual(restarted.settings.overlays.effectiveWeatherScaleMetric, metric)
+        }
+    }
+
+    func testWeatherScaleLegacySettingsKeepDewPointAndNewSettingsPreferFeelsLike() throws {
+        let defaults = OverlaySettings()
+        XCTAssertEqual(defaults.effectiveWeatherScaleMetric, .feelsLike)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(defaults)) as? [String: Any])
+        json.removeValue(forKey: "weatherScaleMetric")
+        json["weatherShowDewPointScale"] = true
+        let legacy = try JSONDecoder().decode(OverlaySettings.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertTrue(legacy.effectiveWeatherShowDewPointScale)
+        XCTAssertEqual(legacy.effectiveWeatherScaleMetric, .dewPoint)
+    }
+
     func testDewPointScalePolicyMapsComfortBandsAndPinsMarkerEdges() {
         XCTAssertEqual(DewPointScalePolicy.comfortBand(forFahrenheit: 49.9), .dry)
         XCTAssertEqual(DewPointScalePolicy.comfortBand(forFahrenheit: 50), .comfortable)

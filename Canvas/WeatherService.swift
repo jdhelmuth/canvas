@@ -21,7 +21,7 @@ enum CanvasWeatherTemperatureFormatter {
     }
 
     static func normalized(_ value: String?, locale: Locale = .current) -> String? {
-        guard let value else { return nil }
+        guard let value = value?.replacingOccurrences(of: "−", with: "-") else { return nil }
 
         let expression = try? NSRegularExpression(
             pattern: #"^\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))\s*(?:°|º)?\s*([CFcf])\s*$"#
@@ -42,9 +42,9 @@ enum CanvasWeatherTemperatureFormatter {
 
     /// Returns a stable Fahrenheit value from one of Canvas's localized
     /// temperature strings. This is used only as a compatibility fallback
-    /// for snapshots written before raw dew-point values were persisted.
+    /// for snapshots written before raw temperature values were persisted.
     static func fahrenheitValue(from value: String?) -> Double? {
-        guard let value else { return nil }
+        guard let value = value?.replacingOccurrences(of: "−", with: "-") else { return nil }
 
         let expression = try? NSRegularExpression(
             pattern: #"^\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))\s*(?:°|º)?\s*([CFcf])\s*$"#
@@ -74,6 +74,8 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
     let condition: String
     let temperature: String
     let apparentTemperature: String?
+    let temperatureF: Double?
+    let apparentTemperatureF: Double?
     let humidityPercent: Int?
     let wind: String?
     let uvIndex: Int?
@@ -104,6 +106,8 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         condition: String,
         temperature: String,
         apparentTemperature: String? = nil,
+        temperatureF: Double? = nil,
+        apparentTemperatureF: Double? = nil,
         humidityPercent: Int? = nil,
         wind: String? = nil,
         uvIndex: Int? = nil,
@@ -130,6 +134,8 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         self.condition = condition
         self.temperature = CanvasWeatherTemperatureFormatter.normalized(temperature) ?? temperature
         self.apparentTemperature = CanvasWeatherTemperatureFormatter.normalized(apparentTemperature)
+        self.temperatureF = temperatureF ?? CanvasWeatherTemperatureFormatter.fahrenheitValue(from: temperature)
+        self.apparentTemperatureF = apparentTemperatureF ?? CanvasWeatherTemperatureFormatter.fahrenheitValue(from: apparentTemperature)
         self.humidityPercent = humidityPercent
         self.wind = wind
         self.uvIndex = uvIndex
@@ -158,6 +164,8 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
         case condition
         case temperature
         case apparentTemperature
+        case temperatureF
+        case apparentTemperatureF
         case humidityPercent
         case wind
         case uvIndex
@@ -188,6 +196,8 @@ struct CanvasWeatherSnapshot: Codable, Equatable, Sendable {
             condition: try container.decode(String.self, forKey: .condition),
             temperature: try container.decode(String.self, forKey: .temperature),
             apparentTemperature: try container.decodeIfPresent(String.self, forKey: .apparentTemperature),
+            temperatureF: try container.decodeIfPresent(Double.self, forKey: .temperatureF),
+            apparentTemperatureF: try container.decodeIfPresent(Double.self, forKey: .apparentTemperatureF),
             humidityPercent: try container.decodeIfPresent(Int.self, forKey: .humidityPercent),
             wind: try container.decodeIfPresent(String.self, forKey: .wind),
             uvIndex: try container.decodeIfPresent(Int.self, forKey: .uvIndex),
@@ -753,6 +763,8 @@ struct AmbientWeatherCanvasProvider: CanvasWeatherProviding {
             condition: condition,
             temperature: temperature(reading.tempF) ?? "—",
             apparentTemperature: temperature(reading.apparentTempF),
+            temperatureF: reading.tempF,
+            apparentTemperatureF: reading.apparentTempF,
             humidityPercent: reading.humidityPercent.map { Int($0.rounded()) },
             wind: wind(reading.windMph, gust: reading.windGustMph, direction: reading.windDirectionDeg),
             uvIndex: reading.uvIndex.map { Int($0.rounded()) },
@@ -901,6 +913,8 @@ struct WeatherKitCanvasWeatherProvider: CanvasWeatherProviding {
                 condition: current.condition.description,
                 temperature: temperatureFormatter.string(from: current.temperature),
                 apparentTemperature: temperatureFormatter.string(from: current.apparentTemperature),
+                temperatureF: current.temperature.converted(to: .fahrenheit).value,
+                apparentTemperatureF: current.apparentTemperature.converted(to: .fahrenheit).value,
                 humidityPercent: Int((current.humidity * 100).rounded()),
                 wind: "\(current.wind.compassDirection.abbreviation) \(measurementFormatter.string(from: current.wind.speed))",
                 uvIndex: current.uvIndex.value,
