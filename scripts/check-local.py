@@ -10,6 +10,8 @@ import sys
 import tempfile
 import time
 
+from simulator_session import SimulatorSession
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = json.loads((ROOT / 'scripts/local-checks.json').read_text())
 
@@ -117,6 +119,8 @@ def main():
             for step in CONFIG['commands'][scope]:
                 print(scope + ': ' + ' '.join(step['command']))
         return
+    previous = ROOT / capture('git', 'rev-parse', '--git-path', 'local-checks.json')
+    previous.unlink(missing_ok=True)
     env = tool_environment()
     started = time.time()
     for scope in scopes:
@@ -127,17 +131,14 @@ def main():
         for step in CONFIG['commands'][scope]:
             command = list(step['command'])
             if '{simulator}' in command:
-                devices = json.loads(capture('xcrun', 'simctl', 'list', 'devices', 'available', '-j'))
-                phones = [d for values in devices['devices'].values() for d in values if 'iPad' in d['name']]
-                if not phones:
-                    raise RuntimeError('An available iPad simulator is required for native tests.')
-                if args.simulator_id:
-                    phone = next((d for d in phones if d['udid'] == args.simulator_id), None)
-                    if phone is None:
-                        raise RuntimeError('The selected simulator is not an available iPad.')
-                else:
-                    phone = next((d for d in phones if d['state'] == 'Booted'), phones[0])
-                command[command.index('{simulator}')] = 'platform=iOS Simulator,id=' + phone['udid']
+                if not args.simulator_id:
+                    raise RuntimeError('Native checks require --simulator-id (or CANVAS_SIMULATOR_ID); '
+                                       'select the dedicated Canvas simulator explicitly.')
+                command[command.index('{simulator}')] = 'platform=iOS Simulator,id=' + args.simulator_id
+                evidence = ROOT / capture('git', 'rev-parse', '--git-path', 'simulator-checks.json')
+                with SimulatorSession(args.simulator_id, evidence).observe():
+                    run(command, step.get('cwd', '.'), step.get('timeout', 900), scope_env)
+                continue
             run(command, step.get('cwd', '.'), step.get('timeout', 900), scope_env)
     if capture('git', 'rev-parse', 'HEAD') != head:
         raise RuntimeError('HEAD changed during validation; rerun the checks.')
@@ -180,6 +181,6 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (RuntimeError, subprocess.CalledProcessError, FileNotFoundError) as error:
+    except (RuntimeError, ValueError, subprocess.CalledProcessError, FileNotFoundError) as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)
