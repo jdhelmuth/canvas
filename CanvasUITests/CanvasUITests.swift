@@ -255,7 +255,9 @@ final class CanvasUITests: XCTestCase {
             XCTAssertGreaterThan(scale.frame.midX, window.frame.midX)
             XCTAssertLessThanOrEqual(scale.frame.maxX, window.frame.maxX)
             XCTAssertEqual(app.otherElements.matching(identifier: "canvas.weather.scale").count, 1)
-            let shot = XCTAttachment(screenshot: app.screenshot())
+            // Application screenshots can crop using stale portrait bounds
+            // after rotation. Capture the full display for visual review.
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
             shot.name = "Feels like scale - \(landscape ? "landscape" : "portrait")"
             shot.lifetime = .keepAlways
             add(shot)

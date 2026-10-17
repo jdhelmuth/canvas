@@ -18,34 +18,34 @@ The player and settings preview share the same scale. Precipitation chance and
 next-hour information remain in the existing weather details. No additional
 vertical precipitation scale or duplicate weather widget is introduced.
 
-## Validation checkpoint
+## Validation
 
-The 263 unit tests passed, including distinct cold/hot apparent readings,
-provider precision, legacy Celsius snapshots, localized units, missing data,
-range clamping, settings restart persistence, and legacy selection compatibility.
-The settings UI test passed switching through all three options and retaining
-Feels like after relaunch. Portrait appearance was visually reviewed.
+The complete iOS 27 run at `f24597a` passed 263 unit tests, 18 UI tests,
+and 30 tooling tests; three opt-in UI tests were skipped. Coverage includes
+provider precision, distinct actual/apparent temperatures, cold/hot readings,
+localized units, legacy Celsius snapshots, missing/nonfinite values, range
+clamping, settings restart persistence, and legacy selection compatibility.
+The settings UI test switches through all three readings and retains Feels like
+after relaunch. Portrait and landscape were visually reviewed from full-display
+captures; application-only screenshots can incorrectly crop stale portrait bounds
+after rotation, so this test now captures XCUIScreen.main instead.
 
-Full aggregate and final landscape verification are pending coordinated simulator
-diagnosis. The first focused session encountered the known iOS 26.5 Apple
-XCTAutomationSupport teardown crash: incident
-2ECF770E-5365-4D06-83AB-29C683F52A01, October 17 at 17:43:21 Eastern,
-EXC_BAD_ACCESS at 0x20 in the automation-session block at +192 with x19 = 0.
-The monitor rejected that session. Subsequent rotation was stuck; one scoped,
-data-preserving simulator restart was completed. The aggregate rerun passed all
-263 unit tests before UI testing was interrupted for the separately assigned
-crash investigation. That interrupted aggregate is not a passing result.
+The first iOS 26.5 session was rejected after the confirmed Apple automation
+teardown crash. The dedicated Canvas simulator was upgraded in place, with a
+verified data backup, to iOS 27.0 build 24A434. Its corrected automation binary
+and unchanged SpringBoard PID were verified through the successful suite and
+focused visual test teardown. See springboard-investigation.md. Failed and
+interrupted earlier runs remain recorded as failures, not passing evidence.
 
-Evidence is retained locally in ../weather-scale-evidence. No crash reporting was
-disabled, and the report was not dismissed. No physical device was touched.
+Evidence is retained in ../weather-scale-evidence and the runtime repair task's
+evidence directory. No crash reporting was disabled or reports dismissed.
+No physical-device fresh-install, upgrade, or TestFlight smoke test is claimed.
 
-## Release scope
+## Release
 
-This is an app behavior change and needs a new app release or separately approved
-device installation to reach the installed app. Existing approvals for 1.0.4 (67)
-and the prior simulator-tooling merge do not authorize releasing this feature.
-Version/build remain unchanged during implementation. No merge, distribution
-build, App Store submission, or physical installation is included in this task.
-The requested personal Feels-like selection will be left in the prepared simulator
-setup once validation and simulator ownership are available again; the physical
-app's selection is unchanged.
+The authorized release is 1.0.5 (68), using one App Store-eligible Xcode Cloud
+build for internal TestFlight and App Review. Provider readback determines actual
+build and submission status; local validation alone is not a public release.
+Existing users retain their saved choice. The requested personal Feels-like
+selection is applied only to the prepared simulator settings; the running physical
+slideshow is preserved until the App Store update is installed and selected there.
