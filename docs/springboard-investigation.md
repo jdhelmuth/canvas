@@ -138,3 +138,49 @@ runtime race is eliminated. The unmodified single-test baseline did not
 reproduce the crash, so the mitigation's prevention rate cannot be quantified.
 A compatible simulator runtime containing the nil guard, followed by these
 same checks, remains the next step for the underlying Apple framework defect.
+
+## October 17 recurrence and runtime gate
+
+Incident `2ECF770E-5365-4D06-83AB-29C683F52A01` occurred at
+17:43:21.5704 EDT on October 17, on the same dedicated Canvas simulator.
+The visible Problem Reporter window points to this new report. SpringBoard
+1.0 (50), PID 52372, again faulted at `0x20` with `x19 = 0` in the same
+`XCTAutomationSession` block at +192. The loaded iOS 26.5 (24901)
+`XCTAutomationSupport` UUID remains `711229F6-7A68-3A82-A27A-0439C2E1D62A`.
+Logs place UI-test runner connection invalidation at 17:43:21.341 and
+"Automation Mode has been disabled" at .349, immediately before the fault.
+This is a new recurrence of Apple's simulator defect, distinct from the
+CuePilot app entitlement issue and from physical-device operation.
+
+The existing monitor correctly failed the focused run when SpringBoard
+changed from PID 52372 to 68606. App teardown ordering is therefore not a
+sufficient remedy for this runtime. Restarting the device restores operation
+but leaves the faulty framework installed.
+
+Local native checks now inspect the selected device's runtime and the UUID of
+its actual `XCTAutomationSupport` binary before running XCTest. They reject
+the confirmed faulty binary, rather than trusting the version of Xcode's
+separate framework. Missing or unidentifiable runtime evidence also blocks
+the run. Different binaries still require the existing display/PID checks
+and post-session observation; an unknown UUID alone does not prove safety.
+No reporting suppression, private framework patching, or device erasure is
+part of this change.
+
+Apple's iOS 27.0 runtime (24A434) was subsequently installed through
+`xcodebuild -downloadPlatform`. Its actual automation framework UUID is
+`14BC2A20-5679-339C-BA39-69C8AB78B5CA`. Disassembly of the same block shows
+`objc_loadWeakRetained`, followed by `cbz x8, 0x2ad28` at offset `0x2aae8`,
+before the field access at `0x2aaf8`. This closes the demonstrated nil access
+path; the old runtime has no such branch. The canonical Canvas device was
+upgraded with `simctl upgrade`, preserving its UUID and data, after a full
+stopped-device backup verified 12,741 file hashes (3,813,252,455 bytes).
+
+The first iOS 27 regression exposed a test compatibility issue: SwiftUI's
+weather attribution is now reported as accessibility type `Link`, while the
+old test queried only `Button`. A diagnostic hierarchy confirmed the original
+identifier and expected label were both present. The test now queries the
+identifier across element types, preserving the existence and label checks;
+the negative attribution assertion uses the same lookup. Production UI is
+unchanged. The initial failed assertion and diagnostic run are retained and
+are not counted as successful UI tests; SpringBoard stayed stable through
+both teardowns.

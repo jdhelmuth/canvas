@@ -145,7 +145,8 @@ final class CanvasUITests: XCTestCase {
         XCTAssertGreaterThan(weather.frame.minX, clock.frame.midX)
         XCTAssertLessThanOrEqual(weather.frame.maxX, window.frame.maxX)
         XCTAssertFalse(app.staticTexts["Last known"].exists)
-        let attribution = weather.buttons["apple-weather-attribution-link"]
+        // SwiftUI exposes Link as a Link on iOS 27 and as a Button on iOS 26.
+        let attribution = weather.descendants(matching: .any)["apple-weather-attribution-link"]
         XCTAssertTrue(attribution.waitForExistence(timeout: 3))
         XCTAssertEqual(attribution.label, "Apple Weather legal attribution and data sources")
         let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -207,7 +208,7 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(conditions.firstMatch.label.contains("59.4"))
         XCTAssertTrue(weather.staticTexts["Ambient station"].exists)
         XCTAssertFalse(weather.staticTexts["Near this iPad"].exists)
-        XCTAssertFalse(weather.buttons["apple-weather-attribution-link"].exists)
+        XCTAssertFalse(weather.descendants(matching: .any)["apple-weather-attribution-link"].exists)
         XCTAssertTrue(weather.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@", "Air quality index 32")).firstMatch.exists)
         let attachment = XCTAttachment(screenshot: app.screenshot())
