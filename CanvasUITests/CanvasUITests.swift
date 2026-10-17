@@ -113,7 +113,7 @@ final class CanvasUITests: XCTestCase {
         let feelsLike = app.switches["Feels like"]
         let humidity = app.switches["Humidity"]
         let wind = app.switches["Wind"]
-        let dewPointScale = app.switches["weather-dew-point-scale-toggle"]
+        let dewPointScale = app.switches["weather-scale-toggle"]
         let weatherSize = app.sliders["Weather size-slider"]
         // A compact sheet cannot expose every weather row simultaneously.
         // Verify each control in display order as it becomes visible.
@@ -226,13 +226,76 @@ final class CanvasUITests: XCTestCase {
         app.launch()
 
         let window = app.windows.firstMatch
-        let scale = app.otherElements["canvas.dew-point.scale"]
+        let scale = app.otherElements["canvas.weather.scale"]
         XCTAssertTrue(window.waitForExistence(timeout: 5))
         XCTAssertTrue(scale.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(scale.frame.midX, window.frame.midX)
         XCTAssertLessThanOrEqual(scale.frame.maxX, window.frame.maxX)
         XCTAssertGreaterThan(scale.frame.height, window.frame.height * 0.25)
         XCTAssertLessThan(scale.frame.height, window.frame.height * 0.65)
+    }
+
+    func testFeelsLikeScaleStaysOnRightAndPersistsAcrossLaunch() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame", "--canvas-ui-feels-like-scale"]
+        app.launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let window = app.windows.firstMatch
+            let landscape = orientation == .landscapeLeft
+            let rotated = NSPredicate { _, _ in landscape ? window.frame.width > window.frame.height : window.frame.height > window.frame.width }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: rotated, object: nil)], timeout: 5), .completed)
+            let scale = app.otherElements["canvas.weather.scale"]
+            XCTAssertTrue(scale.waitForExistence(timeout: 5))
+            XCTAssertEqual(scale.label, "Feels like scale")
+            XCTAssertTrue((scale.value as? String)?.contains("72") == true)
+            XCTAssertGreaterThan(scale.frame.midX, window.frame.midX)
+            XCTAssertLessThanOrEqual(scale.frame.maxX, window.frame.maxX)
+            XCTAssertEqual(app.otherElements.matching(identifier: "canvas.weather.scale").count, 1)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "Feels like scale - \(landscape ? "landscape" : "portrait")"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        app.terminate()
+        app.launchArguments = ["--canvas-ui-weather-frame"]
+        app.launch()
+        let scale = app.otherElements["canvas.weather.scale"]
+        XCTAssertTrue(scale.waitForExistence(timeout: 5))
+        XCTAssertEqual(scale.label, "Feels like scale")
+    }
+
+    func testWeatherScalePickerPersistsSelectedReading() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-preview", "--canvas-ui-dew-point-scale"]
+        app.launch()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 5))
+        app.staticTexts["Clock & Overlays"].tap()
+        let form = app.collectionViews.firstMatch
+        for _ in 0..<8 where !app.staticTexts["Weather & Visibility"].exists { form.swipeUp() }
+        app.staticTexts["Weather & Visibility"].tap()
+        let picker = app.buttons["weather-scale-metric"]
+        for _ in 0..<35 where !picker.exists || !picker.isHittable {
+            form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).press(forDuration: 0.1,
+                thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+        }
+        XCTAssertTrue(picker.isHittable)
+        for title in ["Temperature", "Dew point", "Feels like"] {
+            picker.tap()
+            app.buttons[title].tap()
+            XCTAssertEqual(picker.value as? String, title)
+        }
+        app.terminate()
+        app.launchArguments = ["--canvas-ui-weather-frame"]
+        app.launch()
+        let scale = app.otherElements["canvas.weather.scale"]
+        XCTAssertTrue(scale.waitForExistence(timeout: 5))
+        XCTAssertEqual(scale.label, "Feels like scale")
     }
 
     func testWeatherWidgetIsBelowClockInPortrait() {
