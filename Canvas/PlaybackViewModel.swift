@@ -228,6 +228,7 @@ final class PlaybackViewModel: ObservableObject {
         let preservedID = identityToPreserve.flatMap { id in candidateQueue.contains { $0.id == id } ? id : nil }
         let completedShuffle = settings.queueMode == .shuffle && !candidateQueue.isEmpty
             && !settings.repeatEnabled && shuffleCycle.pendingIDs().isEmpty
+            && (libraryIsComplete?(settings) ?? true)
         let completedFrameID = completedShuffle
             ? (shuffleCycle.lastGroupIDs.first(where: { id in candidateQueue.contains { $0.id == id } })
                 ?? candidateQueue.last?.id) : nil

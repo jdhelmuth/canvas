@@ -793,6 +793,28 @@ final class FullShuffleTests: XCTestCase {
         XCTFail("Playback failed to settle")
     }
 
+    func testIncompleteNonRepeatingCycleResumesWhenAlbumReturns() async throws {
+        let all = items(2)
+        var complete = false
+        var value = settings
+        value.repeatEnabled = false
+        let model = PlaybackViewModel(settings: value,
+            mediaItems: { _ in complete ? all : Array(all.prefix(1)) },
+            imageLoader: { _, _ in UIImage() }, libraryIsComplete: { _ in complete })
+        defer { model.stop() }
+        await model.reload()
+        let first = try XCTUnwrap(model.currentAsset?.id)
+        XCTAssertFalse(model.next())
+        await model.refreshLibrary()
+        XCTAssertTrue(model.isPlaying, "Partial coverage must not complete a non-repeating slideshow")
+        complete = true
+        await model.refreshLibrary()
+        XCTAssertNotEqual(model.currentAsset?.id, first)
+        XCTAssertTrue(model.isPlaying)
+        XCTAssertFalse(model.next())
+        XCTAssertFalse(model.isPlaying, "Stop only after every selected album was available")
+    }
+
     func testUnavailableAlbumDoesNotRestartSmallerCycleAndRecoversAfterRelaunch() async throws {
         let suite = "canvas-partial-library-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
