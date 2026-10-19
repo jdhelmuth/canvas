@@ -1,4 +1,4 @@
-# Canvas Slideshow 1.0.6 (69)
+# Canvas Slideshow 1.0.6 (70)
 
 Selected Apple Photos albums now retain recoverable cloud identities and identifier history. If Photos changes a local album identifier, Canvas can reconnect a uniquely identified album while preserving slideshow progress. Temporarily unavailable albums stay selected, with accurate status and explicit retry, reconnect, and removal controls.
 
@@ -11,3 +11,10 @@ A development-signed upgrade was installed on an iPad Pro 11-inch (3rd generatio
 Limits: a complete hours-long physical cycle, a future real PhotoKit identifier change, cross-device restore, an induced iCloud outage, and a fresh-install/TestFlight smoke matrix were not exercised. No direct physical screen capture was available. Automated tests cover the corresponding state transitions where practical.
 
 Distribution: one App Store-eligible Manual Public Release build for internal TestFlight and App Review. Preserve automatic release after approval. Version 1.0.5 (68) was already live at release preparation; no pending submission requires withdrawal.
+
+
+Build 70 replaces the pending build 69 submission and retains the album-recovery changes. Closing the slideshow now returns to Home from diagnostic playback launches as well as the normal full-screen presentation. The diagnostic launch request is consumed once, so returning Home or foregrounding does not reopen playback. Media tap, swipe, zoom and long-press gestures now belong to the media surface beneath controls, preventing control-button taps from also hiding the control layer.
+
+Exit regression coverage follows hidden controls → reveal → pause/resume → X → Home → edit timing settings → foreground → verify Home and the saved edit. Both ordinary and direct playback launches are exercised. A separate physical-device check uses the existing library and settings without resetting or changing them; it is skipped on Simulator.
+
+The physical UI test runner could not initialize because device authentication was canceled. That run provides no physical UI result. No authentication retry was attempted; simulator coverage and local device-data readback are reported separately.

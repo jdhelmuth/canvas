@@ -24,18 +24,27 @@ struct PlayerView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            if isWeatherFramePreview {
-                weatherFramePreview
-            } else if !powerAllowsPlayback {
-                VStack(spacing: 14) { Image(systemName: "bolt.fill").font(.largeTitle); Text("Canvas is waiting for power") .font(.headline); Text("Charging-only mode or the low-battery limit is enabled in Power & Display.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
-            } else if !store.settings.schedules.isEmpty && !scheduleMonitor.isPlaybackAllowed {
-                if store.settings.schedules.contains(where: \.blackSleepScreen) {
-                    Color.black.ignoresSafeArea()
-                } else {
-                    VStack(spacing: 14) { Image(systemName: "moon.stars.fill").font(.largeTitle); Text("Canvas is resting until the next schedule").font(.headline); Text("You can close this frame or adjust Schedules in Settings.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
-                }
-            } else { nightDimmedMedia }
+            // Media gestures belong below the controls. A button tap must not
+            // also toggle away the control layer before its action completes.
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if isWeatherFramePreview {
+                    weatherFramePreview
+                } else if !powerAllowsPlayback {
+                    VStack(spacing: 14) { Image(systemName: "bolt.fill").font(.largeTitle); Text("Canvas is waiting for power") .font(.headline); Text("Charging-only mode or the low-battery limit is enabled in Power & Display.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
+                } else if !store.settings.schedules.isEmpty && !scheduleMonitor.isPlaybackAllowed {
+                    if store.settings.schedules.contains(where: \.blackSleepScreen) {
+                        Color.black.ignoresSafeArea()
+                    } else {
+                        VStack(spacing: 14) { Image(systemName: "moon.stars.fill").font(.largeTitle); Text("Canvas is resting until the next schedule").font(.headline); Text("You can close this frame or adjust Schedules in Settings.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
+                    }
+                } else { nightDimmedMedia }
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(tapGesture)
+            .simultaneousGesture(swipeGesture)
+            .simultaneousGesture(magnifyGesture)
+            .onLongPressGesture(minimumDuration: 0.55) { if isLocked { isLocked = false } else { showDetails = true } }
             if controlsVisible && !isLocked { controls }
             if isLocked { lockBadge }
         }
@@ -136,10 +145,6 @@ struct PlayerView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in scheduleHide() }
-        .simultaneousGesture(tapGesture)
-        .simultaneousGesture(swipeGesture)
-        .simultaneousGesture(magnifyGesture)
-        .onLongPressGesture(minimumDuration: 0.55) { if isLocked { isLocked = false } else { showDetails = true } }
         .sheet(isPresented: $showDetails) { detailsSheet }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Canvas slideshow")
@@ -435,7 +440,7 @@ struct PlayerView: View {
 
     private var controls: some View {
         VStack {
-            HStack { Button { dismiss() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()); Spacer(); Text("Canvas").font(.headline); Spacer(); Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()) }
+            HStack { Button { dismiss() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).accessibilityLabel("Close slideshow").accessibilityIdentifier("close-slideshow").background(.ultraThinMaterial, in: Circle()); Spacer(); Text("Canvas").font(.headline); Spacer(); Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()) }
                 .padding(.horizontal, 24).padding(.top, 18)
             Spacer()
             VStack(spacing: 14) {
@@ -443,6 +448,8 @@ struct PlayerView: View {
                 HStack(spacing: 34) {
                     Button { model.previous(); scheduleHide() } label: { Image(systemName: "backward.fill").font(.title2) }
                     Button { model.togglePlaying(); scheduleHide() } label: { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.title).frame(width: 64, height: 64).background(.white, in: Circle()).foregroundStyle(.black) }
+                        .accessibilityLabel(model.isPlaying ? "Pause slideshow" : "Resume slideshow")
+                        .accessibilityIdentifier("toggle-slideshow-playback")
                     Button { model.next(); scheduleHide() } label: { Image(systemName: "forward.fill").font(.title2) }
                 }.foregroundStyle(.white)
                 HStack { Label("\(model.currentIndex + 1) of \(model.queueCount)", systemImage: "photo").font(.caption); Spacer(); if model.currentAsset?.isFavorite == true { Image(systemName: "heart.fill") } }

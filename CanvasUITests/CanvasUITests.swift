@@ -13,6 +13,104 @@ final class CanvasUITests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    func testPhysicalSlideshowCloseWithoutReset() throws {
+#if targetEnvironment(simulator)
+        throw XCTSkip("Physical-device exit check uses existing app data without reset.")
+#else
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-play"]
+        app.launch()
+        let slideshow = app.otherElements["Canvas slideshow"]
+        XCTAssertTrue(slideshow.waitForExistence(timeout: 15))
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let close = app.buttons["close-slideshow"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(slideshow.waitForNonExistence(timeout: 5))
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 5))
+        app.staticTexts["Playback & Timing"].tap()
+        let slider = app.sliders["Photo duration-slider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        XCTAssertTrue(slider.isEnabled)
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["Done"].tap()
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        XCTAssertFalse(slideshow.exists)
+#endif
+    }
+
+    func testSlideshowCloseReturnsHomeAndAllowsSettingsEdits() {
+        verifySlideshowExit(directLaunch: false)
+    }
+
+    func testDirectPlaybackLaunchCanExitWithoutRestarting() {
+        verifySlideshowExit(directLaunch: true)
+    }
+
+    private func verifySlideshowExit(directLaunch: Bool) {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-home"]
+        app.launch()
+        XCTAssertTrue(app.buttons["choose-albums-empty-state"].waitForExistence(timeout: 5))
+        app.buttons["choose-albums-empty-state"].tap()
+        XCTAssertTrue(app.staticTexts["Landscapes"].waitForExistence(timeout: 5))
+        app.staticTexts["Landscapes"].tap()
+        app.buttons["Done"].tap()
+        if directLaunch {
+            app.terminate()
+            app.launchArguments = ["--canvas-ui-play"]
+            app.launch()
+        } else {
+            let start = app.descendants(matching: .any)["start-your-frame"].firstMatch
+            XCTAssertTrue(start.waitForExistence(timeout: 5))
+            start.tap()
+        }
+        let slideshow = app.otherElements["Canvas slideshow"]
+        XCTAssertTrue(slideshow.waitForExistence(timeout: 10))
+        let close = app.buttons["close-slideshow"]
+        // Exercise the reported path: reveal hidden controls, then press X.
+        if close.exists { app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+        app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        let playback = app.buttons["toggle-slideshow-playback"]
+        XCTAssertTrue(playback.exists)
+        let playbackLabel = playback.label
+        playback.tap()
+        XCTAssertNotEqual(playback.label, playbackLabel)
+        XCTAssertTrue(close.exists, "Control buttons must not trigger the surface hide gesture")
+        close.tap()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5), "X must return to the home screen")
+        XCTAssertTrue(slideshow.waitForNonExistence(timeout: 5))
+        app.buttons["settings"].tap()
+        XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 5))
+        app.staticTexts["Playback & Timing"].tap()
+        let slider = app.sliders["Photo duration-slider"]
+        let value = app.buttons["Photo duration-value"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        let before = value.label
+        slider.adjust(toNormalizedSliderPosition: 0.25)
+        XCTAssertNotEqual(value.label, before)
+        let edited = value.label
+        app.navigationBars.buttons.firstMatch.tap()
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        // Foregrounding and home reappearance must not replay the launch request.
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
+        XCTAssertFalse(slideshow.exists)
+        app.buttons["settings"].tap()
+        app.staticTexts["Playback & Timing"].tap()
+        XCTAssertEqual(value.label, edited)
+    }
+
     func testOnboardingFirstScreen() {
         let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset"]; app.launch()
         XCTAssertTrue(app.staticTexts["Canvas"].waitForExistence(timeout: 5))

@@ -13,7 +13,7 @@ struct RootView: View {
                 LivePhotoDiagnosticView()
             } else if ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
                 || ProcessInfo.processInfo.arguments.contains("--canvas-ui-play") {
-                PlayerView()
+                LibraryHomeView()
             } else if store.settings.hasCompletedOnboarding {
                 LibraryHomeView()
             } else {
@@ -201,6 +201,9 @@ struct LibraryHomeView: View {
     @State private var showAlbumPicker = false
     @State private var showSettings = false
     @State private var showPlayer = false
+#if DEBUG
+    @State private var didProcessPlaybackLaunch = false
+#endif
     @State private var previewImages: [UIImage] = []
     @State private var isStartingFrame = false
     @State private var showStartRecovery = false
@@ -257,6 +260,19 @@ struct LibraryHomeView: View {
             .sheet(isPresented: $showAlbumPicker) { AlbumPickerView(isOnboarding: false) }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .fullScreenCover(isPresented: $showPlayer) { PlayerView() }
+#if DEBUG
+            .task {
+                // Diagnostic launches use the same dismissible presentation as
+                // Start your frame. Consume once so returning home or editing
+                // settings cannot reopen the slideshow.
+                guard !didProcessPlaybackLaunch else { return }
+                didProcessPlaybackLaunch = true
+                let arguments = ProcessInfo.processInfo.arguments
+                if arguments.contains("--canvas-ui-play") || arguments.contains("--canvas-ui-weather-frame") {
+                    showPlayer = true
+                }
+            }
+#endif
             .alert("Choose photos to start", isPresented: $showStartRecovery) {
                 Button("Manage albums") { showAlbumPicker = true }
                 Button("Try again") { startFrame() }
