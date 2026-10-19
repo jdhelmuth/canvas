@@ -135,8 +135,10 @@ struct AlbumReference: Codable, Hashable, Identifiable {
     let isSmart: Bool
     let isShared: Bool
     let source: PhotoSource
+    var cloudIdentifier: String?
+    var previousLocalIdentifiers: [String] = []
 
-    init(id: String, title: String, subtype: Int, estimatedCount: Int, isSmart: Bool, isShared: Bool, source: PhotoSource = .applePhotos) {
+    init(id: String, title: String, subtype: Int, estimatedCount: Int, isSmart: Bool, isShared: Bool, source: PhotoSource = .applePhotos, cloudIdentifier: String? = nil, previousLocalIdentifiers: [String] = []) {
         self.id = id
         self.title = title
         self.subtype = subtype
@@ -144,9 +146,11 @@ struct AlbumReference: Codable, Hashable, Identifiable {
         self.isSmart = isSmart
         self.isShared = isShared
         self.source = source
+        self.cloudIdentifier = cloudIdentifier
+        self.previousLocalIdentifiers = previousLocalIdentifiers
     }
 
-    private enum CodingKeys: String, CodingKey { case id, title, subtype, estimatedCount, isSmart, isShared, source }
+    private enum CodingKeys: String, CodingKey { case id, title, subtype, estimatedCount, isSmart, isShared, source, cloudIdentifier, previousLocalIdentifiers }
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -156,6 +160,8 @@ struct AlbumReference: Codable, Hashable, Identifiable {
         isSmart = try container.decode(Bool.self, forKey: .isSmart)
         isShared = try container.decode(Bool.self, forKey: .isShared)
         source = try container.decodeIfPresent(PhotoSource.self, forKey: .source) ?? .applePhotos
+        cloudIdentifier = try container.decodeIfPresent(String.self, forKey: .cloudIdentifier)
+        previousLocalIdentifiers = try container.decodeIfPresent([String].self, forKey: .previousLocalIdentifiers) ?? []
     }
 
     var localIdentifier: String { id }

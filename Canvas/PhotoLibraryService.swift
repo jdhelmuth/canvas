@@ -40,13 +40,15 @@ enum AlbumSelectionResolution {
         return selected.filter { $0.source == .applePhotos && !ids.contains($0.id) }
     }
 
-    static func warning(selected: [AlbumReference], available: [AlbumReference], authorization: PhotoAuthorizationState) -> String? {
+    static func warning(selected: [AlbumReference], available: [AlbumReference], authorization: PhotoAuthorizationState, checking: Bool = false) -> String? {
         guard selected.contains(where: { $0.source == .applePhotos }) else { return nil }
         guard authorization.canRead else { return "Selected Apple Photos albums are unavailable. Review Photos access in Settings." }
         let unavailable = missing(selected, available: available)
         guard !unavailable.isEmpty else { return nil }
         let names = unavailable.map(\.title).joined(separator: ", ")
-        return "Missing selected albums: \(names). These albums are not in this slideshow. Open Selected albums to choose them again or review Photos access."
+        if checking { return "Checking selected albums: \(names). Your selections are saved." }
+        if authorization == .limited { return "Some selected albums are unavailable with Limited Photos access: \(names). Your selections are saved. Review Photos access or reconnect in Selected albums." }
+        return "Selected albums unavailable on this device: \(names). Your selections are saved. Open Selected albums to retry or reconnect them."
     }
 
     /// Only an explicit old-ID/new-ID mapping may repair a selection. A title
@@ -62,8 +64,95 @@ enum AlbumSelectionResolution {
                     && $0.isSmart == original.isSmart && $0.isShared == original.isShared
             }
             guard candidates.count == 1, candidates[0].id == replacementID else { throw RepairError.ambiguousReplacement }
-            return candidates[0]
+            var replacement = retainingIdentity(candidates[0], from: original)
+            replacement.cloudIdentifier = candidates[0].cloudIdentifier
+            return replacement
         }
+    }
+
+    static func retainingIdentity(_ replacement: AlbumReference, from original: AlbumReference) -> AlbumReference {
+        var result = replacement
+        result.cloudIdentifier = replacement.cloudIdentifier ?? original.cloudIdentifier
+        result.previousLocalIdentifiers = Array(Set(original.previousLocalIdentifiers + replacement.previousLocalIdentifiers
+            + (original.id == replacement.id ? [] : [original.id]))).filter { $0 != replacement.id }.sorted()
+        return result
+    }
+
+    /// Commit against both saved and available rows. A missing row is removed
+    /// only when its checkbox was explicitly cleared, never by catalog absence.
+    static func committing(selectedIDs: Set<String>, saved: [AlbumReference], available: [AlbumReference]) -> [AlbumReference] {
+        var seen = Set<String>()
+        let current = Dictionary(available.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return (saved.map { original in current[original.id].map { retainingIdentity($0, from: original) } ?? original } + available)
+            .filter { selectedIDs.contains($0.id) && seen.insert($0.id).inserted }
+    }
+
+    /// A refresh may rename/reidentify saved rows while the picker is open.
+    /// Carry those identities across without undoing uncommitted checkbox edits.
+    static func updatingDraft(_ draft: Set<String>, from old: [AlbumReference], to new: [AlbumReference]) -> Set<String> {
+        let oldIDs = Set(old.map(\.id))
+        let newIDs = Set(new.map(\.id))
+        var result = draft.subtracting(oldIDs.subtracting(newIDs))
+        for reference in new where !oldIDs.contains(reference.id) {
+            let predecessors = Set(reference.previousLocalIdentifiers).intersection(oldIDs)
+            if predecessors.isEmpty || !predecessors.isDisjoint(with: draft) { result.insert(reference.id) }
+        }
+        return result
+    }
+}
+
+/// One resolution policy for warnings, playback, saved selections and presets.
+/// Failed/ambiguous cloud mappings return nil. Names never establish identity.
+enum AlbumIdentityResolver {
+    static func resolve(_ original: AlbumReference, known: [AlbumReference], authorization: PhotoAuthorizationState,
+                        lookup: (String) -> AlbumReference?, cloudID: (String) -> String?, localID: (String) -> String?) -> AlbumReference? {
+        guard original.source == .applePhotos, authorization.canRead else { return nil }
+        let allSuccessors = known.filter { $0.source == .applePhotos && $0.previousLocalIdentifiers.contains(original.id) }
+        let successors = allSuccessors.filter { candidate in
+            !allSuccessors.contains { $0.id != candidate.id && $0.previousLocalIdentifiers.contains(candidate.id) }
+        }
+        let successorIDs = Set(successors.map(\.id))
+        guard successorIDs.count <= 1 else { return nil }
+        let saved = known.filter { $0.source == .applePhotos && $0.id == original.id }
+        let savedClouds = Set((saved + [original]).compactMap(\.cloudIdentifier))
+        guard savedClouds.count <= 1 else { return nil }
+        var identity = successors.first ?? original
+        if successors.isEmpty { identity.cloudIdentifier = original.cloudIdentifier ?? savedClouds.first }
+        func finish(_ found: AlbumReference) -> AlbumReference? {
+            guard found.source == .applePhotos, found.subtype == identity.subtype,
+                  found.isSmart == identity.isSmart, found.isShared == identity.isShared else { return nil }
+            var result = AlbumSelectionResolution.retainingIdentity(found, from: identity)
+            result = AlbumSelectionResolution.retainingIdentity(result, from: original)
+            // Keep the durable identity when available; capture legacy identities
+            // only while their local collection still resolves under Full Access.
+            result.cloudIdentifier = identity.cloudIdentifier ?? (authorization == .authorized ? cloudID(found.id) : nil)
+            return result
+        }
+        if let found = lookup(identity.id) { return finish(found) }
+        guard authorization == .authorized, let cloud = identity.cloudIdentifier,
+              let mapped = localID(cloud), let found = lookup(mapped) else { return nil }
+        return finish(found)
+    }
+}
+
+/// Local recovery history lets an old preset find an explicitly repaired
+/// identity even after that album was deselected and the app restarted.
+struct AlbumIdentityHistory: Codable, Equatable {
+    var records: [AlbumReference] = []
+
+    mutating func record(_ reference: AlbumReference) {
+        guard reference.source == .applePhotos else { return }
+        var merged = reference
+        let related = records.filter {
+            $0.id == reference.id || reference.previousLocalIdentifiers.contains($0.id)
+                || (reference.cloudIdentifier != nil && $0.cloudIdentifier == reference.cloudIdentifier)
+        }
+        for old in related { merged = AlbumSelectionResolution.retainingIdentity(merged, from: old) }
+        merged.cloudIdentifier = reference.cloudIdentifier
+        let replacedIDs = Set(related.map(\.id))
+        records.removeAll { replacedIDs.contains($0.id) }
+        records.append(merged)
+        records.sort { $0.id < $1.id }
     }
 }
 
@@ -437,10 +526,61 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     @Published private(set) var albums: [AlbumReference] = []
     @Published private(set) var libraryRevision = 0
     private let imageManager = PHCachingImageManager()
+    private var trackedReferences: [AlbumReference] = []
+    private var resolvedReferences: [String: AlbumReference] = [:]
+    private var cloudIdentities: [String: String] = [:]
+    private var identityHistory = AlbumIdentityHistory()
+    private var canSaveIdentityHistory = true
+    private let identityHistoryKey = "canvas.album-identities.v1"
+    private var retryTask: Task<Void, Never>?
+    @Published private(set) var checkingAlbums = false
+
+    /// Track saved selections and preset selections, without changing the user's
+    /// choice. Reconciliation also seeds cloud identities for still-valid IDs.
+    func track(_ references: [AlbumReference]) {
+        let apple = references.filter { $0.source == .applePhotos }
+        guard apple != trackedReferences else { return }
+        trackedReferences = apple
+        refreshAlbums()
+    }
+
+    func reconciled(_ references: [AlbumReference]) -> [AlbumReference] {
+        var seen = Set<String>()
+        return references.map { resolvedReferences[$0.id] ?? $0 }
+            .filter { seen.insert($0.id).inserted }
+    }
+
+    private func reference(for collection: PHAssetCollection) -> AlbumReference {
+        AlbumReference(id: collection.localIdentifier, title: collection.localizedTitle?.isEmpty == false ? collection.localizedTitle! : "Untitled album",
+                       subtype: collection.assetCollectionSubtype.rawValue,
+                       estimatedCount: PHAsset.fetchAssets(in: collection, options: nil).count,
+                       isSmart: collection.assetCollectionType == .smartAlbum,
+                       isShared: collection.assetCollectionSubtype == .albumCloudShared)
+    }
+
+    private func cloudIdentity(for id: String) -> String? {
+        if let cached = cloudIdentities[id] { return cached }
+        guard case .success(let cloud)? = PHPhotoLibrary.shared().cloudIdentifierMappings(forLocalIdentifiers: [id])[id] else { return nil }
+        cloudIdentities[id] = cloud.stringValue
+        return cloud.stringValue
+    }
+
+    private func localIdentity(for archived: String) -> String? {
+        let cloud = PHCloudIdentifier(stringValue: archived)
+        // Only a successful unique mapping is accepted. In particular, never
+        // pick an identifier from an ambiguity error's userInfo.
+        guard case .success(let id)? = PHPhotoLibrary.shared().localIdentifierMappings(for: [cloud])[cloud] else { return nil }
+        return id
+    }
+
 
     override init() {
         authorization = PhotoAuthorizationState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
         super.init()
+        if let data = UserDefaults.standard.data(forKey: identityHistoryKey) {
+            if let decoded = try? JSONDecoder().decode(AlbumIdentityHistory.self, from: data) { identityHistory = decoded }
+            else { canSaveIdentityHistory = false } // Preserve an unreadable recovery file.
+        }
         PHPhotoLibrary.shared().register(self)
         if authorization.canRead { refreshAlbums() }
     }
@@ -448,48 +588,99 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     deinit { PHPhotoLibrary.shared().unregisterChangeObserver(self) }
 
     func requestAccess() async {
-        let result = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-        authorization = PhotoAuthorizationState(result)
-        if authorization.canRead { refreshAlbums() }
+        _ = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        refreshAlbums()
     }
 
-    /// Re-reads the system authorization when Canvas becomes active again.
-    /// People commonly grant Photos access from Settings or the limited
-    /// library sheet while onboarding is open; relying only on the value read
-    /// during init leaves the picker/Home stuck in the old denied state until
-    /// a relaunch.
-    func refreshAuthorization() {
-        let current = PhotoAuthorizationState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
-        guard current != authorization else {
-            if current.canRead { refreshAlbums() }
-            return
-        }
-        authorization = current
-        if current.canRead { refreshAlbums() } else { albums = [] }
-    }
+    func refreshAuthorization() { refreshAlbums() }
 
     func selectionWarning(for selected: [AlbumReference]) -> String? {
-        AlbumSelectionResolution.warning(selected: selected, available: albums, authorization: authorization)
+        AlbumSelectionResolution.warning(selected: reconciled(selected), available: Array(resolvedReferences.values),
+                                         authorization: authorization, checking: checkingAlbums)
     }
 
-    func refreshAlbums() {
-        guard authorization.canRead else { albums = []; return }
-        var result: [AlbumReference] = []
-        let collections: [(PHFetchResult<PHAssetCollection>, Bool, Bool)] = [
-            (PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil), false, false),
-            (PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .any, options: nil), true, false),
-            (PHAssetCollection.fetchAssetCollections(with: .album, subtype: .albumCloudShared, options: nil), false, true)
-        ]
-        for (fetch, smart, shared) in collections {
-            fetch.enumerateObjects { collection, _, _ in
-                let assets = PHAsset.fetchAssets(in: collection, options: PHFetchOptions())
-                let title = collection.localizedTitle ?? "Untitled album"
-                guard !title.isEmpty else { return }
-                result.append(AlbumReference(id: collection.localIdentifier, title: title, subtype: collection.assetCollectionSubtype.rawValue, estimatedCount: assets.count, isSmart: smart, isShared: shared))
+    func unavailableSelections(_ selected: [AlbumReference]) -> [AlbumReference] {
+        selected.filter { $0.source == .applePhotos && resolvedReferences[$0.id] == nil }
+    }
+
+    func selectionsAreResolved(_ selected: [AlbumReference]) -> Bool {
+        let apple = selected.filter { $0.source == .applePhotos }
+        guard !apple.isEmpty else { return true }
+        return authorization.canRead && unavailableSelections(apple).isEmpty
+    }
+
+    func refreshAlbums(contentChanged: Bool = false) {
+        retryTask?.cancel()
+        retryTask = nil
+        refreshAlbumSnapshot(forceRevision: contentChanged)
+        guard authorization.canRead, hasUnresolvedAlbums else { checkingAlbums = false; return }
+        checkingAlbums = true
+        retryTask = Task { @MainActor [weak self] in
+            for delay in [1, 3, 8] {
+                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                guard let self, !Task.isCancelled else { return }
+                self.refreshAlbumSnapshot(forceRevision: false)
+                if !self.authorization.canRead || !self.hasUnresolvedAlbums { break }
             }
+            guard !Task.isCancelled else { return }
+            self?.checkingAlbums = false
         }
-        var seen = Set<String>()
-        albums = result.filter { seen.insert($0.id).inserted }.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    private var hasUnresolvedAlbums: Bool {
+        trackedReferences.contains { resolvedReferences[$0.id] == nil }
+    }
+
+    private func refreshAlbumSnapshot(forceRevision: Bool) {
+        let previousAuthorization = authorization
+        authorization = PhotoAuthorizationState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
+        let previousAlbums = albums
+        let previousResolved = resolvedReferences
+        var result: [AlbumReference] = []
+        var resolved: [String: AlbumReference] = [:]
+        if authorization.canRead {
+            let collections = [
+                PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil),
+                PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .any, options: nil)
+            ]
+            for fetch in collections {
+                fetch.enumerateObjects { collection, _, _ in result.append(self.reference(for: collection)) }
+            }
+            var direct = Dictionary(result.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            for original in trackedReferences {
+                let known = identityHistory.records + trackedReferences
+                let found = AlbumIdentityResolver.resolve(original, known: known, authorization: authorization,
+                    lookup: { id in
+                        // A direct lookup can succeed even when catalog enumeration
+                        // has not yet included this selected collection.
+                        if let cached = direct[id] { return cached }
+                        guard let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
+                        let reference = self.reference(for: collection)
+                        direct[id] = reference
+                        return reference
+                    }, cloudID: { self.cloudIdentity(for: $0) }, localID: { self.localIdentity(for: $0) })
+                if let found {
+                    resolved[original.id] = found
+                    resolved[found.id] = found
+                    direct[found.id] = found
+                    identityHistory.record(found)
+                }
+            }
+            result = Array(direct.values)
+        } else {
+            // Do not retain readable snapshots or image caches after revocation.
+            imageManager.stopCachingImagesForAllAssets()
+            cloudIdentities.removeAll()
+        }
+        resolvedReferences = resolved
+        if canSaveIdentityHistory, let data = try? JSONEncoder().encode(identityHistory),
+           data != UserDefaults.standard.data(forKey: identityHistoryKey) {
+            UserDefaults.standard.set(data, forKey: identityHistoryKey)
+        }
+        albums = result.sorted { $0.title == $1.title ? $0.id < $1.id : $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        if forceRevision || previousAuthorization != authorization || previousAlbums != albums || previousResolved != resolvedReferences {
+            libraryRevision += 1
+        }
     }
 
 #if DEBUG
@@ -541,6 +732,12 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
             return ["uniqueCount": values.count, "mediaKinds": kinds, "exclusiveFilterOutcomes": reasons]
         }
         let report: [String: Any] = ["authorizationRawValue": PHPhotoLibrary.authorizationStatus(for: .readWrite).rawValue,
+            "capturedAt": ISO8601DateFormatter().string(from: Date()),
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+            "resolvedSelectionCount": settings.selectedAlbums.filter { $0.source == .applePhotos && resolvedReferences[$0.id] != nil }.count,
+            "durableIdentityCount": settings.selectedAlbums.filter { $0.source == .applePhotos && $0.cloudIdentifier != nil }.count,
+            "selectionWarning": (selectionWarning(for: settings.selectedAlbums) as Any?) ?? NSNull(),
             "selected": selected, "selectedUnion": breakdown(unique),
             "sameNamedCandidates": candidates, "candidateUnion": breakdown(allMatching)]
         do {
@@ -668,8 +865,12 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         let options = Self.assetFetchOptions(includeHidden: filters.includeHidden)
         var output: [PHAsset] = []
         var seen = Set<String>()
-        for reference in references {
-            guard let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [reference.id], options: nil).firstObject else { continue }
+        for reference in references where reference.source == .applePhotos {
+            // The same resolution snapshot drives the warning and the queue.
+            let isTracked = trackedReferences.contains { $0.id == reference.id }
+            let resolved = resolvedReferences[reference.id] ?? (isTracked ? nil : albums.first(where: { $0.id == reference.id }))
+            guard let resolved,
+                  let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [resolved.id], options: nil).firstObject else { continue }
             let fetch = PHAsset.fetchAssets(in: collection, options: options)
             fetch.enumerateObjects { asset, _, _ in
                 guard seen.insert(asset.localIdentifier).inserted else { return }
@@ -755,8 +956,8 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.libraryRevision += 1
-            self.refreshAlbums()
+            // Asset membership can change without changing album metadata.
+            self.refreshAlbums(contentChanged: true)
         }
     }
 }

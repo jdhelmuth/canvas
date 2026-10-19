@@ -793,6 +793,61 @@ final class FullShuffleTests: XCTestCase {
         XCTFail("Playback failed to settle")
     }
 
+    func testUnavailableAlbumDoesNotRestartSmallerCycleAndRecoversAfterRelaunch() async throws {
+        let suite = "canvas-partial-library-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let all = items(1307)
+        var complete = false
+        let provider: (CanvasSettings) -> [CanvasMediaItem] = { _ in
+            complete ? all + Array(all.prefix(400)) : Array(all.prefix(7))
+        }
+        var model = PlaybackViewModel(settings: settings, mediaItems: provider,
+            imageLoader: { _, _ in UIImage() }, cycleStore: ShuffleCycleStore(defaults: defaults),
+            libraryIsComplete: { _ in complete })
+        defer { model.stop() }
+        await model.reload()
+        var seen = Set<String>()
+        for index in 0..<7 {
+            XCTAssertTrue(seen.insert(try XCTUnwrap(model.currentAsset?.id)).inserted)
+            if index < 6 {
+                let frame = model.displayedFrame?.id
+                XCTAssertTrue(model.next())
+                await settle(model, after: frame)
+            }
+        }
+        XCTAssertFalse(model.next(), "An unresolved selection is not a completed cycle")
+        XCTAssertEqual(ShuffleCycleStore(defaults: defaults).load()?.displayedIDs.count, 7)
+        model.setPlaybackAllowed(false)
+        model.setPlaybackAllowed(true)
+        await model.refreshLibrary()
+        XCTAssertEqual(ShuffleCycleStore(defaults: defaults).load()?.displayedIDs.count, 7)
+        model.stop()
+        model = PlaybackViewModel(settings: settings, mediaItems: provider,
+            imageLoader: { _, _ in UIImage() }, cycleStore: ShuffleCycleStore(defaults: defaults),
+            libraryIsComplete: { _ in complete })
+        await model.reload()
+        XCTAssertNil(model.currentAsset, "Restart must wait, not replay the exhausted subset")
+        XCTAssertEqual(ShuffleCycleStore(defaults: defaults).load()?.displayedIDs.count, 7)
+        complete = true
+        await model.refreshLibrary()
+        XCTAssertEqual(model.queueCount, 1307)
+        for index in 7..<1307 {
+            XCTAssertTrue(seen.insert(try XCTUnwrap(model.currentAsset?.id)).inserted, "Repeat at \(index)")
+            if index < 1306 {
+                let frame = model.displayedFrame?.id
+                XCTAssertTrue(model.next())
+                await settle(model, after: frame)
+            }
+        }
+        XCTAssertEqual(seen, Set(all.map(\.id)))
+        let last = model.currentAsset?.id
+        let frame = model.displayedFrame?.id
+        XCTAssertTrue(model.next())
+        await settle(model, after: frame)
+        XCTAssertNotEqual(model.currentAsset?.id, last)
+    }
+
     func testOver1300UniquePhotosAcrossOverlappingAlbumsAndRestart() async throws {
         let suite = "canvas-shuffle-test-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

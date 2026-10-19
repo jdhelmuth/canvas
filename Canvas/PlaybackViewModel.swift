@@ -27,6 +27,8 @@ final class PlaybackViewModel: ObservableObject {
     @Published private(set) var currentIndex = 0
     @Published private(set) var elapsed = 0.0
     private var mediaItems: ((CanvasSettings) -> [CanvasMediaItem])?
+    private var libraryIsComplete: ((CanvasSettings) -> Bool)?
+    private var waitingForAlbums = false
     private var imageLoader: ((CanvasMediaItem, CGSize) async -> UIImage?)?
     private var prefetchImages: (([CanvasMediaItem], CGSize) -> Void)?
     private var sessionActive = true
@@ -68,13 +70,15 @@ final class PlaybackViewModel: ObservableObject {
         mediaItems: ((CanvasSettings) -> [CanvasMediaItem])? = nil,
         imageLoader: ((CanvasMediaItem, CGSize) async -> UIImage?)? = nil,
         recoveryDelay: Duration = .seconds(30),
-        cycleStore: ShuffleCycleStore? = nil
+        cycleStore: ShuffleCycleStore? = nil,
+        libraryIsComplete: ((CanvasSettings) -> Bool)? = nil
     ) {
         self.settings = settings
         self.mediaItems = mediaItems
         self.imageLoader = imageLoader
         self.recoveryDelay = recoveryDelay
         self.cycleStore = cycleStore
+        self.libraryIsComplete = libraryIsComplete
     }
 
     deinit {
@@ -87,6 +91,7 @@ final class PlaybackViewModel: ObservableObject {
     func configure(library: PhotoLibraryService, googlePhotos: GooglePhotosService, loader: AssetImageLoader, settings: CanvasSettings) {
         guard !configured else { return }
         self.settings = settings
+        libraryIsComplete = { library.selectionsAreResolved($0.selectedAlbums) }
         if cycleStore == nil { cycleStore = ShuffleCycleStore() }
         mediaItems = { settings in
             MediaIdentityMatcher.deduplicated(
@@ -125,6 +130,7 @@ final class PlaybackViewModel: ObservableObject {
         queueCount = 0
         navigationHistory = PlaybackNavigationHistory()
         mediaItems = nil
+        libraryIsComplete = nil
         imageLoader = nil
         prefetchImages = nil
         configured = false
@@ -192,7 +198,8 @@ final class PlaybackViewModel: ObservableObject {
             let byID = Dictionary(ordered.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             // A completed saved cycle may start a new one on reopening.
             let retainsCurrent = identityToPreserve.map { byID[$0] != nil } ?? false
-            if !retainsCurrent && !ordered.isEmpty && shuffleCycle.pendingIDs().isEmpty && settings.repeatEnabled {
+            if (!retainsCurrent || waitingForAlbums) && !ordered.isEmpty && shuffleCycle.pendingIDs().isEmpty
+                && settings.repeatEnabled && (libraryIsComplete?(settings) ?? true) {
                 shuffleCycle.beginNextCycle(QueueBuilder.buildNextCycle(ordered, mode: .shuffle,
                     previousIDs: shuffleCycle.lastGroupIDs, shuffleSeed: Int.random(in: Int.min...Int.max)))
             }
@@ -225,7 +232,7 @@ final class PlaybackViewModel: ObservableObject {
             ? (shuffleCycle.lastGroupIDs.first(where: { id in candidateQueue.contains { $0.id == id } })
                 ?? candidateQueue.last?.id) : nil
         let resumeID = settings.queueMode == .shuffle
-            ? ((isRecovering ? nil : preservedID) ?? shuffleCycle.pendingIDs().first ?? completedFrameID)
+            ? ((isRecovering || waitingForAlbums ? nil : preservedID) ?? shuffleCycle.pendingIDs().first ?? completedFrameID)
             : identityToPreserve
         // Reopening a finished non-repeating slideshow shows its final photo
         // paused, rather than leaving an empty player waiting for an image.
@@ -240,7 +247,7 @@ final class PlaybackViewModel: ObservableObject {
             queueCurrentAssetID: queueCurrentAssetID,
             displayedGroupIDs: displayedFrame?.layoutAssets.map(\.id) ?? [],
             candidateQueue: candidateQueue,
-            forceReload: rebuildQueue
+            forceReload: rebuildQueue || waitingForAlbums
         )
 
         replayingHistory = false
@@ -248,6 +255,27 @@ final class PlaybackViewModel: ObservableObject {
         queueCount = queue.count
         currentIndex = candidateIndex
         recoveryStartIndex = nil
+        let readableIDs = Set(candidateQueue.map(\.id))
+        if displayedFrame?.layoutAssets.contains(where: { !readableIDs.contains($0.id) }) == true {
+            // Revoked or removed assets cannot remain visible while another
+            // frame is loading, or remain available through navigation history.
+            displayedFrame = nil
+        }
+
+        if settings.queueMode == .shuffle && shuffleCycle.pendingIDs().isEmpty && !(libraryIsComplete?(settings) ?? true) {
+            // A partial library is not a completed cycle. Keep its durable seen
+            // set across retries/restarts rather than looping the smaller pool.
+            cancelTimer()
+            retryTask?.cancel()
+            loadTask?.cancel()
+            loadGeneration &+= 1
+            waitingForAlbums = true
+            pendingFrameReload = false
+            if !canPreserveFrame { displayedFrame = nil }
+            errorMessage = "Waiting for selected albums. Your shuffle progress is saved."
+            return
+        }
+        waitingForAlbums = false
 
         if canPreserveFrame && !isRecovering && !pendingLayoutRefresh && !pendingFrameReload {
             // Keep the current visual frame and its transition route intact;
@@ -485,6 +513,12 @@ final class PlaybackViewModel: ObservableObject {
         let byID = Dictionary(queue.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var pending = shuffleCycle.pendingIDs()
         if pending.isEmpty {
+            guard libraryIsComplete?(settings) ?? true else {
+                waitingForAlbums = true
+                cancelTimer()
+                errorMessage = "Waiting for selected albums. Your shuffle progress is saved."
+                return false
+            }
             guard settings.repeatEnabled else {
                 isPlaying = false
                 cancelTimer()
@@ -703,7 +737,7 @@ final class PlaybackViewModel: ObservableObject {
 
     private func startTimer() {
         cancelTimer()
-        guard sessionActive, playbackAllowed, isPlaying, !isRecovering, !pendingLayoutRefresh, !pendingFrameReload, !queue.isEmpty,
+        guard sessionActive, playbackAllowed, isPlaying, !waitingForAlbums, !isRecovering, !pendingLayoutRefresh, !pendingFrameReload, !queue.isEmpty,
               let frame = displayedFrame,
               let currentAsset else { return }
 

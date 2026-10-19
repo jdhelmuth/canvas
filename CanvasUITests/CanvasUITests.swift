@@ -377,6 +377,38 @@ final class CanvasUITests: XCTestCase {
         XCTAssertNotEqual(value.label, initial)
     }
 
+    func testUnavailableAlbumSurvivesDoneRestartAndExplicitRemoval() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-minute-duration"]
+        app.launch()
+        for _ in 0..<2 {
+            XCTAssertTrue(app.buttons["Manage albums"].waitForExistence(timeout: 5))
+            app.buttons["Manage albums"].tap()
+            XCTAssertTrue(app.navigationBars["Choose albums"].waitForExistence(timeout: 5))
+            let missing = app.buttons["album-choice-ui-test-album"]
+            XCTAssertTrue(missing.waitForExistence(timeout: 5))
+            XCTAssertEqual(missing.value as? String, "Selected")
+            app.buttons["Retry Photos"].tap()
+            XCTAssertEqual(missing.value as? String, "Selected")
+            app.buttons["Done"].tap()
+            XCTAssertTrue(app.buttons["Manage albums"].waitForExistence(timeout: 5))
+            app.terminate()
+            app.launchArguments = []
+            app.launch()
+        }
+        app.buttons["Manage albums"].tap()
+        let missing = app.buttons["album-choice-ui-test-album"]
+        XCTAssertTrue(missing.waitForExistence(timeout: 5))
+        missing.tap()
+        XCTAssertEqual(missing.value as? String, "Not selected")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(app.otherElements["empty-albums-state"].waitForExistence(timeout: 5))
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.otherElements["empty-albums-state"].waitForExistence(timeout: 5))
+    }
+
     func testHomeUsesPersistedMinuteDuration() {
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-minute-duration"]

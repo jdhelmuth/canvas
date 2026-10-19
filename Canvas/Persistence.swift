@@ -110,6 +110,15 @@ final class SettingsStore: ObservableObject {
         defaults.set(data, forKey: key)
     }
 
+    func saveAlbumRecovery(_ updated: CanvasSettings) {
+        guard updated != settings else { return }
+        let backupKey = "canvas.album-recovery.original-settings"
+        if defaults.data(forKey: backupKey) == nil, let original = try? JSONEncoder().encode(settings) {
+            defaults.set(original, forKey: backupKey)
+        }
+        settings = updated
+    }
+
     func dismissRecoveryNotice() {
         recoveryMessage = nil
         defaults.removeObject(forKey: Self.recoveryNoticeKey)
@@ -289,10 +298,16 @@ final class AppStore: ObservableObject {
         settingsSubscription = settingsStore.objectWillChange.sink { [weak self] _ in
             // @Published announces before assigning. Forward on the next main-actor turn so
             // views reading AppStore.settings observe the new value, not the previous one.
-            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+            Task { @MainActor [weak self] in
+                self?.reconcileAlbumSelections()
+                self?.objectWillChange.send()
+            }
         }
         librarySubscription = library.objectWillChange.sink { [weak self] _ in
-            Task { @MainActor [weak self] in self?.objectWillChange.send() }
+            Task { @MainActor [weak self] in
+                self?.reconcileAlbumSelections()
+                self?.objectWillChange.send()
+            }
         }
         googlePhotosSubscription = googlePhotos.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
@@ -303,6 +318,20 @@ final class AppStore: ObservableObject {
         weatherSubscription = weather.objectWillChange.sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.objectWillChange.send() }
         }
+        reconcileAlbumSelections()
+    }
+
+    func reconcileAlbumSelections() {
+        let current = settingsStore.settings
+        library.track(current.selectedAlbums + current.presets.flatMap { $0.settings.selectedAlbums })
+        var updated = current
+        updated.selectedAlbums = library.reconciled(current.selectedAlbums)
+        for index in updated.presets.indices {
+            updated.presets[index].settings.selectedAlbums = library.reconciled(current.presets[index].settings.selectedAlbums)
+        }
+        // Only identity/album metadata is migrated; filters, timing, overlays,
+        // preset choices and all other settings remain untouched.
+        if updated != current { settingsStore.saveAlbumRecovery(updated) }
     }
 
     @discardableResult

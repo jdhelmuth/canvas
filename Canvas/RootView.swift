@@ -43,6 +43,7 @@ struct RootView: View {
                     let repaired = try AlbumSelectionResolution.repairing(store.settings.selectedAlbums, mapping: mapping,
                         available: store.library.albums, authorization: store.library.authorization)
                     store.settingsStore.update { $0.selectedAlbums = repaired }
+                    store.reconcileAlbumSelections()
                 } catch { print("Canvas album repair refused: \(error)") }
             }
             if arguments.contains("--canvas-album-diagnostics") {
@@ -708,6 +709,11 @@ struct AlbumPickerView: View {
     @State private var showGoogleImport = false
     @State private var knownGoogleAlbumIDs: Set<String> = []
     @State private var showEmptyAlbums = false
+    @State private var reconnectingAlbum: AlbumReference?
+
+    private var unavailableAlbums: [AlbumReference] {
+        store.library.unavailableSelections(store.settings.selectedAlbums)
+    }
 
     private func appleAlbums(in category: AppleAlbumCategory) -> [AlbumReference] {
         filtered(AppleAlbumCategory.albums(from: store.library.albums, in: category))
@@ -723,6 +729,19 @@ struct AlbumPickerView: View {
     var body: some View {
         NavigationStack {
             List {
+                if !unavailableAlbums.isEmpty {
+                    Section("Unavailable selections") {
+                        Text(store.library.authorization.explanation ?? "These selections are saved. Retry after Photos finishes syncing, or reconnect a selection to an album you recognize. Uncheck a row only to remove it.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button("Retry Photos") { store.library.refreshAuthorization() }
+                        ForEach(unavailableAlbums) { album in
+                            albumChoice(album)
+                            if store.library.authorization == .authorized {
+                                Button("Reconnect \(album.title)") { reconnectingAlbum = album }
+                            }
+                        }
+                    }
+                }
                 Section("Album visibility") {
                     Toggle("Show albums with 0 photos", isOn: $showEmptyAlbums)
                         .onChange(of: showEmptyAlbums) { _, value in
@@ -777,13 +796,36 @@ struct AlbumPickerView: View {
                 selection.formUnion(current.subtracting(knownGoogleAlbumIDs))
                 knownGoogleAlbumIDs = current
             }
-            .onChange(of: store.settings.selectedAlbums) { _, references in
-                selection = Set(references.map(\.id))
+            .onChange(of: store.settings.selectedAlbums) { old, references in
+                selection = AlbumSelectionResolution.updatingDraft(selection, from: old, to: references)
             }
             .onChange(of: store.googlePhotos.lastSyncedAlbumID) { _, id in
                 if let id, !id.isEmpty { selection.insert(id) }
             }
             .sheet(isPresented: $showGoogleImport) { GooglePhotosImportView() }
+            .sheet(item: $reconnectingAlbum) { original in
+                NavigationStack {
+                    List {
+                        Section {
+                            Text("Choose the album that should replace \(original.title). Photos and album contents will not be changed.")
+                            ForEach(store.library.albums.filter { $0.isSmart == original.isSmart && $0.isShared == original.isShared && $0.subtype == original.subtype }) { candidate in
+                                Button("\(candidate.title) · \(candidate.estimatedCount) items") {
+                                    guard store.library.authorization == .authorized else { return }
+                                    var replacement = AlbumSelectionResolution.retainingIdentity(candidate, from: original)
+                                    replacement.cloudIdentifier = candidate.cloudIdentifier
+                                    store.settingsStore.update { settings in
+                                        settings.selectedAlbums = settings.selectedAlbums.map { $0.id == original.id ? replacement : $0 }
+                                    }
+                                    store.reconcileAlbumSelections()
+                                    reconnectingAlbum = nil
+                                }
+                            }
+                        }
+                    }
+                    .navigationTitle("Reconnect album")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { reconnectingAlbum = nil } } }
+                }
+            }
         }
     }
     private func moveAppleCategory(from offsets: IndexSet, to destination: Int) {
@@ -826,9 +868,18 @@ struct AlbumPickerView: View {
                 }
                 Spacer()
             }
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
+            .accessibilityIdentifier("album-choice-\(album.id)")
+            .accessibilityValue(selection.contains(album.id) ? "Selected" : "Not selected")
     }
-    private func commit() { store.settingsStore.settings.selectedAlbums = availableAlbums.filter { selection.contains($0.id) }; dismiss() }
+    private func commit() {
+        store.settingsStore.update {
+            $0.selectedAlbums = AlbumSelectionResolution.committing(selectedIDs: selection, saved: $0.selectedAlbums, available: availableAlbums)
+        }
+        store.reconcileAlbumSelections()
+        dismiss()
+    }
 }
 
 struct GooglePhotosImportView: View {
