@@ -69,6 +69,7 @@ struct RootView: View {
 #endif
         .onChange(of: scenePhase) { _, phase in
             store.weather.setActive(phase == .active)
+            store.library.setRecoveryActive(phase == .active)
             if phase == .active {
                 store.library.refreshAuthorization()
                 store.googlePhotos.handleAppReturn()

@@ -208,6 +208,29 @@ final class AlbumRecoveryTests: XCTestCase {
             localID: { mappings[$0] })
     }
 
+    func testRecoveryBackoffContinuesPastStartupAndIsCapped() {
+        XCTAssertEqual((0..<10).map(AlbumRecoverySchedule.delay), [1, 3, 8, 30, 60, 120, 300, 300, 300, 300])
+        XCTAssertEqual(AlbumRecoverySchedule.delay(after: -1), 1)
+    }
+
+    func testRecordedAliasRecoversWhenReverseCloudMappingIsTemporarilyMissing() throws {
+        let selected = album("new", cloud: "cloud", previous: ["old"])
+        let renamed = AlbumReference(id: "old", title: "Renamed family album", subtype: 2,
+            estimatedCount: 1_400, isSmart: false, isShared: false, cloudIdentifier: "cloud")
+        let recovered = try XCTUnwrap(resolve(selected, available: [renamed]))
+        XCTAssertEqual(recovered.id, "old")
+        XCTAssertEqual(recovered.title, "Renamed family album")
+        XCTAssertTrue(recovered.previousLocalIdentifiers.contains("new"))
+    }
+
+    func testAliasCannotAdoptSameNameReplacementOrAmbiguousCloudMatches() {
+        let selected = album("new", cloud: "cloud", previous: ["old", "other"])
+        XCTAssertNil(resolve(selected, available: [album("old", cloud: "different")]))
+        XCTAssertNil(resolve(selected, available: [album("old")]))
+        XCTAssertNil(resolve(selected, available: [album("old", cloud: "cloud"), album("other", cloud: "cloud")]))
+        XCTAssertNil(resolve(selected, access: .limited, available: [album("old", cloud: "cloud")]))
+    }
+
     func testLegacyAlbumGainsDurableIdentityAndSurvivesTwoIdentifierChanges() throws {
         let first = try XCTUnwrap(resolve(album("a"), available: [album("a", cloud: "cloud-family")]))
         let archived = try JSONDecoder().decode(AlbumReference.self, from: JSONEncoder().encode(first))
@@ -307,5 +330,53 @@ final class AlbumRecoveryTests: XCTestCase {
         XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .limited)!.contains("Limited"))
         XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .denied)!.contains("Settings"))
         XCTAssertNil(AlbumSelectionResolution.warning(selected: selected, available: selected, authorization: .authorized))
+    }
+}
+
+
+@MainActor
+final class AlbumRecoveryRunnerTests: XCTestCase {
+    func testRecoveryContinuesAfterInitialBurstWithoutExternalNotifications() async {
+        var polls = 0
+        var delays: [TimeInterval] = []
+        var states: [Bool] = []
+        let runner = AlbumRecoveryRunner(sleep: { delay in delays.append(delay); await Task.yield() },
+            refresh: { polls += 1; return polls < 9 }, checking: { states.append($0) })
+        runner.start()
+        for _ in 0..<200 where polls < 9 { await Task.yield() }
+        XCTAssertEqual(polls, 9)
+        XCTAssertEqual(Array(delays.prefix(4)), [1, 3, 8, 30])
+        XCTAssertEqual(delays.last, 300)
+        XCTAssertEqual(states.first, true)
+        XCTAssertEqual(states.last, false)
+        runner.stop()
+    }
+
+    func testRepeatedRefreshDoesNotRestartAndStopCancelsPendingCheck() async {
+        var polls = 0
+        var starts = 0
+        let runner = AlbumRecoveryRunner(sleep: { _ in try await Task.sleep(for: .seconds(30)) },
+            refresh: { polls += 1; return true }, checking: { if $0 { starts += 1 } })
+        runner.start(); runner.start(); runner.start()
+        XCTAssertEqual(starts, 1)
+        runner.stop()
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(polls, 0)
+        runner.start() // Foreground return starts a fresh bounded burst.
+        XCTAssertEqual(starts, 2)
+        runner.stop()
+    }
+
+    func testPermissionLossOrResolvedSelectionEndsRecovery() async {
+        var polls = 0
+        let runner = AlbumRecoveryRunner(sleep: { _ in await Task.yield() },
+            refresh: { polls += 1; return false }, checking: { _ in })
+        runner.start()
+        for _ in 0..<30 { await Task.yield() }
+        XCTAssertEqual(polls, 1)
+        runner.start()
+        for _ in 0..<30 { await Task.yield() }
+        XCTAssertEqual(polls, 2)
+        runner.stop()
     }
 }

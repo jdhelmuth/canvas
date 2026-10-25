@@ -101,6 +101,47 @@ enum AlbumSelectionResolution {
     }
 }
 
+/// Foreground recovery continues at a capped rate even when Photos sends no
+/// change notification. Only the initial short burst is a "checking" phase.
+enum AlbumRecoverySchedule {
+    static func delay(after attempt: Int) -> TimeInterval {
+        let delays: [TimeInterval] = [1, 3, 8, 30, 60, 120, 300]
+        return delays[min(max(0, attempt), delays.count - 1)]
+    }
+}
+
+@MainActor
+final class AlbumRecoveryRunner {
+    private var task: Task<Void, Never>?
+    private let sleep: (TimeInterval) async throws -> Void
+    private let refresh: () -> Bool
+    private let checking: (Bool) -> Void
+
+    init(sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
+         refresh: @escaping () -> Bool, checking: @escaping (Bool) -> Void) {
+        self.sleep = sleep; self.refresh = refresh; self.checking = checking
+    }
+
+    func start() {
+        guard task == nil else { return }
+        checking(true)
+        task = Task { @MainActor [weak self, sleep] in
+            var attempt = 0
+            while !Task.isCancelled {
+                do { try await sleep(AlbumRecoverySchedule.delay(after: attempt)) } catch { return }
+                guard let runner = self, !Task.isCancelled else { return }
+                let needsRecovery = runner.refresh()
+                attempt += 1
+                if attempt >= 3 || !needsRecovery { runner.checking(false) }
+                if !needsRecovery { runner.task = nil; return }
+            }
+        }
+    }
+
+    func stop() { task?.cancel(); task = nil; checking(false) }
+    deinit { task?.cancel() }
+}
+
 /// One resolution policy for warnings, playback, saved selections and presets.
 /// Failed/ambiguous cloud mappings return nil. Names never establish identity.
 enum AlbumIdentityResolver {
@@ -129,9 +170,15 @@ enum AlbumIdentityResolver {
             return result
         }
         if let found = lookup(identity.id) { return finish(found) }
-        guard authorization == .authorized, let cloud = identity.cloudIdentifier,
-              let mapped = localID(cloud), let found = lookup(mapped) else { return nil }
-        return finish(found)
+        guard authorization == .authorized, let cloud = identity.cloudIdentifier else { return nil }
+        if let mapped = localID(cloud), let found = lookup(mapped) { return finish(found) }
+        let aliases = Set(identity.previousLocalIdentifiers + original.previousLocalIdentifiers)
+        let candidates = aliases.compactMap { id -> AlbumReference? in
+            guard let found = lookup(id), cloudID(id) == cloud else { return nil }
+            return finish(found)
+        }
+        guard Set(candidates.map(\.id)).count == 1 else { return nil }
+        return candidates.first
     }
 }
 
@@ -532,8 +579,13 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     private var identityHistory = AlbumIdentityHistory()
     private var canSaveIdentityHistory = true
     private let identityHistoryKey = "canvas.album-identities.v1"
-    private var retryTask: Task<Void, Never>?
+    private lazy var recoveryRunner = AlbumRecoveryRunner(refresh: { [weak self] in
+        guard let self, self.recoveryActive else { return false }
+        self.refreshAlbumSnapshot(forceRevision: false)
+        return self.authorization.canRead && self.hasUnresolvedAlbums
+    }, checking: { [weak self] in self?.checkingAlbums = $0 })
     @Published private(set) var checkingAlbums = false
+    private var recoveryActive = true
 
     /// Track saved selections and preset selections, without changing the user's
     /// choice. Reconciliation also seeds cloud identities for still-valid IDs.
@@ -558,8 +610,9 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                        isShared: collection.assetCollectionSubtype == .albumCloudShared)
     }
 
-    private func cloudIdentity(for id: String) -> String? {
-        if let cached = cloudIdentities[id] { return cached }
+    private func cloudIdentity(for id: String, refresh: Bool = false) -> String? {
+        if !refresh, let cached = cloudIdentities[id] { return cached }
+        if refresh { cloudIdentities.removeValue(forKey: id) }
         guard case .success(let cloud)? = PHPhotoLibrary.shared().cloudIdentifierMappings(forLocalIdentifiers: [id])[id] else { return nil }
         cloudIdentities[id] = cloud.stringValue
         return cloud.stringValue
@@ -609,22 +662,21 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         return authorization.canRead && unavailableSelections(apple).isEmpty
     }
 
+    func setRecoveryActive(_ active: Bool) {
+        guard recoveryActive != active else { return }
+        recoveryActive = active
+        if active { refreshAlbums() }
+        else { recoveryRunner.stop() }
+    }
+
     func refreshAlbums(contentChanged: Bool = false) {
-        retryTask?.cancel()
-        retryTask = nil
         refreshAlbumSnapshot(forceRevision: contentChanged)
-        guard authorization.canRead, hasUnresolvedAlbums else { checkingAlbums = false; return }
-        checkingAlbums = true
-        retryTask = Task { @MainActor [weak self] in
-            for delay in [1, 3, 8] {
-                do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-                guard let self, !Task.isCancelled else { return }
-                self.refreshAlbumSnapshot(forceRevision: false)
-                if !self.authorization.canRead || !self.hasUnresolvedAlbums { break }
-            }
-            guard !Task.isCancelled else { return }
-            self?.checkingAlbums = false
+        guard recoveryActive, authorization.canRead, hasUnresolvedAlbums else {
+            recoveryRunner.stop()
+            return
         }
+        // Repeated metadata reconciliation must not restart the backoff.
+        recoveryRunner.start()
     }
 
     private var hasUnresolvedAlbums: Bool {
@@ -658,7 +710,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                         let reference = self.reference(for: collection)
                         direct[id] = reference
                         return reference
-                    }, cloudID: { self.cloudIdentity(for: $0) }, localID: { self.localIdentity(for: $0) })
+                    }, cloudID: { self.cloudIdentity(for: $0, refresh: true) }, localID: { self.localIdentity(for: $0) })
                 if let found {
                     resolved[original.id] = found
                     resolved[found.id] = found
