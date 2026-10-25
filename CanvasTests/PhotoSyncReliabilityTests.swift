@@ -208,6 +208,30 @@ final class AlbumRecoveryTests: XCTestCase {
             localID: { mappings[$0] })
     }
 
+    func testCloudIdentityRefreshPreventsLaterLocalIdentifierDisconnection() throws {
+        let saved = album("local-a", cloud: "old-cloud")
+        let refreshed = try XCTUnwrap(resolve(saved, available: [album("local-a", cloud: "current-cloud")]))
+        XCTAssertEqual(refreshed.cloudIdentifier, "current-cloud")
+        let archived = try JSONDecoder().decode(AlbumReference.self, from: JSONEncoder().encode(refreshed))
+        let recovered = try XCTUnwrap(resolve(archived, available: [album("local-b", cloud: "current-cloud")], mappings: ["current-cloud": "local-b"]))
+        XCTAssertEqual(recovered.id, "local-b")
+        XCTAssertTrue(recovered.previousLocalIdentifiers.contains("local-a"))
+        XCTAssertNil(resolve(saved, available: [album("local-b", cloud: "current-cloud")], mappings: ["current-cloud": "local-b"]), "Old metadata alone cannot prove continuity after both identifiers changed")
+    }
+
+    func testTemporaryCloudMappingFailurePreservesLastKnownIdentity() throws {
+        let selected = album("a", cloud: "saved-cloud")
+        XCTAssertEqual(try XCTUnwrap(resolve(selected, available: [album("a")])).cloudIdentifier, "saved-cloud")
+        XCTAssertEqual(try XCTUnwrap(resolve(selected, access: .limited, available: [album("a", cloud: "other")])).cloudIdentifier, "saved-cloud")
+    }
+
+    func testCurrentLocalCloudProofReconcilesOlderPresetMetadata() throws {
+        let oldPreset = album("a", cloud: "old")
+        let current = album("a", cloud: "current")
+        XCTAssertEqual(try XCTUnwrap(resolve(oldPreset, known: [current], available: [current])).cloudIdentifier, "current")
+        XCTAssertNil(resolve(oldPreset, known: [current], available: [album("unrelated", cloud: "third")]))
+    }
+
     func testRecoveryBackoffContinuesPastStartupAndIsCapped() {
         XCTAssertEqual((0..<10).map(AlbumRecoverySchedule.delay), [1, 3, 8, 30, 60, 120, 300, 300, 300, 300])
         XCTAssertEqual(AlbumRecoverySchedule.delay(after: -1), 1)

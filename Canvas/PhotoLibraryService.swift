@@ -156,9 +156,16 @@ enum AlbumIdentityResolver {
         guard successorIDs.count <= 1 else { return nil }
         let saved = known.filter { $0.source == .applePhotos && $0.id == original.id }
         let savedClouds = Set((saved + [original]).compactMap(\.cloudIdentifier))
-        guard savedClouds.count <= 1 else { return nil }
         var identity = successors.first ?? original
-        if successors.isEmpty { identity.cloudIdentifier = original.cloudIdentifier ?? savedClouds.first }
+        if successors.isEmpty {
+            if savedClouds.count > 1 {
+                // The same still-readable local object can prove which archived
+                // cloud identity is current. Without that proof, keep ambiguity.
+                guard authorization == .authorized, let local = lookup(original.id),
+                      let currentCloud = cloudID(local.id), savedClouds.contains(currentCloud) else { return nil }
+                identity.cloudIdentifier = currentCloud
+            } else { identity.cloudIdentifier = original.cloudIdentifier ?? savedClouds.first }
+        }
         func finish(_ found: AlbumReference) -> AlbumReference? {
             guard found.source == .applePhotos, found.subtype == identity.subtype,
                   found.isSmart == identity.isSmart, found.isShared == identity.isShared else { return nil }
@@ -166,7 +173,10 @@ enum AlbumIdentityResolver {
             result = AlbumSelectionResolution.retainingIdentity(result, from: original)
             // Keep the durable identity when available; capture legacy identities
             // only while their local collection still resolves under Full Access.
-            result.cloudIdentifier = identity.cloudIdentifier ?? (authorization == .authorized ? cloudID(found.id) : nil)
+            // A successful local lookup establishes continuity even if Photos
+            // revises its cloud mapping. Refresh it while that proof exists;
+            // retaining a stale cloud ID forever defeats later local-ID recovery.
+            result.cloudIdentifier = (authorization == .authorized ? cloudID(found.id) : nil) ?? identity.cloudIdentifier
             return result
         }
         if let found = lookup(identity.id) { return finish(found) }
