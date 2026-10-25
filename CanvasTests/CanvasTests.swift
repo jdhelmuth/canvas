@@ -506,6 +506,7 @@ final class CanvasTests: XCTestCase {
     func testWeatherOverlayWaitsForLocationPermissionBeforeRequestingWeather() {
         let service = CanvasWeatherService(
             autoRequestLocation: false,
+            locationManager: UndeterminedLocationManager(),
             defaults: UserDefaults(suiteName: "WeatherPermissionTest.\(UUID().uuidString)")!,
             configurationProvider: {
                 CanvasWeatherConfiguration(source: .weatherKit, ambientDeviceMAC: nil, ambientAPIKey: nil)
@@ -3513,4 +3514,9 @@ private final class TestWeatherProvider: CanvasWeatherProviding, @unchecked Send
         activeCalls -= 1
         lock.unlock()
     }
+}
+
+
+private final class UndeterminedLocationManager: CLLocationManager {
+    override var authorizationStatus: CLAuthorizationStatus { .notDetermined }
 }

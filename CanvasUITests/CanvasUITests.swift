@@ -260,6 +260,8 @@ final class CanvasUITests: XCTestCase {
             "--canvas-ui-store-weather-station", "--canvas-ui-clock-group"
         ]
         app.launch()
+        // Wait for the asynchronous full-screen presentation before rotating.
+        XCTAssertTrue(app.otherElements["canvas.clock.overlay"].waitForExistence(timeout: 5))
         defer { XCUIDevice.shared.orientation = .portrait }
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait] {
             XCUIDevice.shared.orientation = orientation
