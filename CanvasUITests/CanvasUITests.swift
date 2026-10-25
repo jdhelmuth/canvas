@@ -30,7 +30,10 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
         // iOS 27.2 can retain a dismissed accessibility node. A hittable
         // Home control and the following Settings navigation prove dismissal.
-        XCTAssertTrue(app.buttons["settings"].isHittable)
+        do {
+            let homeReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: app.buttons["settings"])
+            XCTAssertEqual(XCTWaiter.wait(for: [homeReady], timeout: 5), .completed)
+        }
         app.buttons["settings"].tap()
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 5))
         app.staticTexts["Playback & Timing"].tap()
@@ -42,7 +45,10 @@ final class CanvasUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["settings"].isHittable)
+        do {
+            let homeReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: app.buttons["settings"])
+            XCTAssertEqual(XCTWaiter.wait(for: [homeReady], timeout: 5), .completed)
+        }
 #endif
     }
 
@@ -91,7 +97,10 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5), "X must return to the home screen")
         // iOS 27.2 can retain a dismissed accessibility node. A hittable
         // Home control and the following Settings navigation prove dismissal.
-        XCTAssertTrue(app.buttons["settings"].isHittable)
+        do {
+            let homeReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: app.buttons["settings"])
+            XCTAssertEqual(XCTWaiter.wait(for: [homeReady], timeout: 5), .completed)
+        }
         app.buttons["settings"].tap()
         XCTAssertTrue(app.navigationBars["Canvas settings"].waitForExistence(timeout: 5))
         app.staticTexts["Playback & Timing"].tap()
@@ -109,7 +118,10 @@ final class CanvasUITests: XCTestCase {
         XCUIDevice.shared.press(.home)
         app.activate()
         XCTAssertTrue(app.buttons["settings"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["settings"].isHittable)
+        do {
+            let homeReady = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: app.buttons["settings"])
+            XCTAssertEqual(XCTWaiter.wait(for: [homeReady], timeout: 5), .completed)
+        }
         app.buttons["settings"].tap()
         app.staticTexts["Playback & Timing"].tap()
         XCTAssertEqual(value.label, edited)
