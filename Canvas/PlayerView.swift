@@ -3,6 +3,7 @@ import Photos
 import AVKit
 
 struct PlayerView: View {
+    var onClose: (() -> Void)? = nil
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -111,7 +112,7 @@ struct PlayerView: View {
         .onChange(of: store.settings) { _, updated in
             Task {
                 await model.updateSettings(updated)
-                if model.queueCount == 0 && !hidesControlsForStoreCapture { dismiss() }
+                if model.queueCount == 0 && !hidesControlsForStoreCapture { closePlayer() }
             }
             store.audio.update(updated)
             isLocked = updated.lockControls
@@ -121,7 +122,7 @@ struct PlayerView: View {
         .onChange(of: store.googlePhotos.albums) { _, _ in
             Task {
                 await model.refreshLibrary()
-                if model.queueCount == 0 && !hidesControlsForStoreCapture { dismiss() }
+                if model.queueCount == 0 && !hidesControlsForStoreCapture { closePlayer() }
             }
         }
         .onChange(of: powerAllowsPlayback) { _, _ in updatePowerState() }
@@ -148,6 +149,12 @@ struct PlayerView: View {
         .sheet(isPresented: $showDetails) { detailsSheet }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Canvas slideshow")
+    }
+
+    private func closePlayer() {
+        // Let the presenter own its navigation state. The dismissal environment
+        // can lose the active cover context across full-screen scene updates.
+        if let onClose { onClose() } else { dismiss() }
     }
 
     private var isWeatherFramePreview: Bool {
@@ -440,7 +447,7 @@ struct PlayerView: View {
 
     private var controls: some View {
         VStack {
-            HStack { Button { dismiss() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).accessibilityLabel("Close slideshow").accessibilityIdentifier("close-slideshow").background(.ultraThinMaterial, in: Circle()); Spacer(); Text("Canvas").font(.headline); Spacer(); Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()) }
+            HStack { Button { closePlayer() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("Close slideshow").accessibilityIdentifier("close-slideshow").background(.ultraThinMaterial, in: Circle()); Spacer(); Text("Canvas").font(.headline); Spacer(); Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()) }
                 .padding(.horizontal, 24).padding(.top, 18)
             Spacer()
             VStack(spacing: 14) {
@@ -670,7 +677,7 @@ struct PlayerView: View {
                 lastSwipeTime = now
                 _ = model.navigateByDisplayedGroup(direction: direction, gestureDirection: direction)
             } else if abs(value.translation.width) < abs(value.translation.height), value.translation.height > 80 {
-                dismiss()
+                closePlayer()
             }
             scheduleHide()
         }

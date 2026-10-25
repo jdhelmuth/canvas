@@ -260,7 +260,7 @@ struct LibraryHomeView: View {
             }
             .sheet(isPresented: $showAlbumPicker) { AlbumPickerView(isOnboarding: false) }
             .sheet(isPresented: $showSettings) { SettingsView() }
-            .fullScreenCover(isPresented: $showPlayer) { PlayerView() }
+            .fullScreenCover(isPresented: $showPlayer) { PlayerView(onClose: { showPlayer = false }) }
 #if DEBUG
             .task {
                 // Diagnostic launches use the same dismissible presentation as
