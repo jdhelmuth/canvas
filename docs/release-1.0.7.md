@@ -1,4 +1,6 @@
-# Canvas Slideshow 1.0.7 (71)
+# Canvas Slideshow 1.0.7 (72)
+
+Build72 combines the album-recovery fixes below with movable overlay layouts. Portrait starts with clock/details at bottom left and weather beside it. Edit Layout saves independent portrait/landscape positions, automatic/manual alignment and snapping; Done/Cancel/Reset preserve the existing slideshow state. Untouched landscape retains its previous composition. See [overlay layout behavior and validation](overlay-layout.md). This build is intended to replace the earlier pending build71 submission after validation.
 
 Refresh successfully verified Photos cloud identities while local albums remain readable, preserving the last known identity on failures. Reconcile older preset metadata only with current local-object proof. Recover prior local identifiers only when a fresh cloud mapping verifies identity; never substitute an album by title. Continue foreground recovery at capped intervals beyond startup, pause in the background and refresh on return. Existing unavailable selections and shuffle progress stay saved.
 

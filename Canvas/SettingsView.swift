@@ -262,9 +262,11 @@ struct SettingsView: View {
                     ForEach(OverlayDateFormat.allCases) { Text($0.title).tag($0) }
                 }
                 .accessibilityHint("Choose how the current date appears in the overlay.")
-                Picker("Position", selection: binding(\.overlays.position)) {
+                Picker("Landscape default", selection: binding(\.overlays.position)) {
                     ForEach(OverlayPosition.allCases) { Text($0.rawValue.capitalized).tag($0) }
                 }
+                Text("To move whole blocks, open the slideshow and tap Edit Layout. Portrait and landscape layouts are saved separately.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 InlineSliderRow(
                     title: "Overlay opacity (background)",
                     value: binding(\.overlays.opacity),
@@ -1005,6 +1007,9 @@ private struct ClockOverlayPreview: View {
 
     @ViewBuilder
     private func previewOverlay(date: Date, size: CGSize) -> some View {
+        if size.height > size.width || store.settings.overlays.layouts?.layout(portrait: size.height > size.width) != nil {
+            movablePreviewOverlay(date: date, size: size)
+        } else {
         let settings = store.settings.overlays
         let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
         let items = OverlayStackOrder.items(
@@ -1078,6 +1083,43 @@ private struct ClockOverlayPreview: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
         }
+        }
+    }
+
+    private func movablePreviewOverlay(date: Date, size: CGSize) -> some View {
+        let settings = store.settings.overlays
+        let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
+        let items = OverlayStackOrder.items(position: settings.position, showTime: settings.showTime,
+            showDate: settings.showDate, showAlbum: settings.showAlbum, showWeekday: settings.showWeekday,
+            showLocation: false, showCaption: false, showItemCount: settings.showItemCount,
+            showBattery: settings.showBattery, showWeather: false)
+        let blocks: [OverlayBlock] = (items.isEmpty ? [] : [.clock]) + (settings.showWeather ? [.weather] : [])
+            + (settings.effectiveWeatherShowDewPointScale && settings.effectiveWeatherScaleMetric.fahrenheit(in: store.weather.snapshot) != nil ? [.scale] : [])
+        return MovableOverlayCanvas(size: size, insets: EdgeInsets(), blocks: blocks,
+            layouts: settings.layouts ?? OverlayLayouts(), legacyPosition: settings.position,
+            editing: false, selected: .constant(.clock), onPlace: { _, _ in }, onResolve: { _ in }) { block, trailing in
+                Group {
+                    if block == .scale {
+                        WeatherScaleView(metric: settings.effectiveWeatherScaleMetric, snapshot: store.weather.snapshot, textOpacity: opacity.text)
+                            .frame(height: DewPointScalePolicy.displayHeight(forCanvasHeight: size.height))
+                    } else {
+                        Group {
+                            if block == .clock {
+                                VStack(alignment: trailing ? .trailing : .leading, spacing: 3) {
+                                    ForEach(items) { item in previewOverlayItem(item, date: date, settings: settings, textOpacity: opacity.text) }
+                                }.multilineTextAlignment(trailing ? .trailing : .leading)
+                            } else {
+                                WeatherOverlayWidget(snapshot: store.weather.snapshot, status: store.weather.status, settings: settings,
+                                    mediaImage: previewImages.first, textOpacity: opacity.text, weatherSource: store.settings.effectiveWeatherSource,
+                                    weatherAttributionURL: store.weather.attributionURL, trailingAlignment: trailing)
+                            }
+                        }.foregroundStyle(.white.opacity(opacity.text)).padding(14).background {
+                            OverlayMaterial.ultraThin.backgroundView(cornerRadius: 14, opacity: opacity.background,
+                                transparency: settings.backgroundTransparency ?? OverlayBackgroundPolicy.defaultTransparency)
+                        }
+                    }
+                }
+            }
     }
 
     private func previewClockAndWeatherRow(

@@ -314,6 +314,7 @@ struct WeatherOverlayWidget: View {
     let textOpacity: Double
     let weatherSource: CanvasWeatherSource
     let weatherAttributionURL: URL?
+    var trailingAlignment = false
 
     private var weatherSize: CGFloat { CGFloat(settings.effectiveWeatherSize) }
 
@@ -329,7 +330,7 @@ struct WeatherOverlayWidget: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             if let snapshot = snapshot?.removingExpiredAirQuality(at: context.date) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: trailingAlignment ? .trailing : .leading, spacing: 8) {
                     if weatherSource == .ambientStation {
                         Text("Ambient station")
                             .font(.caption.weight(.semibold))
@@ -347,7 +348,7 @@ struct WeatherOverlayWidget: View {
                     if !metrics(for: snapshot).isEmpty {
                         LazyVGrid(
                             columns: [GridItem(.adaptive(minimum: 92, maximum: 168), spacing: 6)],
-                            alignment: .leading,
+                            alignment: trailingAlignment ? .trailing : .leading,
                             spacing: 6
                         ) {
                             ForEach(metrics(for: snapshot)) { metric in
@@ -372,7 +373,7 @@ struct WeatherOverlayWidget: View {
                     .foregroundStyle(.white.opacity(textOpacity * 0.82))
 
                 }
-                .frame(width: widgetWidth(for: snapshot), alignment: .leading)
+                .frame(width: widgetWidth(for: snapshot), alignment: trailingAlignment ? .trailing : .leading)
                 .accessibilityElement(children: .contain)
             } else {
                 Label(status.title, systemImage: status.systemImage)
@@ -380,7 +381,9 @@ struct WeatherOverlayWidget: View {
                     .accessibilityLabel("Weather, \(status.title)")
             }
         }
+        .multilineTextAlignment(trailingAlignment ? .trailing : .leading)
         .foregroundStyle(.white.opacity(textOpacity))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("canvas.weather.overlay")
     }
 
@@ -421,7 +424,7 @@ struct WeatherOverlayWidget: View {
                         .frame(width: glyphDiameter * 1.28)
                 }
             }
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: trailingAlignment ? .trailing : .leading, spacing: 0) {
                 Text(snapshot.temperature)
                     .font(.system(size: min(max(30, weatherSize * 1.65), 70), weight: .medium, design: .rounded))
                     .fontWidth(.condensed)
@@ -528,7 +531,7 @@ struct WeatherOverlayWidget: View {
         .font(.system(size: max(11, weatherSize * 0.47), weight: .semibold, design: .rounded))
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: trailingAlignment ? .trailing : .leading)
         .background(metric.background, in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(metric.accessibilityText)

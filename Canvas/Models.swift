@@ -858,6 +858,9 @@ struct CanvasSettings: Codable, Equatable {
 }
 
 struct OverlaySettings: Codable, Equatable {
+    /// Optional so existing settings and presets retain every previous value.
+    var layouts: OverlayLayouts?
+
     var showTime = false
     var showDate = false
     var showWeekday = false

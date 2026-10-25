@@ -26,6 +26,100 @@ final class CanvasUITests: XCTestCase {
         XCTAssertEqual(result, .completed)
     }
 
+    func testOverlayLayoutDragCancelSaveRotationAndRestart() {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        let fixture = ["--canvas-ui-weather-frame", "--canvas-ui-store-weather-station", "--canvas-ui-clock-group"]
+        app.launchArguments = ["--canvas-ui-reset"] + fixture
+        app.launch()
+        let clock = app.otherElements["layout-block-clock"]
+        XCTAssertTrue(clock.waitForExistence(timeout: 10))
+        let initial = clock.frame
+        func assertClockX(_ x: CGFloat) {
+            let settled = NSPredicate { _, _ in clock.exists && abs(clock.frame.minX - x) < 3 }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: clock)], timeout: 5), .completed)
+        }
+        func edit() {
+            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+            let button = app.buttons["edit-overlay-layout"]
+            XCTAssertTrue(button.waitForExistence(timeout: 5))
+            button.tap()
+            XCTAssertTrue(app.buttons["layout-done"].waitForExistence(timeout: 5))
+        }
+        func move() {
+            let handle = app.descendants(matching: .any).matching(identifier: "layout-move-clock").firstMatch
+            XCTAssertTrue(handle.waitForExistence(timeout: 5))
+            let start = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.15, thenDragTo: start.withOffset(CGVector(dx: 300, dy: -280)))
+        }
+        edit(); move()
+        XCTAssertEqual(clock.frame.minX, initial.minX + 300, accuracy: 4, "Block must follow the finger without a moving local coordinate origin")
+        app.buttons["layout-cancel"].tap()
+        assertClockX(initial.minX)
+        // Controls stay visible on exit from the editor.
+        app.buttons["edit-overlay-layout"].tap(); move()
+        app.buttons["layout-alignment"].tap()
+        app.buttons["layout-align-right"].tap()
+        let moved = clock.frame
+        app.buttons["layout-done"].tap()
+        assertClockX(moved.minX)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.otherElements["canvas.clock.overlay"].waitForExistence(timeout: 5))
+        XCTAssertFalse(clock.exists, "Untouched landscape keeps its existing composition")
+        app.buttons["edit-overlay-layout"].tap()
+        XCTAssertTrue(app.buttons["layout-done"].waitForExistence(timeout: 5))
+        move()
+        let landscapeMoved = clock.frame
+        app.buttons["layout-done"].tap()
+        assertClockX(landscapeMoved.minX)
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertTrue(clock.waitForExistence(timeout: 5))
+        assertClockX(moved.minX)
+        XCUIDevice.shared.press(.home); app.activate()
+        assertClockX(moved.minX)
+        app.terminate(); app.launchArguments = fixture; app.launch()
+        XCTAssertTrue(clock.waitForExistence(timeout: 10))
+        assertClockX(moved.minX)
+        edit()
+        app.buttons["layout-reset"].tap()
+        assertClockX(initial.minX)
+        app.buttons["layout-cancel"].tap()
+        assertClockX(moved.minX)
+        app.buttons["edit-overlay-layout"].tap()
+        app.buttons["layout-reset"].tap(); app.buttons["layout-done"].tap()
+        assertClockX(initial.minX)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Portrait default after layout reset"; shot.lifetime = .keepAlways; add(shot)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(clock.waitForExistence(timeout: 5))
+        assertClockX(landscapeMoved.minX)
+        let landscapeShot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        landscapeShot.name = "Independent saved landscape layout"; landscapeShot.lifetime = .keepAlways; add(landscapeShot)
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    func testLayoutHandlesMissingAndLongWeatherWithoutOverlap() {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        for fixture in ["--canvas-ui-layout-missing-weather", "--canvas-ui-layout-long-weather"] {
+            app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame", "--canvas-ui-weather-expanded", "--canvas-ui-layout-narrow", fixture]
+            app.launch()
+            let weather = app.otherElements["canvas.weather.overlay"]
+            let clock = app.otherElements["canvas.clock.overlay"]
+            XCTAssertTrue(weather.waitForExistence(timeout: 10))
+            XCTAssertTrue(clock.waitForExistence(timeout: 5))
+            XCTAssertGreaterThan(weather.frame.minX, clock.frame.maxX)
+            XCTAssertLessThanOrEqual(weather.frame.maxX, 320 - 12)
+            XCTAssertLessThanOrEqual(weather.frame.maxY, app.windows.firstMatch.frame.maxY - 12)
+            XCTAssertGreaterThan(weather.frame.height, 10)
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = fixture; shot.lifetime = .keepAlways; add(shot)
+            app.terminate()
+        }
+    }
+
     func testPhysicalSlideshowCloseWithoutReset() throws {
 #if targetEnvironment(simulator)
         throw XCTSkip("Physical-device exit check uses existing app data without reset.")
@@ -302,7 +396,7 @@ final class CanvasUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(clock.frame.minY, 0)
             XCTAssertLessThanOrEqual(weather.frame.maxY, window.frame.maxY)
             if orientation == .portrait {
-                XCTAssertGreaterThan(weather.frame.minY, clock.frame.maxY)
+                XCTAssertGreaterThan(weather.frame.minX, clock.frame.maxX)
             } else {
                 XCTAssertGreaterThan(weather.frame.minX, clock.frame.maxX)
                 XCTAssertGreaterThan(weather.frame.height, clock.frame.height + date.frame.height + battery.frame.height)
@@ -418,7 +512,7 @@ final class CanvasUITests: XCTestCase {
         XCTAssertEqual(scale.label, "Feels like scale")
     }
 
-    func testWeatherWidgetIsBelowClockInPortrait() {
+    func testWeatherWidgetIsBesideClockInPortrait() {
         let app = XCUIApplication()
         app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-weather-frame"]
         app.launch()
@@ -427,8 +521,10 @@ final class CanvasUITests: XCTestCase {
         let weather = app.otherElements["canvas.weather.overlay"]
         XCTAssertTrue(clock.waitForExistence(timeout: 5))
         XCTAssertTrue(weather.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(weather.frame.minY, clock.frame.maxY)
-        XCTAssertEqual(weather.frame.minX, clock.frame.minX, accuracy: 12)
+        XCTAssertGreaterThan(weather.frame.minX, clock.frame.maxX)
+        let group = app.otherElements["layout-block-clock"]
+        XCTAssertEqual(group.frame.minX, 24, accuracy: 2)
+        XCTAssertEqual(weather.frame.maxY, group.frame.maxY, accuracy: 2)
     }
 
     func testEmptyHomeStateIsCenteredAndActionable() {

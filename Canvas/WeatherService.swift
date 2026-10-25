@@ -1642,6 +1642,18 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         isLoading = false
         status = .live
         isUsingCachedSnapshot = false
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-layout-missing-weather") {
+            snapshot = nil
+            status = .networkUnavailable
+        } else if ProcessInfo.processInfo.arguments.contains("--canvas-ui-layout-long-weather") {
+            snapshot = CanvasWeatherSnapshot(symbolName: "cloud.rain.fill",
+                condition: "Heavy thunderstorms with intermittent freezing rain", temperature: "−123.4°F",
+                apparentTemperature: "−135.6°F", wind: "West northwest at 100 miles per hour",
+                nextHourTemperature: "−120.0°F", nextHourCondition: "Thunderstorms with intermittent freezing rain",
+                airQualityIndex: 150, airQualityUpdatedAt: .now)
+        }
+#endif
     }
 
     private func persist(_ result: CanvasWeatherProviderResult, source: CanvasWeatherSource) {

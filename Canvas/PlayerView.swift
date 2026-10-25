@@ -23,6 +23,11 @@ struct PlayerView: View {
     @State private var transitionProgress: CGFloat = 1
     @State private var transitionCompletionTask: Task<Void, Never>?
 
+    @State private var layoutDraft: OverlayLayouts?
+    @State private var selectedOverlay: OverlayBlock = .clock
+    @State private var resolvedOverlayDefaults: [OverlayBlock: OverlayPlacement] = [:]
+    private var isEditingLayout: Bool { layoutDraft != nil }
+
     var body: some View {
         ZStack {
             // Media gestures belong below the controls. A button tap must not
@@ -45,8 +50,19 @@ struct PlayerView: View {
             .simultaneousGesture(tapGesture)
             .simultaneousGesture(swipeGesture)
             .simultaneousGesture(magnifyGesture)
-            .onLongPressGesture(minimumDuration: 0.55) { if isLocked { isLocked = false } else { showDetails = true } }
-            if controlsVisible && !isLocked { controls }
+            .onLongPressGesture(minimumDuration: 0.55) { if !isEditingLayout { if isLocked { isLocked = false } else { showDetails = true } } }
+            GeometryReader { proxy in
+                let canvasSize = CGSize(width: min(proxy.size.width, layoutPreviewWidth ?? proxy.size.width), height: proxy.size.height)
+                let portrait = canvasSize.height > canvasSize.width
+                if (isWeatherFramePreview || (powerAllowsPlayback && scheduleMonitor.isPlaybackAllowed))
+                    && (isEditingLayout || portrait || store.settings.overlays.layouts?.layout(portrait: portrait) != nil) {
+                    movableOverlays(size: canvasSize, insets: proxy.safeAreaInsets)
+                        .colorMultiply(isNightDimActive && !isWeatherFramePreview && !isEditingLayout
+                            ? Color(white: 1 - NightDimmingPolicy.overlayOpacity) : .white)
+                }
+                if isEditingLayout { layoutEditorToolbar(portrait: portrait) }
+            }
+            if controlsVisible && !isLocked && !isEditingLayout { controls }
             if isLocked { lockBadge }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -112,7 +128,7 @@ struct PlayerView: View {
         .onChange(of: store.settings) { _, updated in
             Task {
                 await model.updateSettings(updated)
-                if model.queueCount == 0 && !hidesControlsForStoreCapture { closePlayer() }
+                if model.queueCount == 0 && !hidesControlsForStoreCapture && !isWeatherFramePreview { closePlayer() }
             }
             store.audio.update(updated)
             isLocked = updated.lockControls
@@ -122,7 +138,7 @@ struct PlayerView: View {
         .onChange(of: store.googlePhotos.albums) { _, _ in
             Task {
                 await model.refreshLibrary()
-                if model.queueCount == 0 && !hidesControlsForStoreCapture { closePlayer() }
+                if model.queueCount == 0 && !hidesControlsForStoreCapture && !isWeatherFramePreview { closePlayer() }
             }
         }
         .onChange(of: powerAllowsPlayback) { _, _ in updatePowerState() }
@@ -157,6 +173,13 @@ struct PlayerView: View {
         if let onClose { onClose() } else { dismiss() }
     }
 
+    private var layoutPreviewWidth: CGFloat? {
+#if DEBUG
+        if isWeatherFramePreview && ProcessInfo.processInfo.arguments.contains("--canvas-ui-layout-narrow") { return 320 }
+#endif
+        return nil
+    }
+
     private var isWeatherFramePreview: Bool {
 #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--canvas-ui-weather-frame")
@@ -177,7 +200,7 @@ struct PlayerView: View {
         GeometryReader { proxy in
             ZStack {
                 Color(red: 0.075, green: 0.09, blue: 0.11)
-                overlay(in: proxy.size)
+                legacyOverlayIfNeeded(in: proxy.size)
             }
         }
         .ignoresSafeArea()
@@ -196,7 +219,7 @@ struct PlayerView: View {
                 } else {
                     ProgressView().tint(.white)
                 }
-                overlay(in: proxy.size)
+                legacyOverlayIfNeeded(in: proxy.size)
                 if model.isRecovering, presentedFrame != nil, let message = model.errorMessage {
                     Text(message)
                         .font(.footnote)
@@ -447,7 +470,11 @@ struct PlayerView: View {
 
     private var controls: some View {
         VStack {
-            HStack { Button { closePlayer() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("Close slideshow").accessibilityIdentifier("close-slideshow").background(.ultraThinMaterial, in: Circle()); Spacer(); Text("Canvas").font(.headline); Spacer(); Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()) }
+            HStack { Button { closePlayer() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("Close slideshow").accessibilityIdentifier("close-slideshow").background(.ultraThinMaterial, in: Circle()); Spacer(); Button { beginLayoutEditing() } label: {
+                Label("Edit Layout", systemImage: "rectangle.3.group")
+                    .font(.subheadline.weight(.semibold)).padding(12).contentShape(Rectangle())
+                    .background(.ultraThinMaterial, in: Capsule())
+            }.accessibilityIdentifier("edit-overlay-layout"); Spacer(); Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()) }
                 .padding(.horizontal, 24).padding(.top, 18)
             Spacer()
             VStack(spacing: 14) {
@@ -463,6 +490,13 @@ struct PlayerView: View {
                     .foregroundStyle(.white.opacity(0.8)).padding(.horizontal, 24)
             }.padding(.bottom, 24).background(LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom))
         }.foregroundStyle(.white).transition(.opacity)
+    }
+
+    @ViewBuilder
+    private func legacyOverlayIfNeeded(in size: CGSize) -> some View {
+        if !isEditingLayout && size.width >= size.height && store.settings.overlays.layouts?.landscape == nil {
+            overlay(in: size)
+        }
     }
 
     private func overlay(in size: CGSize) -> some View {
@@ -551,6 +585,109 @@ struct PlayerView: View {
             ),
             canvasSize: canvasSize
         )
+    }
+
+    private func beginLayoutEditing() {
+        layoutDraft = store.settings.overlays.layouts ?? OverlayLayouts()
+        selectedOverlay = store.settings.overlays.showTime ? .clock : .weather
+        hideTask?.cancel()
+        controlsVisible = true
+    }
+
+    private func placeOverlay(_ block: OverlayBlock, placement: OverlayPlacement, portrait: Bool) {
+        guard var draft = layoutDraft else { return }
+        var orientation = draft.layout(portrait: portrait) ?? OverlayOrientationLayout()
+        orientation[block] = placement
+        draft.set(orientation, portrait: portrait)
+        layoutDraft = draft
+    }
+
+    private func layoutEditorToolbar(portrait: Bool) -> some View {
+        VStack(spacing: 10) {
+            HStack {
+                Button("Cancel") { layoutDraft = nil; scheduleHide() }
+                    .accessibilityIdentifier("layout-cancel")
+                Spacer()
+                Text(portrait ? "Portrait layout" : "Landscape layout").font(.headline)
+                Spacer()
+                Button("Done") {
+                    if let draft = layoutDraft { store.settingsStore.update { $0.overlays.layouts = draft } }
+                    layoutDraft = nil
+                    scheduleHide()
+                }.fontWeight(.semibold).accessibilityIdentifier("layout-done")
+            }
+            HStack {
+                Menu {
+                    ForEach(OverlayTextAlignment.allCases) { alignment in
+                        Button(alignment.title) {
+                            var placement = layoutDraft?.layout(portrait: portrait)?[selectedOverlay] ?? resolvedOverlayDefaults[selectedOverlay] ?? OverlayPlacement(x: 0, y: 1)
+                            placement.alignment = alignment
+                            placeOverlay(selectedOverlay, placement: placement, portrait: portrait)
+                        }.accessibilityIdentifier("layout-align-\(alignment.rawValue)")
+                    }
+                } label: { Label("Alignment", systemImage: "text.alignleft") }
+                .accessibilityIdentifier("layout-alignment")
+                Spacer()
+                Button { layoutDraft?.snapping.toggle() } label: {
+                    Label("Snap", systemImage: layoutDraft?.snapping == true ? "checkmark.square.fill" : "square")
+                }.accessibilityIdentifier("layout-snap")
+                Button("Reset") { layoutDraft?.set(nil, portrait: portrait) }
+                    .accessibilityIdentifier("layout-reset")
+            }.font(.subheadline)
+            Text("Drag a block · \(selectedOverlay.title) selected")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .buttonStyle(.bordered)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 24).padding(.top, 18)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("layout-editor")
+    }
+
+    private func movableOverlays(size: CGSize, insets: EdgeInsets) -> some View {
+        let settings = store.settings.overlays
+        let opacity = OverlayOpacityPolicy.values(backgroundOpacity: settings.opacity, clockOpacity: settings.clockOpacity)
+        let items = overlayItems(for: settings).filter { $0 != .weather }
+        var blocks: [OverlayBlock] = []
+        if !items.isEmpty { blocks.append(.clock) }
+        if settings.showWeather { blocks.append(.weather) }
+        if settings.effectiveWeatherShowDewPointScale, settings.effectiveWeatherScaleMetric.fahrenheit(in: store.weather.snapshot) != nil { blocks.append(.scale) }
+        if CaptureDateOverlayPolicy.showsStandaloneDate(enabled: settings.showCaptureDate, kind: model.currentAsset?.kind, layoutImagesEmpty: model.layoutImages.isEmpty), model.currentAsset?.creationDate != nil { blocks.append(.captureDate) }
+        return MovableOverlayCanvas(size: size, insets: insets, blocks: blocks,
+            layouts: layoutDraft ?? settings.layouts ?? OverlayLayouts(), legacyPosition: settings.position,
+            editing: isEditingLayout, selected: $selectedOverlay,
+            onPlace: { placeOverlay($0, placement: $1, portrait: size.height > size.width) },
+            onResolve: { resolvedOverlayDefaults = $0 }) { block, trailing in
+                Group {
+                    switch block {
+                    case .clock:
+                        VStack(alignment: trailing ? .trailing : .leading, spacing: 3) {
+                            ForEach(items) { item in overlayItem(item, date: StoreCaptureClock.date, settings: settings, textOpacity: opacity.text) }
+                        }
+                        .multilineTextAlignment(trailing ? .trailing : .leading)
+                        .foregroundStyle(.white.opacity(opacity.text))
+                        .padding(14).background {
+                            OverlayMaterial.ultraThin.backgroundView(cornerRadius: 14, opacity: opacity.background, transparency: settings.backgroundTransparency ?? OverlayBackgroundPolicy.defaultTransparency)
+                        }
+                    case .weather:
+                        WeatherOverlayWidget(snapshot: store.weather.snapshot, status: store.weather.status, settings: settings,
+                            mediaImage: model.currentImage, textOpacity: opacity.text, weatherSource: store.settings.effectiveWeatherSource,
+                            weatherAttributionURL: store.weather.attributionURL, trailingAlignment: trailing)
+                            .padding(14).background {
+                                OverlayMaterial.ultraThin.backgroundView(cornerRadius: 14, opacity: opacity.background, transparency: settings.backgroundTransparency ?? OverlayBackgroundPolicy.defaultTransparency)
+                            }
+                    case .scale:
+                        WeatherScaleView(metric: settings.effectiveWeatherScaleMetric, snapshot: store.weather.snapshot, textOpacity: opacity.text)
+                            .frame(height: DewPointScalePolicy.displayHeight(forCanvasHeight: size.height))
+                    case .captureDate:
+                        if let date = model.currentAsset?.creationDate {
+                            CaptureDateBadge(date: date, image: model.currentImage, textStrokeSettings: settings).padding(12)
+                        }
+                    }
+                }
+            }
     }
 
     private func overlayItems(for settings: OverlaySettings) -> [OverlayStackItem] {
@@ -663,11 +800,11 @@ struct PlayerView: View {
         )
     }
     private var lockBadge: some View { VStack { Spacer(); Label("Controls locked", systemImage: "lock.fill").font(.caption).foregroundStyle(.white.opacity(0.7)).padding(10).background(.black.opacity(0.35), in: Capsule()).padding(.bottom, 24) } }
-    private var tapGesture: some Gesture { TapGesture(count: 2).onEnded { if !isLocked, let asset = model.currentAsset?.appleAsset { Task { await store.library.toggleFavorite(asset) } } }
-        .exclusively(before: TapGesture(count: 1).onEnded { if !isLocked { controlsVisible.toggle(); scheduleHide() } }) }
+    private var tapGesture: some Gesture { TapGesture(count: 2).onEnded { if !isLocked && !isEditingLayout, let asset = model.currentAsset?.appleAsset { Task { await store.library.toggleFavorite(asset) } } }
+        .exclusively(before: TapGesture(count: 1).onEnded { if !isLocked && !isEditingLayout { controlsVisible.toggle(); scheduleHide() } }) }
     private var swipeGesture: some Gesture {
         DragGesture(minimumDistance: 40).onEnded { value in
-            guard !isLocked else { return }
+            guard !isLocked && !isEditingLayout else { return }
             if let direction = SwipeNavigation.direction(for: value.translation) {
                 // SwiftUI may deliver the same completed drag to overlapping
                 // gesture recognizers during a transition. Treat a close pair
@@ -684,11 +821,12 @@ struct PlayerView: View {
     }
     private var magnifyGesture: some Gesture {
         MagnifyGesture().updating($gestureZoom) { value, state, _ in
-            state = InteractivePhotoZoomPolicy.scale(for: value.magnification)
+            if !isEditingLayout { state = InteractivePhotoZoomPolicy.scale(for: value.magnification) }
         }
     }
     private func scheduleHide() {
         hideTask?.cancel()
+        guard !isEditingLayout else { return }
         let delay = store.settings.controlAutoHide
         guard ControlsAutoHidePolicy.shouldSchedule(
             alwaysVisible: store.settings.overlays.alwaysVisible,
@@ -733,7 +871,7 @@ struct PlayerView: View {
     }
 
     private var playbackGateAllows: Bool {
-        powerAllowsPlayback && scheduleMonitor.isPlaybackAllowed && scenePhase == .active
+        powerAllowsPlayback && scheduleMonitor.isPlaybackAllowed && scenePhase == .active && !isEditingLayout
     }
 
     private func updatePowerState() {

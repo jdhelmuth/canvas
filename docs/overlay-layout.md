@@ -1,0 +1,9 @@
+# Movable overlay layouts — 1.0.7 (72)
+
+Open the slideshow controls and choose **Edit Layout**. Drag a whole clock/details, weather, weather-scale, or standalone photo-date block. Tap a block to choose its automatic, left, or right text alignment. Snap is optional. **Done** saves both orientation drafts; **Cancel** discards them. **Reset** resets only the current orientation. Rotate while editing to arrange the other orientation. Per-photo dates in multi-photo tiles remain attached to their photos.
+
+Portrait defaults to clock/details at bottom left with weather immediately to the right. The default group fits narrower viewports and reserves space for enabled scale/date blocks. Untouched landscape uses the existing composition. Custom placements are normalized fractions of the block's available travel inside safe bounds, so changed weather content or window dimensions cannot push the block offscreen. Users can intentionally overlap custom blocks.
+
+`OverlaySettings.layouts` is optional for backward-compatible saved settings and presets. It contains independent orientation dictionaries and a snapping preference. Editing uses value-type drafts; drag updates never write preferences. Done changes only the overlay layout field. Playback and media gestures are gated while editing; the user's play/pause preference, album connections and shuffle cycle remain unchanged. Existing power/schedule/night-dimming behavior is retained.
+
+Validation covers geometry down to 320 points, clamping, snapping, alignment overrides, older-settings decode, orientation reset isolation, actual UI dragging/cancel/save/rotation/relaunch/foreground, missing/long weather, and a 1,307-photo shuffle cycle across an overlay edit. Run the full repository aggregate, including existing album recovery and exit-control regression tests, before release.

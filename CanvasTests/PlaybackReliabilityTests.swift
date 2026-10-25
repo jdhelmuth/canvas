@@ -815,6 +815,40 @@ final class FullShuffleTests: XCTestCase {
         XCTAssertFalse(model.isPlaying, "Stop only after every selected album was available")
     }
 
+    func testOverlayEditingPreservesShuffleProgressAndCurrentFrame() async throws {
+        let suite = "canvas-overlay-shuffle-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cycleStore = ShuffleCycleStore(defaults: defaults)
+        var value = settings
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in self.items(1307) },
+            imageLoader: { _, _ in UIImage() }, cycleStore: cycleStore)
+        defer { model.stop() }
+        await model.reload()
+        for _ in 0..<8 {
+            let frame = model.displayedFrame?.id
+            XCTAssertTrue(model.next()); await settle(model, after: frame)
+        }
+        let cycle = cycleStore.load()
+        let asset = model.currentAsset?.id
+        model.setPlaybackAllowed(false)
+        var layouts = OverlayLayouts()
+        var portrait = OverlayOrientationLayout()
+        portrait[.clock] = OverlayPlacement(x: 1, y: 0.3, alignment: .right)
+        layouts.set(portrait, portrait: true)
+        value.overlays.layouts = layouts
+        await model.updateSettings(value)
+        model.setPlaybackAllowed(true)
+        XCTAssertEqual(model.currentAsset?.id, asset)
+        XCTAssertEqual(cycleStore.load()?.orderedIDs, cycle?.orderedIDs)
+        XCTAssertEqual(cycleStore.load()?.displayedIDs, cycle?.displayedIDs)
+        XCTAssertEqual(cycleStore.load()?.lastGroupIDs, cycle?.lastGroupIDs)
+        let priorFrame = model.displayedFrame?.id
+        XCTAssertTrue(model.next())
+        await settle(model, after: priorFrame)
+        XCTAssertFalse(cycle?.displayedIDs.contains(model.currentAsset?.id ?? "") ?? true)
+    }
+
     func testUnavailableAlbumDoesNotRestartSmallerCycleAndRecoversAfterRelaunch() async throws {
         let suite = "canvas-partial-library-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
