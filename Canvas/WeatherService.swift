@@ -1158,7 +1158,7 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
         weatherProvider: CanvasWeatherProviding? = nil,
         airQualityProvider: CanvasAirQualityProviding = CachedCanvasAirQualityProvider(),
         autoRequestLocation: Bool = true,
-        locationManager: CLLocationManager? = nil,
+        locationManager injectedLocationManager: CLLocationManager? = nil,
         initialLocation: CLLocation? = nil,
         ambientPollingInterval: TimeInterval = CanvasAmbientRefreshPolicy.pollingInterval,
         defaults: UserDefaults = .standard,
@@ -1166,7 +1166,7 @@ final class CanvasWeatherService: NSObject, ObservableObject, @MainActor CLLocat
     ) {
         self.weatherProvider = weatherProvider
         self.airQualityProvider = airQualityProvider
-        self.locationManager = locationManager ?? CLLocationManager()
+        self.locationManager = injectedLocationManager ?? CLLocationManager()
         self.autoRequestLocation = autoRequestLocation
         self.locationOverride = initialLocation
         self.lastLocation = initialLocation
