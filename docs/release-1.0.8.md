@@ -1,9 +1,11 @@
-# Canvas Slideshow 1.0.8 (73)
+# Canvas Slideshow 1.0.8 (74)
 
-Universal iPhone and iPad support. The app target is `TARGETED_DEVICE_FAMILY` 1,2. Compact-width Home, onboarding, slideshow chrome, and overlay bounds use size-class and viewport metrics rather than iPad-only safe-area assumptions. iPhone orientations are portrait plus landscape; iPad still allows upside-down. Launch screen generation is unchanged.
+Canvas now supports iPhone and iPad. Compact-width Home, onboarding, slideshow controls, and overlay editing respect device safe areas. iPhone supports portrait and landscape; existing iPad orientations and features remain available.
 
-**Build number:** 73 is the next integer after App Store Connect’s verified live 1.0.7 (72) and previously uploaded 71. **Re-check App Store Connect before any upload.** Uploaded-but-unused builds still occupy the number.
+Release validation found that the original build 73 clipped onboarding content on small iPhones in landscape. Build 74 makes both onboarding pages scroll when needed, preserving the portrait composition and keeping Continue/Back outside the scrolling content. The drag regression test now uses a viewport-sized translation so a correct phone-edge clamp is not mistaken for a drag defect. A landscape onboarding regression checks that the explanation and album picker stay reachable.
 
-This PR does not archive, upload, or submit. iPhone 6.9" App Store screenshots are not generated in this repository (no fastlane snapshot lane). Capture them on an iPhone 16 Pro Max / 6.9" simulator before submission.
+Build 73 was already processed in TestFlight. Build 74 is required for the production layout correction; use one Manual Public Release App Store-eligible build for both TestFlight and App Review. Preserve automatic release after approval and the existing iPad listing. Five iPhone screenshots cover welcome, included albums, portrait slideshow, landscape slideshow, and overlay settings using actual app UI and bundled public-domain imagery.
 
-Required checks: iPhone and iPad simulator builds, existing tests on a Mac with Xcode, ASC live build preflight, and one App Store-eligible binary for TestFlight and App Review.
+Required validation: complete local native suite with simulator health through teardown, phone and iPad coverage, smallest-phone landscape/portrait inspection, Release build, release requirements and live build-number preflight. Release receipts and screenshots are kept with the November 1 release task.
+
+Limitations: simulator tests do not prove live WeatherKit service or every real PhotoKit/iCloud scenario. Existing physical-device-only diagnostics are opt-in and do not run against the user's active devices during this release.

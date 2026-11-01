@@ -47,14 +47,21 @@ final class CanvasUITests: XCTestCase {
             button.tap()
             XCTAssertTrue(app.buttons["layout-done"].waitForExistence(timeout: 5))
         }
-        func move() {
+        @discardableResult func move() -> CGFloat {
             let handle = app.descendants(matching: .any).matching(identifier: "layout-move-clock").firstMatch
             XCTAssertTrue(handle.waitForExistence(timeout: 5))
             let start = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            start.press(forDuration: 0.15, thenDragTo: start.withOffset(CGVector(dx: 300, dy: -280)))
+            // Keep this translation inside both phone and tablet viewports.
+            // A fixed iPad-sized drag hits the iPhone edge and correctly clamps.
+            let window = app.windows.firstMatch.frame
+            let dx = min(300, window.width * 0.2)
+            let dy = -min(280, window.height * 0.25)
+            start.press(forDuration: 0.15, thenDragTo: start.withOffset(CGVector(dx: dx, dy: dy)))
+            return dx
         }
-        edit(); move()
-        XCTAssertEqual(clock.frame.minX, initial.minX + 300, accuracy: 4, "Block must follow the finger without a moving local coordinate origin")
+        edit()
+        let translation = move()
+        XCTAssertEqual(clock.frame.minX, initial.minX + translation, accuracy: 4, "Block must follow the finger without a moving local coordinate origin")
         app.buttons["layout-cancel"].tap()
         assertClockX(initial.minX)
         // Controls stay visible on exit from the editor.
@@ -226,6 +233,35 @@ final class CanvasUITests: XCTestCase {
         let app = XCUIApplication(); app.launchArguments = ["--canvas-ui-reset"]; app.launch()
         XCTAssertTrue(app.staticTexts["Canvas"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout: 3))
+    }
+
+    func testOnboardingLandscapeContentRemainsReachable() {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-onboarding-album"]
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let explanation = app.staticTexts["Canvas turns this device into a calm, private digital frame. Choose the albums you love and let the moments unfold."]
+        XCTAssertTrue(explanation.waitForExistence(timeout: 5))
+        let page = app.scrollViews["onboarding-welcome"]
+        XCTAssertTrue(page.exists)
+        func scroll(_ element: XCUIElement) {
+            element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+                .press(forDuration: 0.05, thenDragTo: element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
+        }
+        for _ in 0..<4 where explanation.frame.maxY > app.buttons["Continue"].frame.minY {
+            scroll(page)
+        }
+        XCTAssertLessThanOrEqual(explanation.frame.maxY, app.buttons["Continue"].frame.minY)
+        XCTAssertTrue(app.buttons["Continue"].isHittable)
+        app.buttons["Continue"].tap()
+        let selectAlbums = app.buttons["Select albums"]
+        for _ in 0..<4 where !selectAlbums.isHittable { scroll(app.scrollViews["onboarding-albums"]) }
+        XCTAssertTrue(selectAlbums.isHittable)
+        selectAlbums.tap()
+        XCTAssertTrue(app.navigationBars["Choose albums"].waitForExistence(timeout: 5))
     }
 
     func testHomeAndSettingsSurface() {

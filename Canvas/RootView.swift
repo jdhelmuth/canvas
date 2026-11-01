@@ -99,8 +99,8 @@ struct OnboardingView: View {
                 }
                 .padding(.horizontal, gutter).padding(.top, 16)
                 TabView(selection: $step) {
-                    welcome.tag(0)
-                    albums.tag(1)
+                    onboardingPage("onboarding-welcome") { welcome }.tag(0)
+                    onboardingPage("onboarding-albums") { albums }.tag(1)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .always))
             }
@@ -159,6 +159,20 @@ struct OnboardingView: View {
         // an empty or stale selection.
         .onChange(of: store.settings.selectedAlbums) { oldSelection, newSelection in
             if oldSelection != newSelection { albumsConfirmed = false }
+        }
+    }
+
+    // Preserve the spacious portrait composition, while allowing every word
+    // and album choice to remain reachable in landscape or at larger text sizes.
+    private func onboardingPage<Content: View>(_ identifier: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        GeometryReader { viewport in
+            ScrollView {
+                content()
+                    .frame(minHeight: max(0, viewport.size.height - 48))
+                    .padding(.top, 16)
+                    .padding(.bottom, 32)
+            }
+            .accessibilityIdentifier(identifier)
         }
     }
 
