@@ -52,7 +52,9 @@ enum OverlayLayoutGeometry {
         let left = max(24, insets.leading + 12)
         let right = max(24, insets.trailing + 12)
         let top = max(80, insets.top + 12)
-        let bottom = max(24, insets.bottom + 12)
+        // 34pt covers the typical iPhone home-indicator inset when the
+        // overlay canvas is laid out on the full display.
+        let bottom = max(34, insets.bottom + 12)
         return CGRect(x: left, y: top, width: max(1, size.width - left - right), height: max(1, size.height - top - bottom))
     }
     static func fittedSize(_ natural: CGSize, in bounds: CGRect, maxWidth: CGFloat? = nil) -> CGSize {

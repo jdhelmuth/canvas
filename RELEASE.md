@@ -29,7 +29,7 @@ If App Store Connect cannot be queried, do not guess or upload. Restore the cred
 
 ## TestFlight smoke test
 
-Test both a fresh install and an upgrade from the previous public build on a supported iPad.
+Test both a fresh install and an upgrade from the previous public build on a supported iPhone and iPad.
 
 - Complete onboarding with Full Photos access, then repeat with Limited Photos access.
 - Select regular/smart/shared albums; start, pause, resume, swipe, shuffle, and rotate the slideshow.
@@ -55,8 +55,8 @@ Known limitations
 - <only actionable, material limitations>
 
 Verified
-- Fresh install: <device / iPadOS>
-- Upgrade: <from version / device / iPadOS>
+- Fresh install: <device / iOS>
+- Upgrade: <from version / device / iOS>
 - TestFlight smoke test: <pass / date / tester>
 ```
 

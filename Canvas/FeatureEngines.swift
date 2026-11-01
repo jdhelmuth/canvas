@@ -1,5 +1,6 @@
 import Foundation
 import Photos
+import SwiftUI
 import UIKit
 
 struct QueueAlgorithm {
@@ -641,6 +642,35 @@ struct LivePhotoPlaybackState {
     }
 }
 
+/// Shared compact-width metrics used by Home, onboarding, and chrome.
+/// Size class and viewport width keep iPhone, Split View, and Stage Manager
+/// on the same layout path instead of branching on device idiom.
+enum CanvasLayoutMetrics {
+    static let compactWidthBreakpoint: CGFloat = 700
+    static let regularHorizontalInset: CGFloat = 28
+    static let compactHorizontalInset: CGFloat = 16
+
+    static func isCompactWidth(_ width: CGFloat) -> Bool {
+        width < compactWidthBreakpoint
+    }
+
+    static func horizontalInset(forWidth width: CGFloat) -> CGFloat {
+        isCompactWidth(width) ? compactHorizontalInset : regularHorizontalInset
+    }
+
+    static func horizontalInset(sizeClass: UserInterfaceSizeClass?) -> CGFloat {
+        sizeClass == .compact ? compactHorizontalInset : regularHorizontalInset
+    }
+
+    static func homeMarkSize(sizeClass: UserInterfaceSizeClass?) -> CGFloat {
+        sizeClass == .compact ? 36 : 46
+    }
+
+    static func playbackThumbSize(sizeClass: UserInterfaceSizeClass?) -> CGFloat {
+        sizeClass == .compact ? 88 : 116
+    }
+}
+
 /// Maps the full-size slideshow canvas into the compact settings preview
 /// without changing the relative size or safe-area placement of overlays.
 /// Keeping this calculation pure also makes orientation and scaling regressions
@@ -811,7 +841,8 @@ struct HomeToolbarButtonFrames: Equatable {
 /// its hit regions remain inside the safe-area-aware header in both portrait
 /// and landscape. The view uses the same inset/size constants.
 enum HomeToolbarHitRegion {
-    static func frames(in size: CGSize, horizontalInset: CGFloat = 28, buttonSize: CGFloat = 46, spacing: CGFloat = 12) -> HomeToolbarButtonFrames {
+    static func frames(in size: CGSize, horizontalInset: CGFloat? = nil, buttonSize: CGFloat = 46, spacing: CGFloat = 12) -> HomeToolbarButtonFrames {
+        let horizontalInset = horizontalInset ?? CanvasLayoutMetrics.horizontalInset(forWidth: size.width)
         let right = max(horizontalInset + buttonSize, size.width - horizontalInset)
         let settings = CGRect(x: right - buttonSize, y: 0, width: buttonSize, height: buttonSize)
         let manage = CGRect(x: settings.minX - spacing - buttonSize, y: 0, width: buttonSize, height: buttonSize)
@@ -823,7 +854,7 @@ enum HomeToolbarHitRegion {
 /// viewport instead of ending early and leaving a fixed bottom spacer.
 enum HomeContentGeometry {
     /// GeometryReader is already inside SwiftUI's safe-area-adjusted region
-    /// on some iPadOS versions, so its reported bottom inset can be zero even
+    /// on some iOS versions, so its reported bottom inset can be zero even
     /// while the window still reserves the home-indicator area. Keep a small
     /// edge extension in that case so the album card owns the remaining
     /// display instead of ending above a black strip.
@@ -844,6 +875,17 @@ enum HomeContentGeometry {
 /// Keeps the Home playback card's compact summary tied to the same persisted
 /// settings that drive the slideshow. The view can render this value without
 /// duplicating transition names or falling back to a stale default.
+enum HomeAlbumGridPolicy {
+    static func columns(count: Int, size: CGSize) -> Int {
+        if count <= 1 { return 1 }
+        if count == 4 { return 2 }
+        if count == 2 { return size.width > size.height ? 2 : 1 }
+        if CanvasLayoutMetrics.isCompactWidth(size.width) { return 2 }
+        if count == 3 { return size.width > size.height ? 3 : 2 }
+        return size.width > size.height ? 3 : 2
+    }
+}
+
 enum HomePlaybackSummary {
     static func label(queueMode: QueueMode, transition: TransitionStyle) -> String {
         "\(queueMode.title) · \(transition.title)"

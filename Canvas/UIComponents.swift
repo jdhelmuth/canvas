@@ -4,7 +4,7 @@ import UIKit
 
 /// SwiftUI has no built-in text outline modifier. Rendering a small ring of
 /// colored copies behind the original glyph gives the same readable outline
-/// treatment on iPadOS while keeping the control lightweight and animatable.
+/// treatment on iOS while keeping the control lightweight and animatable.
 struct TextStrokeModifier: ViewModifier {
     let color: Color
     let width: CGFloat
@@ -806,7 +806,7 @@ struct AppMark: View {
 
     private static let bundledAppIcon: UIImage? = {
         let info = Bundle.main.infoDictionary
-        let iconDictionaries = [info?["CFBundleIcons~ipad"], info?["CFBundleIcons"]]
+        let iconDictionaries = [info?["CFBundleIcons"], info?["CFBundleIcons~ipad"]]
         for value in iconDictionaries {
             guard let icons = value as? [String: Any],
                   let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],

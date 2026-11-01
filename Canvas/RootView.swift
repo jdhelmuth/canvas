@@ -25,7 +25,6 @@ struct RootView: View {
 #endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
         .alert("Saved setup recovery", isPresented: Binding(
             get: { store.settingsStore.recoveryMessage != nil },
             set: { if !$0 { store.settingsStore.dismissRecoveryNotice() } }
@@ -80,10 +79,13 @@ struct RootView: View {
 
 struct OnboardingView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var step = 0
     @State private var isRequesting = false
     @State private var showAlbumPicker = false
     @State private var albumsConfirmed = false
+
+    private var gutter: CGFloat { CanvasLayoutMetrics.horizontalInset(sizeClass: horizontalSizeClass) }
 
     var body: some View {
         ZStack {
@@ -95,7 +97,7 @@ struct OnboardingView: View {
                     Spacer()
                     Text("\(step + 1) / 2").font(.footnote.monospaced()).foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 28).padding(.top, 24)
+                .padding(.horizontal, gutter).padding(.top, 16)
                 TabView(selection: $step) {
                     welcome.tag(0)
                     albums.tag(1)
@@ -104,7 +106,7 @@ struct OnboardingView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 14) {
+            let back = Group {
                 if step > 0 {
                     Button("Back") {
                         withAnimation {
@@ -113,31 +115,41 @@ struct OnboardingView: View {
                         }
                     }.buttonStyle(.secondaryCanvas)
                 }
-                Spacer()
-                Button(step == 1 && albumsConfirmed ? "Start Canvas" : "Continue") {
-                    if step == 1 && store.settings.selectedAlbums.isEmpty && !store.library.authorization.canRead {
-                        isRequesting = true
-                        Task {
-                            await store.library.requestAccess()
-                            isRequesting = false
-                            // The chooser also contains Google Photos, so Apple access being denied
-                            // must not strand onboarding.
-                            showAlbumPicker = true
-                        }
-                    } else if step == 1 && store.settings.selectedAlbums.isEmpty {
-                        showAlbumPicker = true
-                    } else if step == 1 && !albumsConfirmed {
-                        withAnimation { albumsConfirmed = true }
-                    } else if step < 1 {
-                        withAnimation { step += 1 }
-                    } else {
-                        completeOnboarding()
-                    }
-                }
-                .buttonStyle(.primaryCanvas)
-                .disabled(isRequesting)
             }
-            .padding(.horizontal, 28).padding(.bottom, 20)
+            let forward = Button(step == 1 && albumsConfirmed ? "Start Canvas" : "Continue") {
+                if step == 1 && store.settings.selectedAlbums.isEmpty && !store.library.authorization.canRead {
+                    isRequesting = true
+                    Task {
+                        await store.library.requestAccess()
+                        isRequesting = false
+                        // The chooser also contains Google Photos, so Apple access being denied
+                        // must not strand onboarding.
+                        showAlbumPicker = true
+                    }
+                } else if step == 1 && store.settings.selectedAlbums.isEmpty {
+                    showAlbumPicker = true
+                } else if step == 1 && !albumsConfirmed {
+                    withAnimation { albumsConfirmed = true }
+                } else if step < 1 {
+                    withAnimation { step += 1 }
+                } else {
+                    completeOnboarding()
+                }
+            }
+            .buttonStyle(.primaryCanvas)
+            .disabled(isRequesting)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) {
+                    back
+                    Spacer()
+                    forward
+                }
+                VStack(spacing: 10) {
+                    forward
+                    back
+                }
+            }
+            .padding(.horizontal, gutter).padding(.bottom, 12)
             .background(.ultraThinMaterial)
         }
         .sheet(isPresented: $showAlbumPicker) { AlbumPickerView(isOnboarding: true) }
@@ -155,19 +167,21 @@ struct OnboardingView: View {
             Spacer()
             AppMark(size: 112)
             Text("Your photos,\nbeautifully at rest.")
-                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .font(.largeTitle.weight(.bold))
+                .fontDesign(.rounded)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Canvas turns your iPad into a calm, private digital frame. Choose the albums you love and let the moments unfold.")
+            Text("Canvas turns this device into a calm, private digital frame. Choose the albums you love and let the moments unfold.")
                 .font(.title3).foregroundStyle(.secondary).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
-        }.padding(.horizontal, 36)
+        }.padding(.horizontal, gutter)
     }
 
     private var albums: some View {
         VStack(alignment: .leading, spacing: 18) {
             Spacer()
             Image(systemName: "rectangle.stack.badge.plus").font(.system(size: 64)).foregroundStyle(.blue.gradient)
-            Text("Choose your first albums").font(.system(size: 36, weight: .bold, design: .rounded))
+            Text("Choose your first albums").font(.title.weight(.bold)).fontDesign(.rounded).fixedSize(horizontal: false, vertical: true)
             Text(albumsConfirmed ? "Your albums are ready. Start Canvas now, or go back to change the selection." : (store.settings.selectedAlbums.isEmpty ? "Start with Recents, Favorites, an included album such as Landscapes, or any albums from your library." : "\(store.settings.selectedAlbums.count) album\(store.settings.selectedAlbums.count == 1 ? "" : "s") selected"))
                 .font(.title3).foregroundStyle(.secondary)
             if !store.settings.selectedAlbums.isEmpty {
@@ -187,7 +201,7 @@ struct OnboardingView: View {
             }
             Button { showAlbumPicker = true } label: { Label("Select albums", systemImage: "plus") }.buttonStyle(.secondaryCanvas)
             Spacer()
-        }.padding(.horizontal, 36)
+        }.padding(.horizontal, gutter)
     }
 
     private func completeOnboarding() {
@@ -199,6 +213,7 @@ struct OnboardingView: View {
 
 struct LibraryHomeView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showAlbumPicker = false
     @State private var showSettings = false
     @State private var showPlayer = false
@@ -237,13 +252,11 @@ struct LibraryHomeView: View {
                                 permissionCard
                             }
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, CanvasLayoutMetrics.horizontalInset(sizeClass: horizontalSizeClass))
                         .padding(.bottom, 0)
                         .frame(minHeight: viewport.size.height, alignment: .top)
                     }
-                    .ignoresSafeArea(edges: .bottom)
                 }
-                .ignoresSafeArea(edges: .bottom)
             }
             .navigationBarHidden(true)
             // Keep the toolbar out of the scrolling/clipped content layer.
@@ -251,7 +264,7 @@ struct LibraryHomeView: View {
             // adjustment from covering the two top-right hit regions.
             .safeAreaInset(edge: .top, spacing: 0) {
                 header
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, CanvasLayoutMetrics.horizontalInset(sizeClass: horizontalSizeClass))
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity)
                     .background(.regularMaterial)
@@ -315,16 +328,22 @@ struct LibraryHomeView: View {
             }
             .task(id: "\(previewKey)#\(previewSeed)") { await loadPreviewImages() }
         }
-        .ignoresSafeArea()
     }
 
     private var header: some View {
         HStack(alignment: .center) {
             HStack(spacing: 12) {
-                AppMark(size: 46)
-                VStack(alignment: .leading) { Text("Canvas").font(.title.weight(.bold)); Text("Your quiet gallery").font(.subheadline).foregroundStyle(.secondary) }
+                AppMark(size: CanvasLayoutMetrics.homeMarkSize(sizeClass: horizontalSizeClass))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Canvas").font(horizontalSizeClass == .compact ? .title2.weight(.bold) : .title.weight(.bold))
+                    Text("Your quiet gallery")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
             }
-            Spacer()
+            Spacer(minLength: 8)
             HStack(spacing: 12) {
                 Button { showAlbumPicker = true } label: { Image(systemName: "rectangle.stack.badge.plus").font(.title3).frame(width: 46, height: 46) }
                     .buttonStyle(.plain)
@@ -348,7 +367,7 @@ struct LibraryHomeView: View {
             else {
                 Button { startFrame() } label: {
                     playbackCard
-                        .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .compact ? 120 : 148, alignment: .leading)
                 }
                     .buttonStyle(.plain)
                     .disabled(isStartingFrame)
@@ -367,7 +386,7 @@ struct LibraryHomeView: View {
     private func selectedAlbumGrid(height: CGFloat) -> some View {
         GeometryReader { proxy in
             let count = store.settings.selectedAlbums.count
-            let columns = albumGridColumns(count: count, size: proxy.size)
+            let columns = HomeAlbumGridPolicy.columns(count: count, size: proxy.size)
             let rows = max(1, Int(ceil(Double(count) / Double(columns))))
             let gridHeight = max(height, CGFloat(rows) * 190 + CGFloat(max(0, rows - 1)) * 14)
             let tileHeight = (gridHeight - CGFloat(max(0, rows - 1)) * 14) / CGFloat(rows)
@@ -386,14 +405,6 @@ struct LibraryHomeView: View {
         return CGFloat(rows) * 190 + CGFloat(max(0, rows - 1)) * 14
     }
 
-    private func albumGridColumns(count: Int, size: CGSize) -> Int {
-        if count <= 1 { return 1 }
-        if count == 4 { return 2 }
-        if count == 2 { return size.width > size.height ? 2 : 1 }
-        if count == 3 { return size.width > size.height ? 3 : 2 }
-        return size.width > size.height ? 3 : 2
-    }
-
     private func emptyState(minimumHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
             EmptyAlbumsArtwork()
@@ -401,8 +412,10 @@ struct LibraryHomeView: View {
                 .padding(.bottom, 30)
 
             Text("Bring your favorite moments into view")
-                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .font(.title.weight(.bold))
+                .fontDesign(.rounded)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 12)
 
             Text("Choose albums from Apple Photos, Google Photos, or an included set such as Landscapes, Cityscapes, or Abstract, then Canvas turns them into a calm, always-ready frame.")
@@ -424,9 +437,9 @@ struct LibraryHomeView: View {
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 44)
-        .frame(maxWidth: .infinity, minHeight: max(minimumHeight, 520), alignment: .center)
+        .padding(.horizontal, CanvasLayoutMetrics.horizontalInset(sizeClass: horizontalSizeClass))
+        .padding(.vertical, horizontalSizeClass == .compact ? 24 : 44)
+        .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .center)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("empty-albums-state")
     }
@@ -444,7 +457,8 @@ struct LibraryHomeView: View {
     }
 
     private var playbackCard: some View {
-        HStack(spacing: 18) {
+        let thumb = CanvasLayoutMetrics.playbackThumbSize(sizeClass: horizontalSizeClass)
+        return HStack(spacing: 16) {
             ZStack {
                 if previewImages.isEmpty {
                     RoundedRectangle(cornerRadius: 18).fill(.quaternary)
@@ -453,24 +467,30 @@ struct LibraryHomeView: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 116, height: 116)
+                        .frame(width: thumb, height: thumb)
                         .clipped()
                 }
                 Image(systemName: "play.fill").font(.title).foregroundStyle(.white).padding(20).background(.black.opacity(0.22), in: Circle())
             }
-            .frame(width: 116, height: 116)
+            .frame(width: thumb, height: thumb)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             VStack(alignment: .leading, spacing: 7) {
-                Text("Start your frame").font(.title2.weight(.bold))
-                Text("\(store.settings.selectedAlbums.count) album\(store.settings.selectedAlbums.count == 1 ? "" : "s")  ·  \(store.settings.photoDuration.cleanSeconds) photos").foregroundStyle(.secondary)
+                Text("Start your frame")
+                    .font(.title2.weight(.bold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(store.settings.selectedAlbums.count) album\(store.settings.selectedAlbums.count == 1 ? "" : "s")  ·  \(store.settings.photoDuration.cleanSeconds) photos")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Label(
                     HomePlaybackSummary.label(queueMode: store.settings.queueMode, transition: store.settings.transition),
                     systemImage: "shuffle"
                 )
                 .font(.subheadline)
                 .foregroundStyle(.orange)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
             }
-            Spacer()
+            Spacer(minLength: 4)
             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
         }.padding(16).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
     }
@@ -1088,7 +1108,7 @@ struct GooglePhotosImportView: View {
                 case .nativeApp:
                     Text("Canvas handed the session to the Google Photos app. Return here after selecting items and tapping Done.")
                 case .browserFallback:
-                    Text("iPadOS did not resolve the Google Photos app link, so Canvas opened the supported Safari fallback. Return here after selecting items and tapping Done.")
+                    Text("iOS did not resolve the Google Photos app link, so Canvas opened the supported Safari fallback. Return here after selecting items and tapping Done.")
                 case nil:
                     Text("Opening the Google Photos picker…")
                 }

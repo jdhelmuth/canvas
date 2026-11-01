@@ -511,7 +511,7 @@ enum GoogleImportFailureCategory: String, CaseIterable, Equatable, Identifiable 
     var guidance: String {
         switch self {
         case .rateLimited: "Google asked Canvas to slow down; retry unavailable items later."
-        case .transientNetwork: "The connection interrupted the download; retry when the iPad is online."
+        case .transientNetwork: "The connection interrupted the download; retry when this device is online."
         case .authorization: "Reconnect Google Photos before trying these items again."
         case .accessDenied: "Google did not allow Canvas to download these items from the selected source."
         case .notFound: "Google no longer returned these media files for this selection."

@@ -452,7 +452,7 @@ struct SettingsView: View {
                         .padding(.vertical, 4)
                     }
                     weatherStatusRow
-                    Text("A connected Ambient station supplies the weather. Apple Weather is used only when no station is connected. Air quality is measured near this iPad.")
+                    Text("A connected Ambient station supplies the weather. Apple Weather is used only when no station is connected. Air quality is measured near this device.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Toggle(
@@ -642,14 +642,14 @@ struct SettingsView: View {
                 Toggle("Shuffle", isOn: binding(\.audioShuffle))
                 Toggle("Repeat", isOn: binding(\.audioRepeat))
             }
-            Text("Apple Music playback is not enabled because iPadOS media-library access and subscription policy require a separate user-authorized integration. Local audio works without a subscription.").font(.footnote).foregroundStyle(.secondary)
+            Text("Apple Music playback is not enabled because iOS media-library access and subscription policy require a separate user-authorized integration. Local audio works without a subscription.").font(.footnote).foregroundStyle(.secondary)
         }
     }
     private var accessibilitySection: some View {
         Section("Accessibility") {
             Toggle("Lock controls in slideshow", isOn: binding(\.lockControls))
             Picker("Appearance", selection: binding(\.appearanceMode)) { ForEach(AppearanceMode.allCases) { Text($0.title).tag($0) } }
-            Text("Canvas follows Dynamic Type, VoiceOver labels, Reduce Motion, pointer, keyboard, and iPad multitasking conventions.").font(.footnote).foregroundStyle(.secondary)
+            Text("Canvas follows Dynamic Type, VoiceOver labels, Reduce Motion, pointer, keyboard, and iPhone and iPad multitasking conventions.").font(.footnote).foregroundStyle(.secondary)
         }
     }
     private var presetsSection: some View {
@@ -682,7 +682,7 @@ struct SettingsView: View {
     private var privacySection: some View {
         Section("Storage & Privacy") {
             Label("Private by default", systemImage: "lock.shield.fill")
-            Text("Canvas stores preferences and exclusions locally. The included Landscapes, Cityscapes, and Abstract albums are bundled with the app and never leave this iPad. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. With Full Photos access, Canvas makes non-destructive Apple Photos copies only in a verified Canvas-owned album; those assets also appear in All Photos. Canvas never adopts an unverified same-title album, deletes Apple Photos assets, or deletes Apple Photos albums. WeatherKit sends location to Apple for current conditions; Ambient sends your personal API key and station identifier to ClimateIQ's secure proxy, while the shared application key stays server-side. AQI sends an approximate location to ClimateIQ so it can select the nearest preliminary AirNow monitoring site. Canvas has no analytics, ads, or tracking.")
+            Text("Canvas stores preferences and exclusions locally. The included Landscapes, Cityscapes, and Abstract albums are bundled with the app and never leave this device. Google Photos access is opt-in; selected files are downloaded to this device for reliable playback and OAuth tokens stay in Keychain. With Full Photos access, Canvas makes non-destructive Apple Photos copies only in a verified Canvas-owned album; those assets also appear in All Photos. Canvas never adopts an unverified same-title album, deletes Apple Photos assets, or deletes Apple Photos albums. WeatherKit sends location to Apple for current conditions; Ambient sends your personal API key and station identifier to ClimateIQ's secure proxy, while the shared application key stays server-side. AQI sends an approximate location to ClimateIQ so it can select the nearest preliminary AirNow monitoring site. Canvas has no analytics, ads, or tracking.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -897,6 +897,7 @@ struct SettingsView: View {
 /// pickers, and weather/cache updates are visible before leaving Settings.
 private struct ClockOverlayPreview: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var previewImages: [UIImage] = []
     @State private var previewItems: [CanvasMediaItem] = []
     @State private var isLandscape = UIScreen.main.bounds.width > UIScreen.main.bounds.height
@@ -948,7 +949,7 @@ private struct ClockOverlayPreview: View {
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .clipped()
                 }
-                .frame(height: 230)
+                .frame(height: horizontalSizeClass == .compact ? 168 : 230)
             }
             Text("Preview only — changes apply to the next frame immediately and are saved with your settings.")
                 .font(.caption)
@@ -1323,7 +1324,7 @@ struct ScheduleView: View {
     @EnvironmentObject private var store: AppStore
     var body: some View {
         List {
-            Section { Text("iPadOS may pause apps in the background and cannot guarantee wake or unlock. Canvas applies schedules while running and shows the next event here.").font(.footnote).foregroundStyle(.secondary) }
+            Section { Text("iOS may pause apps in the background and cannot guarantee wake or unlock. Canvas applies schedules while running and shows the next event here.").font(.footnote).foregroundStyle(.secondary) }
             ForEach(Array(store.settings.schedules.enumerated()), id: \.element.id) { index, rule in
                 NavigationLink { ScheduleEditor(rule: Binding(get: { store.settings.schedules[index] }, set: { store.settingsStore.settings.schedules[index] = $0 })) } label: {
                     VStack(alignment: .leading) { Text(rule.name).font(.headline); Text("\(rule.startMinutes / 60):\(String(format: "%02d", rule.startMinutes % 60)) to \(rule.stopMinutes / 60):\(String(format: "%02d", rule.stopMinutes % 60))").font(.caption).foregroundStyle(.secondary) }

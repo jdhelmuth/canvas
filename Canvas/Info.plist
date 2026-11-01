@@ -34,6 +34,12 @@
 	<string>Canvas needs access to display chosen albums, change Favorite status when you tap Favorite or Unfavorite, and safely create or reuse a verified Canvas-owned album for Google Photos you explicitly import. It never alters photo contents or deletes items.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

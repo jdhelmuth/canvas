@@ -4,6 +4,7 @@ import Combine
 import CoreLocation
 import Photos
 import PhotosUI
+import SwiftUI
 @testable import Canvas
 
 final class CanvasTests: XCTestCase {
@@ -2123,6 +2124,22 @@ final class CanvasTests: XCTestCase {
             XCTAssertEqual(frames.manageAlbums.height, 46)
             XCTAssertEqual(frames.settings.height, 46)
         }
+        let compact = HomeToolbarHitRegion.frames(in: CGSize(width: 390, height: 70))
+        XCTAssertGreaterThanOrEqual(compact.manageAlbums.minX, 16)
+        XCTAssertLessThanOrEqual(compact.settings.maxX, 390 - 16)
+        XCTAssertFalse(compact.manageAlbums.intersects(compact.settings))
+    }
+
+    func testCanvasLayoutMetricsUseCompactInsetsBelowBreakpoint() {
+        XCTAssertEqual(CanvasLayoutMetrics.horizontalInset(forWidth: 390), 16)
+        XCTAssertEqual(CanvasLayoutMetrics.horizontalInset(forWidth: 834), 28)
+        XCTAssertEqual(CanvasLayoutMetrics.horizontalInset(sizeClass: .compact), 16)
+        XCTAssertEqual(CanvasLayoutMetrics.horizontalInset(sizeClass: .regular), 28)
+        XCTAssertEqual(HomeAlbumGridPolicy.columns(count: 5, size: CGSize(width: 390, height: 844)), 2)
+        XCTAssertEqual(HomeAlbumGridPolicy.columns(count: 5, size: CGSize(width: 1024, height: 768)), 3)
+        let bounds = OverlayLayoutGeometry.bounds(size: CGSize(width: 390, height: 844), insets: EdgeInsets())
+        XCTAssertEqual(bounds.minY, 80, accuracy: 0.001)
+        XCTAssertEqual(bounds.maxY, 844 - 34, accuracy: 0.001)
     }
 
     func testFrameLaunchPolicyRequiresPlayableMedia() {

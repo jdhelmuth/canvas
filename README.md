@@ -1,19 +1,19 @@
 # Canvas
 
-Canvas Slideshow is a native iPadOS photo frame. It reads the Apple Photos albums you authorize, includes public-domain Landscapes, Cityscapes, and Abstract albums, keeps settings on device, and includes no analytics, ads, or tracking.
+Canvas Slideshow is a native iPhone and iPad photo frame. It reads the Apple Photos albums you authorize, includes public-domain Landscapes, Cityscapes, and Abstract albums, keeps settings on device, and includes no analytics, ads, or tracking.
 
 ## Build
 
 1. Install XcodeGen (`brew install xcodegen`) if needed.
 2. Run `xcodegen generate`.
-3. Open `Canvas.xcodeproj` in Xcode 26.6 and run on an iPad or iPad simulator.
+3. Open `Canvas.xcodeproj` in Xcode 26.6 and run on an iPhone or iPad simulator.
 
 Bundle ID: `com.johnhelmuth.canvas`. Google Photos Picker is optional; set `GOOGLE_PHOTOS_CLIENT_ID` and `GOOGLE_PHOTOS_CALLBACK_SCHEME` in `project.yml`.
 
 ```text
 xcrun simctl list devices available
-# Choose a dedicated iPad's UDID from that list:
-python3 scripts/check-local.py --all --simulator-id '<IPAD-UDID>'
+# Choose a dedicated simulator UDID from that list:
+python3 scripts/check-local.py --all --simulator-id '<SIMULATOR-UDID>'
 ```
 
 Store distribution is in [RELEASE.md](RELEASE.md).

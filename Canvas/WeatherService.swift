@@ -405,11 +405,11 @@ enum WeatherOverlayStatus: Equatable, Sendable {
         case .locationDenied:
             "Canvas cannot request weather until Location Services is allowed in Settings."
         case .locationRestricted:
-            "Location access is restricted on this iPad. Check Screen Time or device management settings."
+            "Location access is restricted on this device. Check Screen Time or device management settings."
         case .requestingLocation:
             "Waiting for the one-time location permission request."
         case .locating:
-            "Finding the iPad's current location."
+            "Finding this device's current location."
         case .fetching:
             "Loading current weather."
         case .live:
@@ -423,7 +423,7 @@ enum WeatherOverlayStatus: Equatable, Sendable {
         case .entitlementMissing:
             "WeatherKit access is not enabled for this signed build. In Apple Developer, enable both the WeatherKit capability and WeatherKit App Service for com.johnhelmuth.canvas, then install a newly signed build."
         case .locationUnavailable:
-            "The iPad did not return a usable location. Move somewhere with a clear location signal and retry."
+            "This device did not return a usable location. Move somewhere with a clear location signal and retry."
         case .ambientConfigurationMissing:
             "Enter your personal Ambient API key in Canvas Settings. ClimateIQ supplies the shared application key through its secure proxy."
         case .ambientUnavailable:

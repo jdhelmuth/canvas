@@ -1,4 +1,4 @@
-# Movable overlay layouts — 1.0.7 (72)
+# Movable overlay layouts — 1.0.8 (73)
 
 Open the slideshow controls and choose **Edit Layout**. Drag a whole clock/details, weather, weather-scale, or standalone photo-date block. Tap a block to choose its automatic, left, or right text alignment. Snap is optional. **Done** saves both orientation drafts; **Cancel** discards them. **Reset** resets only the current orientation. Rotate while editing to arrange the other orientation. Per-photo dates in multi-photo tiles remain attached to their photos.
 

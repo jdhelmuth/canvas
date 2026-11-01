@@ -66,10 +66,9 @@ struct PlayerView: View {
             if isLocked { lockBadge }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // The slideshow is a photo surface, not a safe-area content panel.
-        // Apply this at the container boundary so the GeometryReader that
-        // determines each tile's viewport receives the entire display.
-        .ignoresSafeArea()
+        // Photo surfaces ignore the safe area so the frame can fill the
+        // display. Overlay chrome stays inside the safe area so compact
+        // widths keep controls out of the status region and home indicator.
         .canvasPlaybackSystemChrome()
         .overlay(alignment: .top) {
             if let warning = store.library.selectionWarning(for: store.settings.selectedAlbums) {
@@ -470,15 +469,25 @@ struct PlayerView: View {
 
     private var controls: some View {
         VStack {
-            HStack { Button { closePlayer() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("Close slideshow").accessibilityIdentifier("close-slideshow").background(.ultraThinMaterial, in: Circle()); Spacer(); Button { beginLayoutEditing() } label: {
-                Label("Edit Layout", systemImage: "rectangle.3.group")
+            HStack {
+                Button { closePlayer() } label: { Image(systemName: "xmark").font(.headline).frame(width: 44, height: 44).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("Close slideshow").accessibilityIdentifier("close-slideshow").background(.ultraThinMaterial, in: Circle())
+                Spacer(minLength: 8)
+                Button { beginLayoutEditing() } label: {
+                    ViewThatFits(in: .horizontal) {
+                        Label("Edit Layout", systemImage: "rectangle.3.group")
+                        Label("Layout", systemImage: "rectangle.3.group")
+                        Image(systemName: "rectangle.3.group")
+                    }
                     .font(.subheadline.weight(.semibold)).padding(12).contentShape(Rectangle())
                     .background(.ultraThinMaterial, in: Capsule())
-            }.accessibilityIdentifier("edit-overlay-layout"); Spacer(); Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle()) }
-                .padding(.horizontal, 24).padding(.top, 18)
+                }.accessibilityIdentifier("edit-overlay-layout")
+                Spacer(minLength: 8)
+                Button { isLocked = true } label: { Image(systemName: "lock.open").font(.headline).frame(width: 44, height: 44) }.buttonStyle(.plain).background(.ultraThinMaterial, in: Circle())
+            }
+            .padding(.horizontal, 16).padding(.top, 8)
             Spacer()
             VStack(spacing: 14) {
-                ProgressView(value: model.progress).tint(.white).padding(.horizontal, 24)
+                ProgressView(value: model.progress).tint(.white).padding(.horizontal, 16)
                 HStack(spacing: 34) {
                     Button { model.previous(); scheduleHide() } label: { Image(systemName: "backward.fill").font(.title2) }
                     Button { model.togglePlaying(); scheduleHide() } label: { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.title).frame(width: 64, height: 64).background(.white, in: Circle()).foregroundStyle(.black) }
@@ -487,8 +496,8 @@ struct PlayerView: View {
                     Button { model.next(); scheduleHide() } label: { Image(systemName: "forward.fill").font(.title2) }
                 }.foregroundStyle(.white)
                 HStack { Label("\(model.currentIndex + 1) of \(model.queueCount)", systemImage: "photo").font(.caption); Spacer(); if model.currentAsset?.isFavorite == true { Image(systemName: "heart.fill") } }
-                    .foregroundStyle(.white.opacity(0.8)).padding(.horizontal, 24)
-            }.padding(.bottom, 24).background(LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                    .foregroundStyle(.white.opacity(0.8)).padding(.horizontal, 16)
+            }.padding(.bottom, 8).background(LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom))
         }.foregroundStyle(.white).transition(.opacity)
     }
 
@@ -608,14 +617,16 @@ struct PlayerView: View {
                 Button("Cancel") { layoutDraft = nil; scheduleHide() }
                     .accessibilityIdentifier("layout-cancel")
                 Spacer()
-                Text(portrait ? "Portrait layout" : "Landscape layout").font(.headline)
-                Spacer()
                 Button("Done") {
                     if let draft = layoutDraft { store.settingsStore.update { $0.overlays.layouts = draft } }
                     layoutDraft = nil
                     scheduleHide()
                 }.fontWeight(.semibold).accessibilityIdentifier("layout-done")
             }
+            Text(portrait ? "Portrait layout" : "Landscape layout")
+                .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             HStack {
                 Menu {
                     ForEach(OverlayTextAlignment.allCases) { alignment in
@@ -636,11 +647,13 @@ struct PlayerView: View {
             }.font(.subheadline)
             Text("Drag a block · \(selectedOverlay.title) selected")
                 .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
         }
         .buttonStyle(.bordered)
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
-        .padding(.horizontal, 24).padding(.top, 18)
+        .padding(.horizontal, 16).padding(.top, 8)
         .frame(maxHeight: .infinity, alignment: .top)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("layout-editor")
@@ -799,7 +812,7 @@ struct PlayerView: View {
             stopMinutes: settings.effectiveNightDimmingStopMinutes
         )
     }
-    private var lockBadge: some View { VStack { Spacer(); Label("Controls locked", systemImage: "lock.fill").font(.caption).foregroundStyle(.white.opacity(0.7)).padding(10).background(.black.opacity(0.35), in: Capsule()).padding(.bottom, 24) } }
+    private var lockBadge: some View { VStack { Spacer(); Label("Controls locked", systemImage: "lock.fill").font(.caption).foregroundStyle(.white.opacity(0.7)).padding(10).background(.black.opacity(0.35), in: Capsule()).padding(.bottom, 8) } }
     private var tapGesture: some Gesture { TapGesture(count: 2).onEnded { if !isLocked && !isEditingLayout, let asset = model.currentAsset?.appleAsset { Task { await store.library.toggleFavorite(asset) } } }
         .exclusively(before: TapGesture(count: 1).onEnded { if !isLocked && !isEditingLayout { controlsVisible.toggle(); scheduleHide() } }) }
     private var swipeGesture: some Gesture {
@@ -913,9 +926,10 @@ private struct CanvasTransitionModifier: ViewModifier {
 }
 
 extension View {
-    /// Hide the status bar and home indicator on a real iPad so the frame can
-    /// fill the display. The iOS 26 Simulator loads XCTAutomationSupport into
-    /// SpringBoard; that session nil-dereferences if those overlays are gone.
+    /// Hide the status bar and home indicator on a physical device so the
+    /// frame can fill the display. The iOS 26 Simulator loads
+    /// XCTAutomationSupport into SpringBoard; that session nil-dereferences
+    /// if those overlays are gone.
     @ViewBuilder
     func canvasPlaybackSystemChrome() -> some View {
         #if targetEnvironment(simulator)

@@ -98,7 +98,7 @@ final class SettingsStore: ObservableObject {
                     defaults.set(unreadable, forKey: Self.recoveryDataKey)
                     defaults.set(defaults.integer(forKey: schemaKey), forKey: "canvas.settings.recovery.schema")
                 }
-                recoveryMessage = "Canvas couldn’t read your saved setup. A recovery copy has been kept on this iPad, and your downloaded photos are unchanged. Default settings are being used."
+                recoveryMessage = "Canvas couldn’t read your saved setup. A recovery copy has been kept on this device, and your downloaded photos are unchanged. Default settings are being used."
                 defaults.set(recoveryMessage, forKey: Self.recoveryNoticeKey)
             }
             defaults.set(Self.currentSchema, forKey: schemaKey)
