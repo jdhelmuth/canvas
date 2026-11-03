@@ -232,6 +232,39 @@ final class AlbumRecoveryTests: XCTestCase {
         XCTAssertNil(resolve(oldPreset, known: [current], available: [album("unrelated", cloud: "third")]))
     }
 
+    func testReadableLocalAlbumSurvivesAnotherCloudIdentityChangeWithStalePreset() throws {
+        let oldPreset = album("a", cloud: "first")
+        let saved = album("a", cloud: "second")
+        let current = album("a", cloud: "third")
+        let result = try XCTUnwrap(resolve(saved, known: [oldPreset], available: [current]))
+        XCTAssertEqual(result.id, "a")
+        XCTAssertEqual(result.cloudIdentifier, "third")
+        XCTAssertNil(AlbumSelectionResolution.warning(selected: [result], available: [current], authorization: .authorized))
+        XCTAssertEqual(try XCTUnwrap(resolve(oldPreset, known: [result], available: [current])).cloudIdentifier, "third")
+    }
+
+    func testForegroundRefreshInvalidatesContentWhenAlbumMetadataIsUnchanged() {
+        let library = PhotoLibraryService()
+        library.setRecoveryActive(false)
+        let revision = library.libraryRevision
+        // An edit or equal-count membership replacement while suspended need
+        // not change AlbumReference. Returning must still reload the media.
+        library.setRecoveryActive(true)
+        XCTAssertGreaterThan(library.libraryRevision, revision)
+        library.setRecoveryActive(false)
+    }
+
+    func testExplicitPhotosRetryInvalidatesContentWithoutChangingSavedSelections() {
+        let library = PhotoLibraryService()
+        let saved = [album("unavailable", cloud: "saved-cloud")]
+        library.track(saved)
+        library.setRecoveryActive(false)
+        let revision = library.libraryRevision
+        library.refreshAuthorization()
+        XCTAssertGreaterThan(library.libraryRevision, revision)
+        XCTAssertEqual(library.reconciled(saved), saved)
+    }
+
     func testRecoveryBackoffContinuesPastStartupAndIsCapped() {
         XCTAssertEqual((0..<10).map(AlbumRecoverySchedule.delay), [1, 3, 8, 30, 60, 120, 300, 300, 300, 300])
         XCTAssertEqual(AlbumRecoverySchedule.delay(after: -1), 1)
@@ -352,7 +385,9 @@ final class AlbumRecoveryTests: XCTestCase {
         let selected = [album("a")]
         XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .authorized, checking: true)!.contains("Checking"))
         XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .limited)!.contains("Limited"))
+        XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .limited, checking: true)!.contains("Limited"), "Checking must not hide the permission explanation")
         XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .denied)!.contains("Settings"))
+        XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .authorized)!.contains("retry automatically"))
         XCTAssertNil(AlbumSelectionResolution.warning(selected: selected, available: selected, authorization: .authorized))
     }
 }
