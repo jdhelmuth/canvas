@@ -70,7 +70,6 @@ struct RootView: View {
             store.weather.setActive(phase == .active)
             store.library.setRecoveryActive(phase == .active)
             if phase == .active {
-                store.library.refreshAuthorization()
                 store.googlePhotos.handleAppReturn()
             }
         }
@@ -600,8 +599,10 @@ struct LibraryHomeView: View {
         )
         var loaded: [UIImage] = []
         for item in items {
+            guard !Task.isCancelled else { return }
             if let image = await store.loader.image(for: item, service: store.library, size: CGSize(width: 600, height: 600)) { loaded.append(image) }
         }
+        guard !Task.isCancelled else { return }
         previewImages = loaded
     }
 }
@@ -715,10 +716,12 @@ private struct AlbumThumbnail: View {
             var loaded: [UIImage] = []
             let representatives = HomePreviewSelection.representativeItems(from: items, limit: 4, seed: previewSeed, albumID: album.id)
             for item in representatives {
+                guard !Task.isCancelled else { return }
                 if let image = await store.loader.image(for: item, service: store.library, size: CGSize(width: 700, height: 500)) {
                     loaded.append(image)
                 }
             }
+            guard !Task.isCancelled else { return }
             images = loaded
         }
     }

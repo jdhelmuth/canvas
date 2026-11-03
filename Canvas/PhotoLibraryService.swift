@@ -46,9 +46,9 @@ enum AlbumSelectionResolution {
         let unavailable = missing(selected, available: available)
         guard !unavailable.isEmpty else { return nil }
         let names = unavailable.map(\.title).joined(separator: ", ")
-        if checking { return "Checking selected albums: \(names). Your selections are saved." }
         if authorization == .limited { return "Some selected albums are unavailable with Limited Photos access: \(names). Your selections are saved. Review Photos access or reconnect in Selected albums." }
-        return "Selected albums unavailable on this device: \(names). Your selections are saved. Open Selected albums to retry or reconnect them."
+        if checking { return "Checking selected albums: \(names). Your selections are saved; Canvas retries automatically." }
+        return "Selected albums are not currently available to Canvas: \(names). Your selections are saved and Canvas will retry automatically. Check that these albums are visible in Photos on this device."
     }
 
     /// Only an explicit old-ID/new-ID mapping may repair a selection. A title
@@ -162,7 +162,11 @@ enum AlbumIdentityResolver {
                 // The same still-readable local object can prove which archived
                 // cloud identity is current. Without that proof, keep ambiguity.
                 guard authorization == .authorized, let local = lookup(original.id),
-                      let currentCloud = cloudID(local.id), savedClouds.contains(currentCloud) else { return nil }
+                      let currentCloud = cloudID(local.id) else { return nil }
+                // The existing local collection proves continuity even when
+                // Photos returns a third cloud identity, newer than both the
+                // saved selection and an old preset. Requiring the new value
+                // to be in savedClouds incorrectly hides a readable album.
                 identity.cloudIdentifier = currentCloud
             } else { identity.cloudIdentifier = original.cloudIdentifier ?? savedClouds.first }
         }
@@ -655,7 +659,12 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         refreshAlbums()
     }
 
-    func refreshAuthorization() { refreshAlbums() }
+    func refreshAuthorization() {
+        // A foreground return or explicit retry must refresh media, not only
+        // album names/counts. Edits and equal-count membership replacements
+        // while suspended may have no observable AlbumReference difference.
+        refreshAlbums(contentChanged: true)
+    }
 
     func selectionWarning(for selected: [AlbumReference]) -> String? {
         AlbumSelectionResolution.warning(selected: reconciled(selected), available: Array(resolvedReferences.values),
@@ -675,7 +684,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     func setRecoveryActive(_ active: Bool) {
         guard recoveryActive != active else { return }
         recoveryActive = active
-        if active { refreshAlbums() }
+        if active { refreshAuthorization() }
         else { recoveryRunner.stop() }
     }
 

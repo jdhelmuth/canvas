@@ -1,0 +1,7 @@
+# Canvas Slideshow 1.0.9 (75)
+
+Improves automatic Apple Photos album refresh and recovery. Returning to Canvas refreshes photo content even when album counts are unchanged. Freshly verified local album identities can recover from older conflicting cloud identifiers. Canceled thumbnail requests cannot replace a newer refresh with stale results, and album availability messages explain automatic retries and Limited Access.
+
+Source fix: f9e1de7d5533f258b15b6c0406a568dde57ae2a1. Both defect reproductions failed before the fix. Required checks on that source passed: 295 unit tests, 24 UI tests and 30 tooling tests, with four opt-in UI skips and healthy simulator teardown. Signed development build 74.1 preserved the affected iPad's selections, settings and app documents. Physical verification confirmed repaired album totals of 2,019 and 353 appeared in Canvas before a restart or Retry; thumbnails loaded without an album warning. Existing filters were preserved. The original transient PhotoKit event was not captured and its exact cause is not claimed.
+
+This release retains existing iPhone/iPad screenshots, privacy declarations and automatic release after approval. Build 75 is the one public-release archive intended for both internal TestFlight and App Review. Final release validation and provider receipts are retained with the November 1 task's album-refresh-2026-11-03/deployment evidence. Physical XCTest automation initialization remains unavailable; earlier manual physical checks are separate evidence, not an automated test pass.
