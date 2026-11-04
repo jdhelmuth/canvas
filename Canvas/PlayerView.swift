@@ -228,6 +228,13 @@ struct PlayerView: View {
                         .padding(24)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
+#if DEBUG
+                // A uniform media surface lets UI tests measure the real
+                // dimming layer at display edges without private photo data.
+                if ProcessInfo.processInfo.arguments.contains("--canvas-ui-dimming-edges") {
+                    Color.white
+                }
+#endif
             }
             .background(Color.black)
             .onAppear {
@@ -792,13 +799,20 @@ struct PlayerView: View {
         store.weather.update(showWeather: showWeather)
     }
     private var isNightDimActive: Bool {
-        nightDimmingMonitor.isActive || scheduleMonitor.activeRule?.dimsAtNight == true
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--canvas-ui-dimming-edges") {
+            return ProcessInfo.processInfo.arguments.contains("--canvas-ui-night")
+        }
+#endif
+        return nightDimmingMonitor.isActive || scheduleMonitor.activeRule?.dimsAtNight == true
     }
     private var nightDimmedMedia: some View {
         media
             .overlay {
                 Color.black
                     .opacity(isNightDimActive ? NightDimmingPolicy.overlayOpacity : 0)
+                    // Match the full-bleed media, including the home-indicator area.
+                    .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
