@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class CanvasUITests: XCTestCase {
     override func tearDownWithError() throws {
@@ -287,6 +288,82 @@ final class CanvasUITests: XCTestCase {
         XCTAssertEqual(nightDimmingToggle.value as? String, "1")
         XCTAssertTrue(app.staticTexts["Dim from"].exists)
         XCTAssertTrue(app.staticTexts["Return to normal"].exists)
+    }
+
+    func testNightDimmingCoversDisplayEdgesAcrossRotationAndResume() throws {
+        try verifyDimmingEdges(atNight: true)
+    }
+
+    func testDaytimePlaybackKeepsDisplayEdgesUndimmed() throws {
+        try verifyDimmingEdges(atNight: false)
+    }
+
+    private func verifyDimmingEdges(atNight: Bool) throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-ui-reset", "--canvas-ui-play", "--canvas-ui-dimming-edges"]
+        if atNight { app.launchArguments.append("--canvas-ui-night") }
+        app.launch()
+        XCTAssertTrue(app.otherElements["Canvas slideshow"].waitForExistence(timeout: 10))
+
+        func assertEdges(_ label: String) throws {
+            let shot = XCUIScreen.main.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = "\(atNight ? "Night" : "Day") dimming edges — \(label)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            // Normalize UIImage orientation before reading display coordinates.
+            let rendered = UIGraphicsImageRenderer(size: shot.image.size).image { _ in
+                shot.image.draw(in: CGRect(origin: .zero, size: shot.image.size))
+            }
+            let image = try XCTUnwrap(rendered.cgImage)
+            let width = image.width, height = image.height
+            var pixels = [UInt8](repeating: 0, count: width * height * 4)
+            let context = try XCTUnwrap(CGContext(data: &pixels, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            func brightness(x: Double, y: Double) -> Double {
+                let px = min(width - 2, max(1, Int(Double(width) * x)))
+                let py = min(height - 2, max(1, Int(Double(height) * y)))
+                let offset = (py * width + px) * 4
+                return (Double(pixels[offset]) + Double(pixels[offset + 1]) + Double(pixels[offset + 2])) / (3 * 255)
+            }
+            let interior = brightness(x: 0.28, y: 0.45)
+            if atNight {
+                XCTAssertGreaterThan(interior, 0.2, "The media must remain visible")
+                XCTAssertLessThan(interior, 0.8, "Night dimming must actually be active")
+            } else {
+                XCTAssertGreaterThan(interior, 0.95, "Daytime playback must retain full brightness")
+            }
+            // Sample away from rounded corners, status text and the home
+            // indicator, but inside each display's system safe-area insets.
+            for (edge, x, y) in [("bottom", 0.28, 0.995), ("top", 0.28, 0.005),
+                                 ("left", 0.005, 0.45), ("right", 0.995, 0.45)] {
+                XCTAssertEqual(brightness(x: x, y: y), interior, accuracy: 0.025,
+                               "\(label): \(edge) must receive the same treatment as the photo interior")
+            }
+        }
+
+        try assertEdges("portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let landscape = NSPredicate { _, _ in
+            let frame = app.windows.firstMatch.frame
+            return frame.width > frame.height
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 5), .completed)
+        try assertEdges("landscape")
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.otherElements["Canvas slideshow"].waitForExistence(timeout: 5))
+        // Foregrounding reveals playback controls; return to the idle display.
+        if app.buttons["close-slideshow"].exists {
+            app.otherElements["Canvas slideshow"].tap()
+        }
+        XCTAssertTrue(app.buttons["close-slideshow"].waitForNonExistence(timeout: 5))
+        try assertEdges("foreground resume")
     }
 
     func testClockOverlayStrokeControlsSurface() {
