@@ -93,7 +93,7 @@ enum FrameResumePolicy {
         guard isEnabled(preference, device: device) else { return false }
         guard frameWasPlaying else { return false }
         guard playable == .ready else { return false }
-        return canStart(isPresented: isPlayerPresented, isStarting: isStarting)
+        return FrameLaunchPolicy.canStart(isPresented: isPlayerPresented, isStarting: isStarting)
     }
 }
 

@@ -709,7 +709,7 @@ final class PlaybackViewModel: ObservableObject {
                 }
             }
         } else {
-            image = await imageLoader?(asset, CGSize(width: 1800, height: 1800))
+            image = await imageLoader(asset, CGSize(width: 1800, height: 1800))
         }
         guard !Task.isCancelled, loadGeneration == generation else { return false }
         if let image {
@@ -728,7 +728,7 @@ final class PlaybackViewModel: ObservableObject {
                    retainedFrame.layoutImages.indices.contains(index) {
                     companionImage = retainedFrame.layoutImages[index]
                 } else {
-                    companionImage = await imageLoader?(companion, CGSize(width: 1000, height: 1000))
+                    companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000))
                 }
                 if let companionImage {
                     guard !Task.isCancelled, loadGeneration == generation else { return false }
