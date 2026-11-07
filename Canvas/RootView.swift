@@ -83,6 +83,7 @@ struct OnboardingView: View {
     @State private var isRequesting = false
     @State private var showAlbumPicker = false
     @State private var albumsConfirmed = false
+    @State private var applyShelfFrame = false
 
     private var gutter: CGFloat { CanvasLayoutMetrics.horizontalInset(sizeClass: horizontalSizeClass) }
 
@@ -213,14 +214,46 @@ struct OnboardingView: View {
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
             }
             Button { showAlbumPicker = true } label: { Label("Select albums", systemImage: "plus") }.buttonStyle(.secondaryCanvas)
+            if !store.settings.selectedAlbums.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Recents can include screenshots and videos. Choose what this first frame should play.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Toggle("Include screenshots", isOn: filterBinding(\.includeScreenshots))
+                        .accessibilityIdentifier("onboarding-include-screenshots")
+                    Toggle("Include videos", isOn: filterBinding(\.includeVideos))
+                        .accessibilityIdentifier("onboarding-include-videos")
+                    Toggle("Set up as a shelf display", isOn: $applyShelfFrame)
+                        .accessibilityIdentifier("onboarding-shelf-frame")
+                    Text("Shelf display turns on the clock, weather, and keep-awake. Weather uses on-device location only if you allow it. You can change this later in Settings.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Spacer()
         }.padding(.horizontal, gutter)
     }
 
+    private func filterBinding(_ keyPath: WritableKeyPath<CanvasFilters, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { store.settings.filters[keyPath: keyPath] },
+            set: { value in store.settingsStore.update { $0.filters[keyPath: keyPath] = value } }
+        )
+    }
+
     private func completeOnboarding() {
-        var updated = store.settings
-        updated.hasCompletedOnboarding = true
-        store.settingsStore.settings = updated
+        store.settingsStore.update { settings in
+            settings.hasCompletedOnboarding = true
+            if applyShelfFrame {
+                settings = ShelfFrameSetup.applying(to: settings)
+            }
+        }
+        if applyShelfFrame {
+            store.weather.update(showWeather: true)
+        }
+        store.settingsStore.frameWasPlaying = false
     }
 }
 
@@ -236,6 +269,9 @@ struct LibraryHomeView: View {
     @State private var previewImages: [UIImage] = []
     @State private var isStartingFrame = false
     @State private var showStartRecovery = false
+    @State private var showGoogleImport = false
+    @State private var googleAlbumNameToRefresh = "Google Photos"
+    @State private var didAttemptFrameResume = false
     @AppStorage("canvas.home.preview.seed") private var previewSeed = 0
     @State private var deviceOrientation = UIDevice.current.orientation
 
@@ -286,6 +322,9 @@ struct LibraryHomeView: View {
             }
             .sheet(isPresented: $showAlbumPicker) { AlbumPickerView(isOnboarding: false) }
             .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showGoogleImport) {
+                GooglePhotosImportView(initialAlbumName: googleAlbumNameToRefresh)
+            }
             .fullScreenCover(isPresented: $showPlayer) { PlayerView(onClose: { showPlayer = false }) }
 #if DEBUG
             .task {
@@ -311,6 +350,7 @@ struct LibraryHomeView: View {
                 previewSeed += 1
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 updateDeviceOrientation(UIDevice.current.orientation)
+                tryResumeFrameIfNeeded()
 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--canvas-ui-settings") {
                     showSettings = true
@@ -391,6 +431,12 @@ struct LibraryHomeView: View {
                     .accessibilityLabel("Start your frame")
                     .accessibilityHint("Starts the slideshow using the selected albums, or explains how to choose playable media.")
                 Text("Selected albums").font(.title3.weight(.semibold))
+                if store.settings.selectedAlbums.contains(where: { $0.source == .googlePhotos }) {
+                    Text("Google copies live on this device (\(store.googlePhotos.formattedLocalStorage)). Adding photos is always a manual Picker session, not an automatic shared-album sync.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("google-local-storage-summary")
+                }
                 selectedAlbumGrid(height: albumAreaHeight)
             }
         }
@@ -527,11 +573,52 @@ struct LibraryHomeView: View {
         switch FrameLaunchPolicy.decision(for: playable) {
         case .ready:
             showStartRecovery = false
+            store.settingsStore.frameWasPlaying = true
             showPlayer = true
         case .needsSelection:
+            store.settingsStore.frameWasPlaying = false
             showStartRecovery = true
         }
         isStartingFrame = false
+    }
+
+    private func tryResumeFrameIfNeeded() {
+        guard !didAttemptFrameResume else { return }
+        didAttemptFrameResume = true
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if !arguments.contains("--canvas-ui-resume-frame") {
+            if arguments.contains("--canvas-ui-home")
+                || arguments.contains("--canvas-ui-settings")
+                || arguments.contains("--canvas-ui-play")
+                || arguments.contains("--canvas-ui-weather-frame") {
+                return
+            }
+        }
+#endif
+        store.library.refreshAuthorization()
+        store.library.refreshAlbums()
+        let playable = CanvasPlaybackMedia.items(
+            for: store.settings.selectedAlbums,
+            filters: store.settings.filters,
+            apple: store.library,
+            google: store.googlePhotos
+        )
+        let decision = FrameLaunchPolicy.decision(for: playable)
+        let device = FrameResumePolicy.deviceKind(UIDevice.current.userInterfaceIdiom)
+        let shouldResume = FrameResumePolicy.shouldPresentOnOpen(
+            preference: store.settings.resumeFrameOnOpen,
+            device: device,
+            frameWasPlaying: store.settingsStore.frameWasPlaying,
+            playable: decision,
+            isPlayerPresented: showPlayer,
+            isStarting: isStartingFrame
+        )
+        if shouldResume {
+            showPlayer = true
+        } else if store.settingsStore.frameWasPlaying, decision != .ready {
+            store.settingsStore.frameWasPlaying = false
+        }
     }
 
     private var startRecoveryMessage: String {
@@ -548,8 +635,25 @@ struct LibraryHomeView: View {
         VStack(alignment: .leading, spacing: 10) {
             AlbumThumbnail(album: album, previewSeed: previewSeed, isLandscapeDevice: deviceIsLandscape).frame(maxWidth: .infinity, maxHeight: .infinity).layoutPriority(1)
             Text(album.title).font(.headline).lineLimit(1)
-            Text("\(album.estimatedCount) items · \(album.source.title)").font(.caption).foregroundStyle(.secondary)
+            Text(albumCardDetail(album)).font(.caption).foregroundStyle(.secondary)
+            if album.source == .googlePhotos {
+                Button {
+                    googleAlbumNameToRefresh = album.title
+                    showGoogleImport = true
+                } label: {
+                    Label("Add or refresh photos", systemImage: "arrow.clockwise")
+                        .font(.caption.weight(.semibold))
+                }
+                .accessibilityIdentifier("refresh-google-album-\(album.id)")
+            }
         }.padding(12).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private func albumCardDetail(_ album: AlbumReference) -> String {
+        if album.source == .googlePhotos, let record = store.googlePhotos.album(id: album.id) {
+            return "\(record.items.count) items · Updated \(record.updatedAt.formatted(date: .abbreviated, time: .shortened))"
+        }
+        return "\(album.estimatedCount) items · \(album.source.title)"
     }
 
     private var deviceIsLandscape: Bool? {
@@ -937,6 +1041,7 @@ struct AlbumPickerView: View {
 }
 
 struct GooglePhotosImportView: View {
+    var initialAlbumName: String = "Google Photos"
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var albumName = "Google Photos"
@@ -949,6 +1054,16 @@ struct GooglePhotosImportView: View {
             Form {
                 Section("Google Photos") {
                     connectionStatus
+                    if let lastSync = store.googlePhotos.lastSyncDate {
+                        Text("Last import or update \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("google-last-import")
+                    }
+                    Text("Local Canvas copies use \(store.googlePhotos.formattedLocalStorage) on this device. Canvas cannot follow Google shared albums automatically.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("google-storage-use")
                     if store.googlePhotos.configurationAvailable && !isFailure {
                         TextField("Saved album name", text: $albumName)
                         Button { choosePhotos() } label: {
@@ -1082,6 +1197,7 @@ struct GooglePhotosImportView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { finish() } } }
             .interactiveDismissDisabled(isBusy)
+            .onAppear { albumName = initialAlbumName }
             .onChange(of: store.googlePhotos.pickerHandoff) { _, handoff in
                 if handoff == .browserFallback, let url = store.googlePhotos.pickerBrowserURL {
                     safariFallback = SafariFallbackRequest(url: url)

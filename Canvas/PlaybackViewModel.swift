@@ -30,13 +30,18 @@ final class PlaybackViewModel: ObservableObject {
     private var libraryIsComplete: ((CanvasSettings) -> Bool)?
     private var waitingForAlbums = false
     private var imageLoader: ((CanvasMediaItem, CGSize) async -> UIImage?)?
+    private var previewImageLoader: ((CanvasMediaItem, CGSize, @escaping (UIImage) -> Void) async -> UIImage?)?
+    private var overlayMetadataLoader: ((CanvasMediaItem) async -> (caption: String?, placeName: String?))?
     private var prefetchImages: (([CanvasMediaItem], CGSize) -> Void)?
+    private var displayedImageIsPreview = false
     private var sessionActive = true
     private var reloadTask: Task<Void, Never>?
     private var retryTask: Task<Void, Never>?
     private let recoveryDelay: Duration
     private var recoveryStartIndex: Int?
     @Published private(set) var isRecovering = false
+    @Published private(set) var overlayCaption: String?
+    @Published private(set) var overlayPlaceName: String?
     private var settings: CanvasSettings = .init()
     private var queue: [CanvasMediaItem] = []
     private var timerTask: Task<Void, Never>?
@@ -69,6 +74,8 @@ final class PlaybackViewModel: ObservableObject {
         settings: CanvasSettings = .init(),
         mediaItems: ((CanvasSettings) -> [CanvasMediaItem])? = nil,
         imageLoader: ((CanvasMediaItem, CGSize) async -> UIImage?)? = nil,
+        previewImageLoader: ((CanvasMediaItem, CGSize, @escaping (UIImage) -> Void) async -> UIImage?)? = nil,
+        overlayMetadataLoader: ((CanvasMediaItem) async -> (caption: String?, placeName: String?))? = nil,
         recoveryDelay: Duration = .seconds(30),
         cycleStore: ShuffleCycleStore? = nil,
         libraryIsComplete: ((CanvasSettings) -> Bool)? = nil
@@ -76,6 +83,8 @@ final class PlaybackViewModel: ObservableObject {
         self.settings = settings
         self.mediaItems = mediaItems
         self.imageLoader = imageLoader
+        self.previewImageLoader = previewImageLoader
+        self.overlayMetadataLoader = overlayMetadataLoader
         self.recoveryDelay = recoveryDelay
         self.cycleStore = cycleStore
         self.libraryIsComplete = libraryIsComplete
@@ -101,6 +110,18 @@ final class PlaybackViewModel: ObservableObject {
             )
         }
         imageLoader = { item, size in await loader.image(for: item, service: library, size: size) }
+        previewImageLoader = { item, size, onPreview in
+            await loader.image(for: item, service: library, size: size, onPreview: onPreview)
+        }
+        overlayMetadataLoader = { item in
+            if let asset = item.appleAsset {
+                return await library.overlayMetadata(for: asset)
+            }
+            if let url = item.localURL, item.kind != .video {
+                return library.overlayMetadata(at: url)
+            }
+            return (nil, nil)
+        }
         prefetchImages = { items, size in loader.prefetch(items, service: library, size: size) }
         configured = true
         sessionActive = true
@@ -132,6 +153,11 @@ final class PlaybackViewModel: ObservableObject {
         mediaItems = nil
         libraryIsComplete = nil
         imageLoader = nil
+        previewImageLoader = nil
+        overlayMetadataLoader = nil
+        overlayCaption = nil
+        overlayPlaceName = nil
+        displayedImageIsPreview = false
         prefetchImages = nil
         configured = false
     }
@@ -636,13 +662,18 @@ final class PlaybackViewModel: ObservableObject {
 
     private func loadFrame(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async -> Bool {
         guard !Task.isCancelled, loadGeneration == generation else { return false }
-        guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let imageLoader else { return false }
+        guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil else { return false }
+        guard previewImageLoader != nil || imageLoader != nil else { return false }
         let retainedFrame = pendingLayoutRefresh && !pendingFrameReload && !isRecovering && displayedFrame?.asset.id == asset.id ? displayedFrame : nil
         if retainedFrame == nil {
             elapsed = 0
             progress = 0
         }
         errorMessage = nil
+        if displayedFrame?.asset.id != asset.id {
+            overlayCaption = nil
+            overlayPlaceName = nil
+        }
         currentMediaDuration = asset.appleAsset?.duration ?? 0
         if currentMediaDuration <= 0, asset.kind == .video, let url = asset.localURL {
             if let time = try? await AVURLAsset(url: url).load(.duration), time.isNumeric {
@@ -650,20 +681,43 @@ final class PlaybackViewModel: ObservableObject {
             }
         }
         guard !Task.isCancelled, loadGeneration == generation else { return false }
+        let expectedID = asset.id
         let image: UIImage?
         if let retainedFrame {
             image = retainedFrame.image
-        } else {
+        } else if let previewImageLoader {
+            image = await previewImageLoader(asset, CGSize(width: 1800, height: 1800)) { [weak self] preview in
+                Task { @MainActor in
+                    guard let self else { return }
+                    let currentID = self.queue.indices.contains(self.currentIndex) ? self.queue[self.currentIndex].id : ""
+                    guard !PhotoImageProgressPolicy.shouldIgnoreStale(
+                        expectedID: expectedID,
+                        incomingID: currentID,
+                        generation: generation,
+                        incomingGeneration: self.loadGeneration
+                    ) else { return }
+                    guard self.sessionActive else { return }
+                    guard self.displayedFrame?.asset.id != expectedID || self.displayedImageIsPreview else { return }
+                    self.commitDisplayedFrame(
+                        asset: asset,
+                        images: [preview],
+                        assets: [asset],
+                        transitionSeed: transitionSeed,
+                        gestureDirection: gestureDirection,
+                        isLayoutRefresh: self.displayedFrame?.asset.id == expectedID,
+                        isPreview: true
+                    )
+                }
+            }
+        } else if let imageLoader {
             image = await imageLoader(asset, CGSize(width: 1800, height: 1800))
+        } else {
+            return false
         }
         guard !Task.isCancelled, loadGeneration == generation else { return false }
         if let image {
-            // Build the complete displayed group before publishing any of it.
-            // Publishing the primary image first and appending a portrait
-            // companion after an await changes LayoutCanvas from one tile to
-            // two while its entrance transition is still active. SwiftUI can
-            // then leave the group at an intermediate horizontal offset,
-            // exposing a black strip along the leading edge.
+            // Build the complete displayed group before publishing HQ. A
+            // degraded preview may already be on screen as a single tile.
             var loadedImages = [image]
             var loadedAssets = [asset]
             let companions = PlaybackMediaSurfacePolicy.allowsCompanions(for: asset.kind)
@@ -677,7 +731,13 @@ final class PlaybackViewModel: ObservableObject {
                    retainedFrame.layoutImages.indices.contains(index) {
                     companionImage = retainedFrame.layoutImages[index]
                 } else {
-                    companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000))
+                    if let imageLoader {
+                        companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000))
+                    } else if let previewImageLoader {
+                        companionImage = await previewImageLoader(companion, CGSize(width: 1000, height: 1000)) { _ in }
+                    } else {
+                        companionImage = nil
+                    }
                 }
                 if let companionImage {
                     guard !Task.isCancelled, loadGeneration == generation else { return false }
@@ -686,28 +746,68 @@ final class PlaybackViewModel: ObservableObject {
                 }
             }
             guard !Task.isCancelled, loadGeneration == generation else { return false }
-            // Commit the complete group in one publication. The previous
-            // frame remains visible until this point, so every transition has
-            // a real outgoing and incoming surface to animate.
-            displayedFrame = DisplayedFrame(
+            commitDisplayedFrame(
                 asset: asset,
-                image: image,
-                layoutImages: loadedImages,
-                layoutAssets: loadedAssets,
+                images: loadedImages,
+                assets: loadedAssets,
                 transitionSeed: transitionSeed,
                 gestureDirection: gestureDirection,
-                isLayoutRefresh: retainedFrame != nil
+                isLayoutRefresh: retainedFrame != nil || displayedFrame?.asset.id == expectedID,
+                isPreview: false
             )
-            if settings.queueMode == .shuffle && !replayingHistory {
-                shuffleCycle.recordDisplayed(loadedAssets.map(\.id))
-                cycleStore?.save(shuffleCycle)
-            }
-            pendingLayoutRefresh = false
-            pendingFrameReload = false
-            prefetchImages?(Array(queue.dropFirst(currentIndex + 1).prefix(4)), CGSize(width: 700, height: 700))
+            await refreshOverlayMetadata(for: asset, generation: generation)
+            return true
+        }
+        // A preview already on this same item can stand in when HQ is missing.
+        // Reusing a last-good still after a failed load is not a successful
+        // recovery; skip/recovery must keep walking the queue.
+        if displayedFrame?.asset.id == expectedID, displayedImageIsPreview, !isRecovering, !pendingFrameReload {
+            await refreshOverlayMetadata(for: asset, generation: generation)
             return true
         }
         return false
+    }
+
+    private func commitDisplayedFrame(
+        asset: CanvasMediaItem,
+        images: [UIImage],
+        assets: [CanvasMediaItem],
+        transitionSeed: UInt64,
+        gestureDirection: Int,
+        isLayoutRefresh: Bool,
+        isPreview: Bool
+    ) {
+        displayedFrame = DisplayedFrame(
+            asset: asset,
+            image: images[0],
+            layoutImages: images,
+            layoutAssets: assets,
+            transitionSeed: transitionSeed,
+            gestureDirection: gestureDirection,
+            isLayoutRefresh: isLayoutRefresh
+        )
+        displayedImageIsPreview = isPreview
+        if settings.queueMode == .shuffle && !replayingHistory {
+            shuffleCycle.recordDisplayed(assets.map(\.id))
+            cycleStore?.save(shuffleCycle)
+        }
+        pendingLayoutRefresh = false
+        pendingFrameReload = false
+        if !isPreview {
+            prefetchImages?(Array(queue.dropFirst(currentIndex + 1).prefix(4)), CGSize(width: 700, height: 700))
+        }
+    }
+
+    private func refreshOverlayMetadata(for asset: CanvasMediaItem, generation: Int) async {
+        guard let overlayMetadataLoader else {
+            overlayCaption = nil
+            overlayPlaceName = nil
+            return
+        }
+        let fields = await overlayMetadataLoader(asset)
+        guard sessionActive, loadGeneration == generation, displayedFrame?.asset.id == asset.id else { return }
+        overlayCaption = fields.caption
+        overlayPlaceName = fields.placeName
     }
 
     private func companionAssets(after asset: CanvasMediaItem) -> [CanvasMediaItem] {

@@ -390,6 +390,116 @@ final class AlbumRecoveryTests: XCTestCase {
         XCTAssertTrue(AlbumSelectionResolution.warning(selected: selected, available: [], authorization: .authorized)!.contains("retry automatically"))
         XCTAssertNil(AlbumSelectionResolution.warning(selected: selected, available: selected, authorization: .authorized))
     }
+
+    func testSameLocalIdentifierSurvivesSharedAlbumSubtypeFlicker() throws {
+        let selected = album("joey", cloud: "cloud")
+        let flickered = AlbumReference(id: "joey", title: "Joey — Canvas", subtype: 203,
+            estimatedCount: 12, isSmart: false, isShared: true, cloudIdentifier: "cloud")
+        let recovered = try XCTUnwrap(resolve(selected, available: [flickered]))
+        XCTAssertEqual(recovered.id, "joey")
+        XCTAssertTrue(recovered.isShared)
+        XCTAssertNil(AlbumSelectionResolution.warning(selected: [recovered], available: [recovered], authorization: .authorized))
+    }
+
+    func testAliasRecoversSharedFlickerWhenCloudStillMatches() throws {
+        let selected = album("new", cloud: "cloud", previous: ["old"])
+        let renamed = AlbumReference(id: "old", title: "Joey — Canvas", subtype: 203,
+            estimatedCount: 12, isSmart: false, isShared: true, cloudIdentifier: "cloud")
+        XCTAssertEqual(try XCTUnwrap(resolve(selected, available: [renamed])).id, "old")
+    }
+
+    func testUniqueCloudMappingRecoversSharedAlbumDespiteSubtypeFlicker() throws {
+        let selected = album("old", cloud: "cloud")
+        let flickered = AlbumReference(id: "new", title: "Joey — Canvas", subtype: 203,
+            estimatedCount: 12, isSmart: false, isShared: true, cloudIdentifier: "cloud")
+        let recovered = try XCTUnwrap(resolve(selected, available: [flickered], mappings: ["cloud": "new"]))
+        XCTAssertEqual(recovered.id, "new")
+        XCTAssertTrue(recovered.previousLocalIdentifiers.contains("old"))
+    }
+
+    func testRenamedDuplicateTitlesCannotBindWithoutIdentifierProof() {
+        let selected = album("joey", cloud: "cloud")
+        let sameName = AlbumReference(id: "other", title: "Joey — Canvas", subtype: 2,
+            estimatedCount: 12, isSmart: false, isShared: false, cloudIdentifier: "other-cloud")
+        XCTAssertNil(resolve(selected, available: [sameName]))
+        XCTAssertNil(resolve(selected, available: [
+            AlbumReference(id: "one", title: "Joey — Canvas", subtype: 2, estimatedCount: 1, isSmart: false, isShared: false, cloudIdentifier: "cloud"),
+            AlbumReference(id: "two", title: "Joey — Canvas", subtype: 2, estimatedCount: 1, isSmart: false, isShared: false, cloudIdentifier: "cloud")
+        ]))
+    }
+
+    func testMembershipOnlyChangeDoesNotRebuildIdentity() {
+        var summary = PhotoLibraryChangeSummary()
+        AlbumObservationPolicy.incorporateIncrementalChange(
+            hasDetails: true, hasIncrementalChanges: true,
+            insertedCount: 0, removedCount: 0, changedCount: 1, into: &summary)
+        XCTAssertEqual(AlbumObservationPolicy.refreshKind(summary, hasTrackedAlbums: true), .contentOnly)
+        XCTAssertEqual(AlbumObservationPolicy.refreshKind(PhotoLibraryChangeSummary(), hasTrackedAlbums: true), .contentOnly)
+        XCTAssertEqual(AlbumObservationPolicy.refreshKind(PhotoLibraryChangeSummary(), hasTrackedAlbums: false), .none)
+    }
+
+    func testCollectionInsertRemoveOrNonIncrementalFetchRebuildsIdentity() {
+        var inserted = PhotoLibraryChangeSummary()
+        AlbumObservationPolicy.incorporateIncrementalChange(
+            hasDetails: true, hasIncrementalChanges: true,
+            insertedCount: 1, removedCount: 0, changedCount: 0, into: &inserted)
+        XCTAssertEqual(AlbumObservationPolicy.refreshKind(inserted, hasTrackedAlbums: true), .identityAndContent)
+
+        var removed = PhotoLibraryChangeSummary()
+        AlbumObservationPolicy.incorporateIncrementalChange(
+            hasDetails: true, hasIncrementalChanges: true,
+            insertedCount: 0, removedCount: 1, changedCount: 0, into: &removed)
+        XCTAssertEqual(AlbumObservationPolicy.refreshKind(removed, hasTrackedAlbums: true), .identityAndContent)
+
+        var reset = PhotoLibraryChangeSummary()
+        AlbumObservationPolicy.incorporateIncrementalChange(
+            hasDetails: true, hasIncrementalChanges: false,
+            insertedCount: 0, removedCount: 0, changedCount: 0, into: &reset)
+        XCTAssertEqual(AlbumObservationPolicy.refreshKind(reset, hasTrackedAlbums: true), .identityAndContent)
+    }
+
+    func testRacingPhotosEventsUpgradeContentOnlyToIdentityRefresh() {
+        XCTAssertEqual(AlbumChangeCoalescePolicy.merge(.contentOnly, incoming: .identityAndContent), .identityAndContent)
+        XCTAssertEqual(AlbumChangeCoalescePolicy.merge(.none, incoming: .contentOnly), .contentOnly)
+        XCTAssertEqual(AlbumChangeCoalescePolicy.merge(.identityAndContent, incoming: .contentOnly), .identityAndContent)
+        XCTAssertEqual(AlbumChangeCoalescePolicy.merge(.none, incoming: .none), .none)
+        XCTAssertGreaterThan(AlbumChangeCoalescePolicy.interval, 0)
+        XCTAssertLessThan(AlbumChangeCoalescePolicy.interval, 2)
+    }
+
+    func testPlaybackKeepsLastGoodCollectionWhileWarningUsesLiveResolution() {
+        let selected = album("a")
+        XCTAssertEqual(AlbumPlaybackIdentityPolicy.collection(
+            selected: selected, liveResolved: nil, lastPlayable: selected, isTracked: true, catalog: nil)?.id, "a")
+        XCTAssertNil(AlbumPlaybackIdentityPolicy.collection(
+            selected: selected, liveResolved: nil, lastPlayable: nil, isTracked: true, catalog: album("other")))
+        XCTAssertNotNil(AlbumSelectionResolution.warning(
+            selected: [selected], available: [], authorization: .authorized, checking: true))
+        XCTAssertNotNil(AlbumSelectionResolution.warning(
+            selected: [selected], available: [], authorization: .authorized))
+        XCTAssertNil(AlbumSelectionResolution.warning(
+            selected: [selected], available: [selected], authorization: .authorized))
+        XCTAssertEqual(AlbumSelectionResolution.committing(
+            selectedIDs: ["a"], saved: [selected], available: []), [selected])
+    }
+
+    func testPermissionRevocationDropsPlayableIdentityAndEmptyCatalogDoesNotEraseSelection() {
+        XCTAssertNil(AlbumTransientRetentionPolicy.retainedPlayable(
+            previous: album("a"), live: nil, authorization: .denied))
+        XCTAssertNil(AlbumTransientRetentionPolicy.retainedPlayable(
+            previous: album("a"), live: nil, authorization: .notDetermined))
+        XCTAssertNil(AlbumTransientRetentionPolicy.retainedPlayable(
+            previous: album("a"), live: nil, authorization: .restricted))
+        XCTAssertEqual(AlbumTransientRetentionPolicy.retainedPlayable(
+            previous: album("a"), live: nil, authorization: .authorized)?.id, "a")
+        XCTAssertEqual(AlbumTransientRetentionPolicy.retainedPlayable(
+            previous: album("old"), live: album("new", cloud: "cloud"), authorization: .authorized)?.id, "new")
+        let selected = [album("deleted")]
+        XCTAssertEqual(AlbumSelectionResolution.committing(
+            selectedIDs: ["deleted"], saved: selected, available: []), selected)
+        XCTAssertNotNil(AlbumSelectionResolution.warning(
+            selected: selected, available: [], authorization: .authorized))
+    }
 }
 
 

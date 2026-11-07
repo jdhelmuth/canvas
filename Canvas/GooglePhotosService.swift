@@ -304,6 +304,15 @@ final class GooglePhotosService: NSObject, ObservableObject, ASWebAuthentication
     // appears to match an Apple album. Playback deduplicates the media themselves.
     var albumReferences: [AlbumReference] { albums.map(\.reference) }
     var configurationAvailable: Bool { GooglePhotosConfiguration.bundled != nil }
+    var localStorageByteCount: Int64 {
+        GooglePhotosStorageUsage.byteCount(at: mediaRoot, fileManager: fileManager)
+    }
+    var formattedLocalStorage: String {
+        GooglePhotosStorageUsage.formattedByteCount(localStorageByteCount)
+    }
+    func album(id: String) -> GoogleAlbumRecord? {
+        albums.first { $0.id == id }
+    }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }

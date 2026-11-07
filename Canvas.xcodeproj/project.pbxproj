@@ -27,6 +27,7 @@
 		5031FEF8C39639BE572410A5 /* avalanche-peak.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 1126FD75C870A6F77524E7B6 /* avalanche-peak.jpg */; };
 		509F716A292612FACF9C7205 /* yellowstone-inspiration.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 608E57F92AC03E33C4ADE366 /* yellowstone-inspiration.jpg */; };
 		5133881DF5ACE96A74F107F4 /* crab-nebula.jpg in Resources */ = {isa = PBXBuildFile; fileRef = A38CB82A8EAEA2277B2963B0 /* crab-nebula.jpg */; };
+		58CE70F5E268367EF0F24ECA /* FrameExperienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D538026C43233FA9E90BF233 /* FrameExperienceTests.swift */; };
 		5A4569FBE29FD5340CDD087C /* OverlayLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10FCC22ED863C3617885FEE /* OverlayLayoutTests.swift */; };
 		5C4EBBA2B9AA05F0EA32F259 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3E55871F1C2D83E54A6E27AB /* Assets.xcassets */; };
 		5EBD08290771840F5199F535 /* cosmic-cliffs.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B2F65AD21DF2C006FC295A40 /* cosmic-cliffs.jpg */; };
@@ -144,6 +145,7 @@
 		C337C3E726B3A176EDD806B3 /* pillars-of-creation.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "pillars-of-creation.jpg"; sourceTree = "<group>"; };
 		D3BE561BC20E80C66A71AADD /* MediaRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaRenderer.swift; sourceTree = "<group>"; };
 		D52EB493A85D234721E4DFB2 /* akpatok-island.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "akpatok-island.jpg"; sourceTree = "<group>"; };
+		D538026C43233FA9E90BF233 /* FrameExperienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameExperienceTests.swift; sourceTree = "<group>"; };
 		D8C9DE030785099CD68185CC /* golden-gate.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "golden-gate.jpg"; sourceTree = "<group>"; };
 		DCCDB40A53D4B9937B3E4AF9 /* kenai-glacier.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "kenai-glacier.jpg"; sourceTree = "<group>"; };
 		DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutCanvas.swift; sourceTree = "<group>"; };
@@ -227,6 +229,7 @@
 			isa = PBXGroup;
 			children = (
 				EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */,
+				D538026C43233FA9E90BF233 /* FrameExperienceTests.swift */,
 				B10FCC22ED863C3617885FEE /* OverlayLayoutTests.swift */,
 				58521AF67DE3FC4CE4086A1B /* PhotoSyncReliabilityTests.swift */,
 				3D4CC0D3F2F06FD410A3D92F /* PlaybackReliabilityTests.swift */,
@@ -484,6 +487,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */,
+				58CE70F5E268367EF0F24ECA /* FrameExperienceTests.swift in Sources */,
 				5A4569FBE29FD5340CDD087C /* OverlayLayoutTests.swift in Sources */,
 				B3CBDFF72A635B17B87DEB77 /* PhotoSyncReliabilityTests.swift in Sources */,
 				5EC037E2F4FAFD24C4236162 /* PlaybackReliabilityTests.swift in Sources */,
@@ -539,12 +543,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
-				CURRENT_PROJECT_VERSION = 75;
+				CURRENT_PROJECT_VERSION = 77;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas;
 				PRODUCT_NAME = Canvas;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -560,12 +564,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Canvas/Canvas.entitlements;
-				CURRENT_PROJECT_VERSION = 75;
+				CURRENT_PROJECT_VERSION = 77;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Canvas/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Canvas Slideshow";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = com.johnhelmuth.canvas;
 				PRODUCT_NAME = Canvas;
 				TARGETED_DEVICE_FAMILY = "1,2";

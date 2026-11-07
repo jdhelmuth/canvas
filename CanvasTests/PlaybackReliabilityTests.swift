@@ -904,6 +904,56 @@ final class FullShuffleTests: XCTestCase {
         XCTAssertNotEqual(model.currentAsset?.id, last)
     }
 
+    func testPhotoAddDuringPlaybackKeepsShuffleProgressAndIngestsNewItems() async throws {
+        let suite = "canvas-membership-shuffle-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var pool = items(8)
+        let cycleStore = ShuffleCycleStore(defaults: defaults)
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in pool },
+            imageLoader: { _, _ in UIImage() }, cycleStore: cycleStore, libraryIsComplete: { _ in true })
+        defer { model.stop() }
+        await model.reload()
+        for _ in 0..<3 {
+            let frame = model.displayedFrame?.id
+            XCTAssertTrue(model.next())
+            await settle(model, after: frame)
+        }
+        let current = try XCTUnwrap(model.currentAsset?.id)
+        let displayed = cycleStore.load()?.displayedIDs
+        pool = items(10)
+        await model.refreshLibrary()
+        XCTAssertEqual(model.currentAsset?.id, current)
+        XCTAssertEqual(cycleStore.load()?.displayedIDs, displayed)
+        XCTAssertEqual(model.queueCount, 10)
+        let pending = Set(cycleStore.load()?.pendingIDs() ?? [])
+        XCTAssertTrue(pending.contains("apple:8"))
+        XCTAssertTrue(pending.contains("apple:9"))
+        XCTAssertFalse(pending.contains(current))
+    }
+
+    func testTransientUnresolvedSelectionKeepsCurrentShuffleFrameWhenItemsRemain() async throws {
+        let all = items(12)
+        var complete = true
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in all },
+            imageLoader: { _, _ in UIImage() }, libraryIsComplete: { _ in complete })
+        defer { model.stop() }
+        await model.reload()
+        for _ in 0..<3 {
+            let frame = model.displayedFrame?.id
+            XCTAssertTrue(model.next())
+            await settle(model, after: frame)
+        }
+        let current = try XCTUnwrap(model.currentAsset?.id)
+        complete = false
+        await model.refreshLibrary()
+        XCTAssertEqual(model.currentAsset?.id, current)
+        complete = true
+        await model.refreshLibrary()
+        XCTAssertEqual(model.currentAsset?.id, current)
+        XCTAssertTrue(model.isPlaying)
+    }
+
     func testOver1300UniquePhotosAcrossOverlappingAlbumsAndRestart() async throws {
         let suite = "canvas-shuffle-test-\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

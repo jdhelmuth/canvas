@@ -24,12 +24,17 @@ final class SettingsStore: ObservableObject {
     private let defaults: UserDefaults
     private let key = "canvas.settings.v1"
     private let schemaKey = "canvas.settings.schema"
+    private let framePlayingKey = "canvas.frame-was-playing"
     private var canPersist = true
     static let recoveryDataKey = "canvas.settings.recovery.data"
     private static let recoveryNoticeKey = "canvas.settings.recovery.notice"
+    /// Session intent for resume-on-open. Kept out of CanvasSettings so
+    /// applying a preset cannot reopen a closed frame.
+    @Published var frameWasPlaying: Bool { didSet { defaults.set(frameWasPlaying, forKey: framePlayingKey) } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        frameWasPlaying = defaults.bool(forKey: framePlayingKey)
         recoveryMessage = defaults.string(forKey: Self.recoveryNoticeKey)
         if defaults.integer(forKey: schemaKey) > Self.currentSchema {
             settings = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(CanvasSettings.self, from: $0) } ?? CanvasSettings()
@@ -64,11 +69,17 @@ final class SettingsStore: ObservableObject {
             if decoded.overlays.migrateLegacySharedStroke() {
                 migrated = true
             }
+            if decoded.overlays.migrateLegacyCaptionAndLocation() {
+                migrated = true
+            }
             if decoded.normalizePlaybackTiming() {
                 migrated = true
             }
             for index in decoded.presets.indices {
                 if decoded.presets[index].settings.overlays.migrateLegacySharedStroke() {
+                    migrated = true
+                }
+                if decoded.presets[index].settings.overlays.migrateLegacyCaptionAndLocation() {
                     migrated = true
                 }
                 if decoded.presets[index].settings.normalizePlaybackTiming() {
@@ -159,6 +170,7 @@ final class AppStore: ObservableObject {
         if ProcessInfo.processInfo.arguments.contains("--canvas-ui-reset") {
             UserDefaults.standard.removeObject(forKey: "canvas.settings.v1")
             UserDefaults.standard.removeObject(forKey: "canvas.settings.schema")
+            UserDefaults.standard.removeObject(forKey: "canvas.frame-was-playing")
         }
 #endif
         settingsStore = SettingsStore()

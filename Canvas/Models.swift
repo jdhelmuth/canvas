@@ -716,9 +716,9 @@ struct MediaDescriptor: Hashable, Identifiable {
 struct CanvasFilters: Codable, Equatable {
     var includePhotos = true
     var includeLivePhotos = true
-    var includeVideos = true
+    var includeVideos = FirstRunMediaFilterPolicy.includeVideosByDefault
     var includeHidden = false
-    var includeScreenshots = true
+    var includeScreenshots = FirstRunMediaFilterPolicy.includeScreenshotsByDefault
     var includeBursts = true
     var locationTaggedOnly = false
     var favoritesOnly = false
@@ -802,6 +802,9 @@ struct CanvasSettings: Codable, Equatable {
     var ambientDeviceMAC: String?
     var filters = CanvasFilters()
     var keepAwake = true
+    /// Optional so older settings decode. Nil follows the device default:
+    /// resume a still-open frame on iPad, return to Home on iPhone.
+    var resumeFrameOnOpen: Bool?
     var chargingOnly = false
     var lowBatteryStop = 10
     /// Optional for settings saved before Canvas offered a standalone
@@ -839,6 +842,9 @@ struct CanvasSettings: Codable, Equatable {
     }
 
     var effectiveShowEmptyAlbums: Bool { showEmptyAlbums ?? false }
+    func effectiveResumeFrameOnOpen(device: FrameResumePolicy.DeviceKind) -> Bool {
+        FrameResumePolicy.isEnabled(resumeFrameOnOpen, device: device)
+    }
     var effectiveAutomaticNightDimmingEnabled: Bool { automaticNightDimmingEnabled ?? true }
     var effectiveNightDimmingStartMinutes: Int { min(max(nightDimmingStartMinutes ?? 22 * 60, 0), 24 * 60 - 1) }
     var effectiveNightDimmingStopMinutes: Int { min(max(nightDimmingStopMinutes ?? 7 * 60, 0), 24 * 60 - 1) }
@@ -872,6 +878,12 @@ struct OverlaySettings: Codable, Equatable {
     var showAlbum = false
     var showLocation = false
     var showCaption = false
+    /// Optional so older settings decode. When missing, a previously enabled
+    /// caption overlay keeps showing the filename; new setups do not.
+    var showFilename: Bool?
+    /// Optional so older settings decode. When missing, a previously enabled
+    /// location overlay keeps coordinates; new setups show place names only.
+    var showCoordinates: Bool?
     var showItemCount = false
     var showBattery = false
     var showWeather = false
@@ -969,6 +981,8 @@ struct OverlaySettings: Codable, Equatable {
     var effectiveWeatherShowDailyHighLow: Bool { weatherShowDailyHighLow ?? false }
     var effectiveWeatherShowSunriseSunset: Bool { weatherShowSunriseSunset ?? false }
     var effectiveWeatherShowNextHour: Bool { weatherShowNextHour ?? false }
+    var effectiveShowFilename: Bool { showFilename ?? false }
+    var effectiveShowCoordinates: Bool { showCoordinates ?? false }
 
     /// Converts settings written before clock and supporting-text strokes were
     /// separated. The old shared stroke remains visually unchanged once, then
@@ -986,6 +1000,22 @@ struct OverlaySettings: Codable, Equatable {
         }
         if clockStrokeWidth == nil {
             clockStrokeWidth = textStrokeWidth ?? 1.5
+            changed = true
+        }
+        return changed
+    }
+
+    /// Preserves filename/coordinate overlays that existing users already
+    /// turned on, without enabling those technical fields for new setups.
+    @discardableResult
+    mutating func migrateLegacyCaptionAndLocation() -> Bool {
+        var changed = false
+        if showCaption, showFilename == nil {
+            showFilename = true
+            changed = true
+        }
+        if showLocation, showCoordinates == nil {
+            showCoordinates = true
             changed = true
         }
         return changed
