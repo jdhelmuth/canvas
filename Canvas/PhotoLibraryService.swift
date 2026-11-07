@@ -142,6 +142,94 @@ final class AlbumRecoveryRunner {
     deinit { task?.cancel() }
 }
 
+/// Classifies a Photos notification without treating asset membership as an
+/// identity failure. 1.0.9 already retries a full catalog rebuild; photo-add
+/// events need this split so a still-playable selection is not dropped.
+enum AlbumRefreshKind: Equatable {
+    case none
+    case contentOnly
+    case identityAndContent
+}
+
+struct PhotoLibraryChangeSummary: Equatable {
+    var collectionIdentityChanged = false
+    var collectionsWereRefetchedWithoutIncrementalDetails = false
+    var collectionMetadataChanged = false
+}
+
+enum AlbumObservationPolicy {
+    static func incorporateIncrementalChange(
+        hasDetails: Bool,
+        hasIncrementalChanges: Bool,
+        insertedCount: Int,
+        removedCount: Int,
+        changedCount: Int,
+        into summary: inout PhotoLibraryChangeSummary
+    ) {
+        guard hasDetails else { return }
+        if !hasIncrementalChanges {
+            summary.collectionsWereRefetchedWithoutIncrementalDetails = true
+            return
+        }
+        if insertedCount > 0 || removedCount > 0 {
+            summary.collectionIdentityChanged = true
+        }
+        if changedCount > 0 {
+            summary.collectionMetadataChanged = true
+        }
+    }
+
+    static func refreshKind(_ summary: PhotoLibraryChangeSummary, hasTrackedAlbums: Bool) -> AlbumRefreshKind {
+        if summary.collectionsWereRefetchedWithoutIncrementalDetails || summary.collectionIdentityChanged {
+            return .identityAndContent
+        }
+        if summary.collectionMetadataChanged || hasTrackedAlbums {
+            return .contentOnly
+        }
+        return .none
+    }
+}
+
+enum AlbumChangeCoalescePolicy {
+    static let interval: TimeInterval = 0.35
+
+    static func merge(_ current: AlbumRefreshKind, incoming: AlbumRefreshKind) -> AlbumRefreshKind {
+        switch (current, incoming) {
+        case (.identityAndContent, _), (_, .identityAndContent): return .identityAndContent
+        case (.contentOnly, _), (_, .contentOnly): return .contentOnly
+        default: return .none
+        }
+    }
+}
+
+/// Playback may keep fetching a last-good collection while live identity
+/// resolution is still failing. Warnings use live resolution only.
+enum AlbumPlaybackIdentityPolicy {
+    static func collection(
+        selected: AlbumReference,
+        liveResolved: AlbumReference?,
+        lastPlayable: AlbumReference?,
+        isTracked: Bool,
+        catalog: AlbumReference?
+    ) -> AlbumReference? {
+        if let liveResolved { return liveResolved }
+        if isTracked { return lastPlayable }
+        return catalog
+    }
+}
+
+enum AlbumTransientRetentionPolicy {
+    static func retainedPlayable(
+        previous: AlbumReference?,
+        live: AlbumReference?,
+        authorization: PhotoAuthorizationState
+    ) -> AlbumReference? {
+        if let live { return live }
+        guard authorization.canRead else { return nil }
+        return previous
+    }
+}
+
 /// One resolution policy for warnings, playback, saved selections and presets.
 /// Failed/ambiguous cloud mappings return nil. Names never establish identity.
 enum AlbumIdentityResolver {
@@ -170,9 +258,15 @@ enum AlbumIdentityResolver {
                 identity.cloudIdentifier = currentCloud
             } else { identity.cloudIdentifier = original.cloudIdentifier ?? savedClouds.first }
         }
-        func finish(_ found: AlbumReference) -> AlbumReference? {
-            guard found.source == .applePhotos, found.subtype == identity.subtype,
-                  found.isSmart == identity.isSmart, found.isShared == identity.isShared else { return nil }
+        func finish(_ found: AlbumReference, requireCompatibleKind: Bool = true) -> AlbumReference? {
+            guard found.source == .applePhotos else { return nil }
+            // Same local identifier is the collection, even if Photos flickers
+            // shared/regular subtype while iCloud commits a member. Smart vs
+            // user album remains a different object and cannot be rebound.
+            if requireCompatibleKind {
+                guard found.isSmart == identity.isSmart else { return nil }
+                if found.isSmart, found.subtype != identity.subtype { return nil }
+            }
             var result = AlbumSelectionResolution.retainingIdentity(found, from: identity)
             result = AlbumSelectionResolution.retainingIdentity(result, from: original)
             // Keep the durable identity when available; capture legacy identities
@@ -183,7 +277,9 @@ enum AlbumIdentityResolver {
             result.cloudIdentifier = (authorization == .authorized ? cloudID(found.id) : nil) ?? identity.cloudIdentifier
             return result
         }
-        if let found = lookup(identity.id) { return finish(found) }
+        if let found = lookup(identity.id) {
+            return finish(found, requireCompatibleKind: found.id != identity.id)
+        }
         guard authorization == .authorized, let cloud = identity.cloudIdentifier else { return nil }
         if let mapped = localID(cloud), let found = lookup(mapped) { return finish(found) }
         let aliases = Set(identity.previousLocalIdentifiers + original.previousLocalIdentifiers)
@@ -589,10 +685,16 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     private let imageManager = PHCachingImageManager()
     private var trackedReferences: [AlbumReference] = []
     private var resolvedReferences: [String: AlbumReference] = [:]
+    private var lastPlayableReferences: [String: AlbumReference] = [:]
     private var cloudIdentities: [String: String] = [:]
     private var identityHistory = AlbumIdentityHistory()
     private var canSaveIdentityHistory = true
     private let identityHistoryKey = "canvas.album-identities.v1"
+    private var userAlbumFetch: PHFetchResult<PHAssetCollection>?
+    private var smartAlbumFetch: PHFetchResult<PHAssetCollection>?
+    private var pendingRefreshKind: AlbumRefreshKind = .none
+    private var coalesceTask: Task<Void, Never>?
+    private var snapshotGeneration: UInt64 = 0
     private lazy var recoveryRunner = AlbumRecoveryRunner(refresh: { [weak self] in
         guard let self, self.recoveryActive else { return false }
         self.refreshAlbumSnapshot(forceRevision: false)
@@ -663,6 +765,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         // A foreground return or explicit retry must refresh media, not only
         // album names/counts. Edits and equal-count membership replacements
         // while suspended may have no observable AlbumReference difference.
+        invalidateCoalescedRefresh()
         refreshAlbums(contentChanged: true)
     }
 
@@ -690,12 +793,64 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
 
     func refreshAlbums(contentChanged: Bool = false) {
         refreshAlbumSnapshot(forceRevision: contentChanged)
+        updateRecoveryRunner()
+    }
+
+    private func applyRefresh(_ kind: AlbumRefreshKind) {
+        switch kind {
+        case .none:
+            return
+        case .contentOnly:
+            // Membership changed; identities did not. Keep last-good
+            // resolution so an in-progress frame is not treated as missing.
+            let previousAuthorization = authorization
+            authorization = PhotoAuthorizationState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
+            if previousAuthorization != authorization || !authorization.canRead {
+                refreshAlbumSnapshot(forceRevision: true)
+                updateRecoveryRunner()
+                return
+            }
+            libraryRevision += 1
+            updateRecoveryRunner()
+        case .identityAndContent:
+            refreshAlbumSnapshot(forceRevision: true)
+            updateRecoveryRunner()
+        }
+    }
+
+    private func updateRecoveryRunner() {
         guard recoveryActive, authorization.canRead, hasUnresolvedAlbums else {
             recoveryRunner.stop()
             return
         }
         // Repeated metadata reconciliation must not restart the backoff.
         recoveryRunner.start()
+    }
+
+    private func invalidateCoalescedRefresh() {
+        snapshotGeneration &+= 1
+        coalesceTask?.cancel()
+        coalesceTask = nil
+        pendingRefreshKind = .none
+    }
+
+    private func scheduleRefresh(_ kind: AlbumRefreshKind) {
+        let merged = AlbumChangeCoalescePolicy.merge(pendingRefreshKind, incoming: kind)
+        guard merged != .none else { return }
+        pendingRefreshKind = merged
+        guard coalesceTask == nil else { return }
+        let generation = snapshotGeneration &+ 1
+        snapshotGeneration = generation
+        coalesceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(AlbumChangeCoalescePolicy.interval))
+            guard let self else { return }
+            guard generation == self.snapshotGeneration else { return }
+            self.coalesceTask = nil
+            let pending = self.pendingRefreshKind
+            self.pendingRefreshKind = .none
+            guard !Task.isCancelled, pending != .none else { return }
+            self.applyRefresh(pending)
+        }
     }
 
     private var hasUnresolvedAlbums: Bool {
@@ -710,11 +865,11 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         var result: [AlbumReference] = []
         var resolved: [String: AlbumReference] = [:]
         if authorization.canRead {
-            let collections = [
-                PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil),
-                PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .any, options: nil)
-            ]
-            for fetch in collections {
+            let userFetch = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
+            let smartFetch = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .any, options: nil)
+            userAlbumFetch = userFetch
+            smartAlbumFetch = smartFetch
+            for fetch in [userFetch, smartFetch] {
                 fetch.enumerateObjects { collection, _, _ in result.append(self.reference(for: collection)) }
             }
             var direct = Dictionary(result.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -729,12 +884,20 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                         let reference = self.reference(for: collection)
                         direct[id] = reference
                         return reference
-                    }, cloudID: { self.cloudIdentity(for: $0, refresh: true) }, localID: { self.localIdentity(for: $0) })
+                    }, cloudID: { self.cloudIdentity(for: $0, refresh: false) }, localID: { self.localIdentity(for: $0) })
                 if let found {
                     resolved[original.id] = found
                     resolved[found.id] = found
                     direct[found.id] = found
                     identityHistory.record(found)
+                    lastPlayableReferences[original.id] = found
+                    lastPlayableReferences[found.id] = found
+                } else if let playable = AlbumTransientRetentionPolicy.retainedPlayable(
+                    previous: previousResolved[original.id] ?? lastPlayableReferences[original.id],
+                    live: nil,
+                    authorization: authorization
+                ) {
+                    lastPlayableReferences[original.id] = playable
                 }
             }
             result = Array(direct.values)
@@ -742,6 +905,9 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
             // Do not retain readable snapshots or image caches after revocation.
             imageManager.stopCachingImagesForAllAssets()
             cloudIdentities.removeAll()
+            lastPlayableReferences.removeAll()
+            userAlbumFetch = nil
+            smartAlbumFetch = nil
         }
         resolvedReferences = resolved
         if canSaveIdentityHistory, let data = try? JSONEncoder().encode(identityHistory),
@@ -937,9 +1103,16 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         var output: [PHAsset] = []
         var seen = Set<String>()
         for reference in references where reference.source == .applePhotos {
-            // The same resolution snapshot drives the warning and the queue.
+            // Warnings use live resolution only. Playback may keep a last-good
+            // collection through a transient catalog/iCloud glitch.
             let isTracked = trackedReferences.contains { $0.id == reference.id }
-            let resolved = resolvedReferences[reference.id] ?? (isTracked ? nil : albums.first(where: { $0.id == reference.id }))
+            let resolved = AlbumPlaybackIdentityPolicy.collection(
+                selected: reference,
+                liveResolved: resolvedReferences[reference.id],
+                lastPlayable: lastPlayableReferences[reference.id],
+                isTracked: isTracked,
+                catalog: albums.first(where: { $0.id == reference.id })
+            )
             guard let resolved,
                   let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [resolved.id], options: nil).firstObject else { continue }
             let fetch = PHAsset.fetchAssets(in: collection, options: options)
@@ -1060,10 +1233,46 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
 
     nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            // Asset membership can change without changing album metadata.
-            self.refreshAlbums(contentChanged: true)
+            self?.noteLibraryChange(changeInstance)
         }
+    }
+
+    private func noteLibraryChange(_ change: PHChange) {
+        scheduleRefresh(AlbumObservationPolicy.refreshKind(
+            changeSummary(from: change),
+            hasTrackedAlbums: !trackedReferences.isEmpty
+        ))
+    }
+
+    private func changeSummary(from change: PHChange) -> PhotoLibraryChangeSummary {
+        var summary = PhotoLibraryChangeSummary()
+        if userAlbumFetch == nil && smartAlbumFetch == nil {
+            summary.collectionsWereRefetchedWithoutIncrementalDetails = true
+            return summary
+        }
+        if let fetch = userAlbumFetch, let details = change.changeDetails(for: fetch) {
+            userAlbumFetch = details.fetchResultAfterChanges
+            AlbumObservationPolicy.incorporateIncrementalChange(
+                hasDetails: true,
+                hasIncrementalChanges: details.hasIncrementalChanges,
+                insertedCount: details.insertedIndexes?.count ?? 0,
+                removedCount: details.removedIndexes?.count ?? 0,
+                changedCount: details.changedIndexes?.count ?? 0,
+                into: &summary
+            )
+        }
+        if let fetch = smartAlbumFetch, let details = change.changeDetails(for: fetch) {
+            smartAlbumFetch = details.fetchResultAfterChanges
+            AlbumObservationPolicy.incorporateIncrementalChange(
+                hasDetails: true,
+                hasIncrementalChanges: details.hasIncrementalChanges,
+                insertedCount: details.insertedIndexes?.count ?? 0,
+                removedCount: details.removedIndexes?.count ?? 0,
+                changedCount: details.changedIndexes?.count ?? 0,
+                into: &summary
+            )
+        }
+        return summary
     }
 }
 
