@@ -758,7 +758,10 @@ final class PlaybackViewModel: ObservableObject {
             await refreshOverlayMetadata(for: asset, generation: generation)
             return true
         }
-        if displayedFrame?.asset.id == expectedID {
+        // A preview already on this same item can stand in when HQ is missing.
+        // Reusing a last-good still after a failed load is not a successful
+        // recovery; skip/recovery must keep walking the queue.
+        if displayedFrame?.asset.id == expectedID, displayedImageIsPreview, !isRecovering, !pendingFrameReload {
             await refreshOverlayMetadata(for: asset, generation: generation)
             return true
         }
