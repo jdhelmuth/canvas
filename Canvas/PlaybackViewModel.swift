@@ -662,7 +662,8 @@ final class PlaybackViewModel: ObservableObject {
 
     private func loadFrame(generation: Int, transitionSeed: UInt64, gestureDirection: Int) async -> Bool {
         guard !Task.isCancelled, loadGeneration == generation else { return false }
-        guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil, let imageLoader else { return false }
+        guard let asset = queue.indices.contains(currentIndex) ? queue[currentIndex] : nil else { return false }
+        guard previewImageLoader != nil || imageLoader != nil else { return false }
         let retainedFrame = pendingLayoutRefresh && !pendingFrameReload && !isRecovering && displayedFrame?.asset.id == asset.id ? displayedFrame : nil
         if retainedFrame == nil {
             elapsed = 0
@@ -708,8 +709,10 @@ final class PlaybackViewModel: ObservableObject {
                     )
                 }
             }
-        } else {
+        } else if let imageLoader {
             image = await imageLoader(asset, CGSize(width: 1800, height: 1800))
+        } else {
+            return false
         }
         guard !Task.isCancelled, loadGeneration == generation else { return false }
         if let image {
@@ -728,7 +731,13 @@ final class PlaybackViewModel: ObservableObject {
                    retainedFrame.layoutImages.indices.contains(index) {
                     companionImage = retainedFrame.layoutImages[index]
                 } else {
-                    companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000))
+                    if let imageLoader {
+                        companionImage = await imageLoader(companion, CGSize(width: 1000, height: 1000))
+                    } else if let previewImageLoader {
+                        companionImage = await previewImageLoader(companion, CGSize(width: 1000, height: 1000)) { _ in }
+                    } else {
+                        companionImage = nil
+                    }
                 }
                 if let companionImage {
                     guard !Task.isCancelled, loadGeneration == generation else { return false }
