@@ -39,117 +39,133 @@ struct PlayerView: View {
     }
 
     var body: some View {
+        playerWithLifecycle
+    }
+
+    private var playerChrome: some View {
         playerSurface
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // Photo surfaces ignore the safe area so the frame can fill the
-        // display. Overlay chrome stays inside the safe area so compact
-        // widths keep controls out of the status region and home indicator.
-        .canvasPlaybackSystemChrome()
-        .overlay(alignment: .top) {
-            if let warning = store.library.selectionWarning(for: store.settings.selectedAlbums) {
-                Label(warning, systemImage: "exclamationmark.triangle")
-                    .font(.callout).foregroundStyle(.white).padding(12)
-                    .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
-                    .padding(24).allowsHitTesting(false)
-            }
-        }
-        .task {
-            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-            store.weather.setActive(true)
-            if isWeatherFramePreview || hidesControlsForStoreCapture { controlsVisible = false }
-#if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") {
-                for _ in 0..<48 {
-                    if !store.settings.selectedAlbums.isEmpty { break }
-                    try? await Task.sleep(for: .milliseconds(250))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // Photo surfaces ignore the safe area so the frame can fill the
+            // display. Overlay chrome stays inside the safe area so compact
+            // widths keep controls out of the status region and home indicator.
+            .canvasPlaybackSystemChrome()
+            .overlay(alignment: .top) {
+                if let warning = store.library.selectionWarning(for: store.settings.selectedAlbums) {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.callout).foregroundStyle(.white).padding(12)
+                        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+                        .padding(24).allowsHitTesting(false)
                 }
             }
+            .sheet(isPresented: $showDetails) { detailsSheet }
+            .alert("Photos access needed", isPresented: isItemActionAlertPresented) {
+                Button("OK", role: .cancel) { itemActionMessage = nil }
+            } message: {
+                Text(itemActionMessage ?? "")
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Canvas slideshow")
+            .accessibilityHint("Swipe left or right to change photos. Playback controls include previous, next, exclude, and favorite.")
+    }
+
+    private var playerWithPlaybackObservers: some View {
+        playerChrome
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in scheduleHide() }
+            .onChange(of: store.library.libraryRevision) { _, _ in Task { await model.refreshLibrary() } }
+            .onChange(of: model.currentAsset?.id) { _, _ in scheduleHide() }
+            .onChange(of: model.isPlaying) { _, playing in
+                store.audio.setPlaybackAllowed(playbackGateAllows && playing)
+                if playing { store.audio.start() } else { store.audio.pause() }
+                scheduleHide()
+            }
+    }
+
+    private var playerWithSettingsObservers: some View {
+        playerWithPlaybackObservers
+            .onChange(of: store.settings.overlays.showWeather) { _, _ in updateWeather() }
+            .onChange(of: store.settings.effectiveWeatherSource) { _, _ in updateWeather() }
+            .onChange(of: store.settings) { _, updated in
+                Task {
+                    await model.updateSettings(updated)
+                    if model.queueCount == 0 && !hidesControlsForStoreCapture && !isWeatherFramePreview { closePlayer() }
+                }
+                store.audio.update(updated)
+                isLocked = updated.lockControls
+                updateNightDimmingSchedule(settings: updated)
+                scheduleHide()
+            }
+            .onChange(of: store.googlePhotos.albums) { _, _ in
+                Task {
+                    await model.refreshLibrary()
+                    if model.queueCount == 0 && !hidesControlsForStoreCapture && !isWeatherFramePreview { closePlayer() }
+                }
+            }
+            .onChange(of: powerAllowsPlayback) { _, _ in updatePowerState() }
+            .onChange(of: store.settings.schedules) { _, rules in scheduleMonitor.start(rules: rules) }
+            .onChange(of: store.settings.keepAwake) { _, _ in updatePowerState() }
+            .onChange(of: playbackGateAllows) { _, allowed in
+                model.setPlaybackAllowed(allowed)
+                store.audio.setPlaybackAllowed(allowed && model.isPlaying)
+                if allowed { scheduleHide() }
+                else { hideTask?.cancel(); controlsVisible = true }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                store.weather.setActive(phase == .active)
+                if phase == .active {
+                    // Re-evaluate immediately after foregrounding so a frame that
+                    // crossed a night boundary while suspended never waits for
+                    // the monitor's next periodic tick.
+                    updateNightDimmingSchedule()
+                } else {
+                    finishFrameTransition()
+                }
+            }
+    }
+
+    private var playerWithLifecycle: some View {
+        playerWithSettingsObservers
+            .task {
+                UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+                store.weather.setActive(true)
+                if isWeatherFramePreview || hidesControlsForStoreCapture { controlsVisible = false }
+#if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--canvas-ui-showcase") {
+                    for _ in 0..<48 {
+                        if !store.settings.selectedAlbums.isEmpty { break }
+                        try? await Task.sleep(for: .milliseconds(250))
+                    }
+                }
 #endif
-            guard !Task.isCancelled else { return }
-            isLocked = store.settings.lockControls
-            scheduleMonitor.start(rules: store.settings.schedules)
-            updateNightDimmingSchedule()
-            model.configure(library: store.library, googlePhotos: store.googlePhotos, loader: store.loader, settings: store.settings)
-            model.setPlaybackAllowed(playbackGateAllows)
-            store.audio.configure(store.settings)
-            store.audio.setPlaybackAllowed(playbackGateAllows && model.isPlaying)
-            store.audio.start()
-            updateWeather()
-            scheduleHide()
-        }
-        .onDisappear {
-            model.stop()
-            scheduleMonitor.stop()
-            store.audio.setPlaybackAllowed(false)
-            hideTask?.cancel()
-            transitionCompletionTask?.cancel()
-            nightDimmingMonitor.stop()
-            UIDevice.current.endGeneratingDeviceOrientationNotifications()
-            store.power.endPlayback(); store.audio.stop(); store.weather.clear()
-        }
-        .onAppear {
-            store.power.refresh()
-            if powerAllowsPlayback { store.power.beginPlayback(keepAwake: store.settings.keepAwake) }
-            store.settingsStore.frameWasPlaying = true
-            scheduleHide()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
-        .onChange(of: store.library.libraryRevision) { _, _ in Task { await model.refreshLibrary() } }
-        .onChange(of: model.currentAsset?.id) { _, _ in scheduleHide() }
-        .onChange(of: model.isPlaying) { _, playing in
-            store.audio.setPlaybackAllowed(playbackGateAllows && playing)
-            if playing { store.audio.start() } else { store.audio.pause() }
-            scheduleHide()
-        }
-        .onChange(of: store.settings.overlays.showWeather) { _, _ in updateWeather() }
-        .onChange(of: store.settings.effectiveWeatherSource) { _, _ in updateWeather() }
-        .onChange(of: store.settings) { _, updated in
-            Task {
-                await model.updateSettings(updated)
-                if model.queueCount == 0 && !hidesControlsForStoreCapture && !isWeatherFramePreview { closePlayer() }
-            }
-            store.audio.update(updated)
-            isLocked = updated.lockControls
-            updateNightDimmingSchedule(settings: updated)
-            scheduleHide()
-        }
-        .onChange(of: store.googlePhotos.albums) { _, _ in
-            Task {
-                await model.refreshLibrary()
-                if model.queueCount == 0 && !hidesControlsForStoreCapture && !isWeatherFramePreview { closePlayer() }
-            }
-        }
-        .onChange(of: powerAllowsPlayback) { _, _ in updatePowerState() }
-        .onChange(of: store.settings.schedules) { _, rules in scheduleMonitor.start(rules: rules) }
-        .onChange(of: store.settings.keepAwake) { _, _ in updatePowerState() }
-        .onChange(of: playbackGateAllows) { _, allowed in
-            model.setPlaybackAllowed(allowed)
-            store.audio.setPlaybackAllowed(allowed && model.isPlaying)
-            if allowed { scheduleHide() }
-            else { hideTask?.cancel(); controlsVisible = true }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            store.weather.setActive(phase == .active)
-            if phase == .active {
-                // Re-evaluate immediately after foregrounding so a frame that
-                // crossed a night boundary while suspended never waits for
-                // the monitor's next periodic tick.
+                guard !Task.isCancelled else { return }
+                isLocked = store.settings.lockControls
+                scheduleMonitor.start(rules: store.settings.schedules)
                 updateNightDimmingSchedule()
-            } else {
-                finishFrameTransition()
+                model.configure(library: store.library, googlePhotos: store.googlePhotos, loader: store.loader, settings: store.settings)
+                model.setPlaybackAllowed(playbackGateAllows)
+                store.audio.configure(store.settings)
+                store.audio.setPlaybackAllowed(playbackGateAllows && model.isPlaying)
+                store.audio.start()
+                updateWeather()
+                scheduleHide()
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in scheduleHide() }
-        .sheet(isPresented: $showDetails) { detailsSheet }
-        .alert("Photos access needed", isPresented: isItemActionAlertPresented) {
-            Button("OK", role: .cancel) { itemActionMessage = nil }
-        } message: {
-            Text(itemActionMessage ?? "")
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Canvas slideshow")
-        .accessibilityHint("Swipe left or right to change photos. Playback controls include previous, next, exclude, and favorite.")
+            .onDisappear {
+                model.stop()
+                scheduleMonitor.stop()
+                store.audio.setPlaybackAllowed(false)
+                hideTask?.cancel()
+                transitionCompletionTask?.cancel()
+                nightDimmingMonitor.stop()
+                UIDevice.current.endGeneratingDeviceOrientationNotifications()
+                store.power.endPlayback(); store.audio.stop(); store.weather.clear()
+            }
+            .onAppear {
+                store.power.refresh()
+                if powerAllowsPlayback { store.power.beginPlayback(keepAwake: store.settings.keepAwake) }
+                store.settingsStore.frameWasPlaying = true
+                scheduleHide()
+            }
     }
 
     private var playerSurface: some View {
