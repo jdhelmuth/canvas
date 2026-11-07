@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import Photos
 import SwiftUI
 import UIKit
@@ -51,6 +52,220 @@ enum FrameLaunchPolicy {
 
     static func canStart(isPresented: Bool, isStarting: Bool) -> Bool {
         !isPresented && !isStarting
+    }
+}
+
+/// Resume-on-open is a docked-frame convenience, not an always-on kiosk.
+/// iPad defaults to resuming a still-running frame; iPhone defaults to Home.
+/// An intentional close, empty queue, or missing Photos access must not
+/// reopen the player.
+enum FrameResumePolicy {
+    enum DeviceKind: Equatable {
+        case phone
+        case pad
+        case unspecified
+    }
+
+    static func deviceKind(_ idiom: UIUserInterfaceIdiom) -> DeviceKind {
+        switch idiom {
+        case .phone: return .phone
+        case .pad: return .pad
+        default: return .unspecified
+        }
+    }
+
+    static func defaultEnabled(for device: DeviceKind) -> Bool {
+        device == .pad
+    }
+
+    static func isEnabled(_ preference: Bool?, device: DeviceKind) -> Bool {
+        preference ?? defaultEnabled(for: device)
+    }
+
+    static func shouldPresentOnOpen(
+        preference: Bool?,
+        device: DeviceKind,
+        frameWasPlaying: Bool,
+        playable: FrameLaunchPolicy.Decision,
+        isPlayerPresented: Bool,
+        isStarting: Bool
+    ) -> Bool {
+        guard isEnabled(preference, device: device) else { return false }
+        guard frameWasPlaying else { return false }
+        guard playable == .ready else { return false }
+        return canStart(isPresented: isPlayerPresented, isStarting: isStarting)
+    }
+}
+
+/// First-run Recents hygiene. Existing saved settings keep their encoded
+/// filter values; only a brand-new CanvasSettings snapshot uses these defaults.
+enum FirstRunMediaFilterPolicy {
+    static let includeScreenshotsByDefault = false
+    static let includeVideosByDefault = false
+}
+
+/// Applies the living-room shelf treatment using features that already exist.
+/// It never replaces albums, filters, or a saved preset library.
+enum ShelfFrameSetup {
+    static let presetName = "Shelf frame"
+
+    static func applying(to settings: CanvasSettings) -> CanvasSettings {
+        var updated = settings
+        updated.keepAwake = true
+        updated.overlays.showTime = true
+        updated.overlays.showWeather = true
+        updated.overlays.showDate = true
+        return updated
+    }
+
+    static func savingPreset(from settings: CanvasSettings) -> Result<[CanvasPreset], PresetSaveError> {
+        PresetSavePolicy.append(name: presetName, snapshot: applying(to: settings), to: settings.presets)
+    }
+}
+
+/// Favorite writes need Full Photos access. Exclude only records an ID in
+/// Canvas settings and never deletes a Photos or Google original.
+enum SlideshowItemActionPolicy {
+    enum FavoriteAvailability: Equatable {
+        case allowed
+        case needsFullAccess
+        case notApplePhoto
+    }
+
+    static func favoriteAvailability(source: PhotoSource, authorization: PhotoAuthorizationState) -> FavoriteAvailability {
+        guard source == .applePhotos else { return .notApplePhoto }
+        return authorization == .authorized ? .allowed : .needsFullAccess
+    }
+
+    static func excluding(_ itemID: String, from identifiers: Set<String>) -> Set<String> {
+        identifiers.union([itemID])
+    }
+}
+
+/// Caption and place overlays prefer embedded photo metadata. They never send
+/// coordinates to a geocoder or a Canvas account.
+enum PhotoOverlayTextPolicy {
+    static func caption(
+        photoCaption: String?,
+        filename: String?,
+        showPhotoCaption: Bool,
+        showFilename: Bool
+    ) -> String? {
+        if showPhotoCaption, let photoCaption {
+            let trimmed = photoCaption.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        if showFilename, let filename {
+            let trimmed = filename.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+
+    static func location(
+        placeName: String?,
+        coordinateText: String?,
+        showPlace: Bool,
+        showCoordinates: Bool
+    ) -> String? {
+        if showPlace, let placeName {
+            let trimmed = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        if showCoordinates, let coordinateText {
+            let trimmed = coordinateText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+
+    static func coordinateText(latitude: Double, longitude: Double) -> String {
+        String(format: "%.3f, %.3f", latitude, longitude)
+    }
+}
+
+/// Reads IPTC/TIFF/EXIF dictionaries already present in a file. This is local
+/// ImageIO parsing, not reverse geocoding.
+enum PhotoMetadataParser {
+    static func caption(from imageProperties: [String: Any]) -> String? {
+        let iptc = imageProperties["{IPTC}"] as? [String: Any]
+        let tiff = imageProperties["{TIFF}"] as? [String: Any]
+        let exif = imageProperties["{Exif}"] as? [String: Any]
+        let candidates = [
+            iptc?["Caption/Abstract"] as? String,
+            iptc?["ObjectName"] as? String,
+            tiff?["ImageDescription"] as? String,
+            exif?["UserComment"] as? String
+        ]
+        return candidates.compactMap(cleaned).first
+    }
+
+    static func placeName(from imageProperties: [String: Any]) -> String? {
+        let iptc = imageProperties["{IPTC}"] as? [String: Any]
+        let parts = [
+            iptc?["SubLocation"] as? String,
+            iptc?["City"] as? String,
+            iptc?["Province/State"] as? String,
+            iptc?["Country/PrimaryLocationName"] as? String
+        ].compactMap(cleaned)
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: ", ")
+    }
+
+    static func overlayFields(from imageProperties: [String: Any]) -> (caption: String?, placeName: String?) {
+        (caption(from: imageProperties), placeName(from: imageProperties))
+    }
+
+    static func overlayFields(from imageData: Data) -> (caption: String?, placeName: String?) {
+        guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] else {
+            return (nil, nil)
+        }
+        return overlayFields(from: properties)
+    }
+
+    private static func cleaned(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+enum GooglePhotosStorageUsage {
+    static func byteCount(at directory: URL, fileManager: FileManager = .default) -> Int64 {
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values?.isRegularFile == true else { continue }
+            total += Int64(values?.fileSize ?? 0)
+        }
+        return total
+    }
+
+    static func formattedByteCount(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        return formatter.string(fromByteCount: bytes)
+    }
+}
+
+enum PhotoImageProgressPolicy {
+    static func shouldPublishPreview(isDegraded: Bool, hasFinalImage: Bool) -> Bool {
+        isDegraded && !hasFinalImage
+    }
+
+    static func shouldReplacePreview(currentIsDegraded: Bool, incomingIsDegraded: Bool, sameIdentity: Bool) -> Bool {
+        sameIdentity && currentIsDegraded && !incomingIsDegraded
+    }
+
+    static func shouldIgnoreStale(expectedID: String, incomingID: String, generation: Int, incomingGeneration: Int) -> Bool {
+        expectedID != incomingID || generation != incomingGeneration
     }
 }
 

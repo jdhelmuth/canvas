@@ -54,6 +54,7 @@
 		B6A836F73CA36D222031AB78 /* san-francisco-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 070F843F21B9DC80E6153E97 /* san-francisco-night.jpg */; };
 		B720295E345F7E5A480E5F2E /* LayoutCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */; };
 		B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */; };
+		C1F4E5A91B2C3D4E5F607182 /* FrameExperienceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F4E5A91B2C3D4E5F607182 /* FrameExperienceTests.swift */; };
 		BE9612A953DC29173D6A7B28 /* olympic-twilight.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 175EAB8D8D8208BCF80B4FB4 /* olympic-twilight.jpg */; };
 		C5FD500D9F843C3796FD0F48 /* OverlayLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5A2A279EF17ABEEF38BE1C /* OverlayLayout.swift */; };
 		C6C75FBDD785B60DB5DC09C3 /* olympic-sea-stacks.jpg in Resources */ = {isa = PBXBuildFile; fileRef = F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */; };
@@ -150,6 +151,7 @@
 		DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePhotosService.swift; sourceTree = "<group>"; };
 		E0B380B71F82FF74DEE95762 /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
 		EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasTests.swift; sourceTree = "<group>"; };
+		A1F4E5A91B2C3D4E5F607182 /* FrameExperienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameExperienceTests.swift; sourceTree = "<group>"; };
 		F165A3DAA247EA7018EFEB95 /* van-gogh-from-space.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "van-gogh-from-space.jpg"; sourceTree = "<group>"; };
 		F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "olympic-sea-stacks.jpg"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -227,6 +229,7 @@
 			isa = PBXGroup;
 			children = (
 				EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */,
+				A1F4E5A91B2C3D4E5F607182 /* FrameExperienceTests.swift */,
 				B10FCC22ED863C3617885FEE /* OverlayLayoutTests.swift */,
 				58521AF67DE3FC4CE4086A1B /* PhotoSyncReliabilityTests.swift */,
 				3D4CC0D3F2F06FD410A3D92F /* PlaybackReliabilityTests.swift */,
@@ -484,6 +487,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */,
+				C1F4E5A91B2C3D4E5F607182 /* FrameExperienceTests.swift in Sources */,
 				5A4569FBE29FD5340CDD087C /* OverlayLayoutTests.swift in Sources */,
 				B3CBDFF72A635B17B87DEB77 /* PhotoSyncReliabilityTests.swift in Sources */,
 				5EC037E2F4FAFD24C4236162 /* PlaybackReliabilityTests.swift in Sources */,

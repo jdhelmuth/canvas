@@ -26,6 +26,7 @@ struct PlayerView: View {
     @State private var layoutDraft: OverlayLayouts?
     @State private var selectedOverlay: OverlayBlock = .clock
     @State private var resolvedOverlayDefaults: [OverlayBlock: OverlayPlacement] = [:]
+    @State private var itemActionMessage: String?
     private var isEditingLayout: Bool { layoutDraft != nil }
 
     var body: some View {
@@ -64,6 +65,7 @@ struct PlayerView: View {
             }
             if controlsVisible && !isLocked && !isEditingLayout { controls }
             if isLocked { lockBadge }
+            if !isLocked && !isEditingLayout { keyboardShortcuts }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Photo surfaces ignore the safe area so the frame can fill the
@@ -112,7 +114,12 @@ struct PlayerView: View {
             UIDevice.current.endGeneratingDeviceOrientationNotifications()
             store.power.endPlayback(); store.audio.stop(); store.weather.clear()
         }
-        .onAppear { store.power.refresh(); if powerAllowsPlayback { store.power.beginPlayback(keepAwake: store.settings.keepAwake) }; scheduleHide() }
+        .onAppear {
+            store.power.refresh()
+            if powerAllowsPlayback { store.power.beginPlayback(keepAwake: store.settings.keepAwake) }
+            store.settingsStore.frameWasPlaying = true
+            scheduleHide()
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryStateDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in store.power.refresh(); updatePowerState() }
         .onChange(of: store.library.libraryRevision) { _, _ in Task { await model.refreshLibrary() } }
@@ -162,14 +169,101 @@ struct PlayerView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in scheduleHide() }
         .sheet(isPresented: $showDetails) { detailsSheet }
+        .alert("Photos access needed", isPresented: Binding(
+            get: { itemActionMessage != nil },
+            set: { if !$0 { itemActionMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { itemActionMessage = nil }
+        } message: {
+            Text(itemActionMessage ?? "")
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Canvas slideshow")
+        .accessibilityHint("Swipe left or right to change photos. Playback controls include previous, next, exclude, and favorite.")
     }
 
     private func closePlayer() {
+        store.settingsStore.frameWasPlaying = false
         // Let the presenter own its navigation state. The dismissal environment
         // can lose the active cover context across full-screen scene updates.
         if let onClose { onClose() } else { dismiss() }
+    }
+
+    private var overlayCaptionText: String? {
+        PhotoOverlayTextPolicy.caption(
+            photoCaption: model.overlayCaption,
+            filename: model.currentAsset?.filename,
+            showPhotoCaption: store.settings.overlays.showCaption,
+            showFilename: store.settings.overlays.effectiveShowFilename
+        )
+    }
+
+    private var overlayLocationText: String? {
+        let coordinate = model.currentAsset?.appleAsset?.location.map {
+            PhotoOverlayTextPolicy.coordinateText(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+        }
+        return PhotoOverlayTextPolicy.location(
+            placeName: model.overlayPlaceName,
+            coordinateText: coordinate,
+            showPlace: store.settings.overlays.showLocation,
+            showCoordinates: store.settings.overlays.effectiveShowCoordinates
+        )
+    }
+
+    private var favoriteHint: String {
+        switch SlideshowItemActionPolicy.favoriteAvailability(
+            source: model.currentAsset?.source ?? .bundled,
+            authorization: store.library.authorization
+        ) {
+        case .allowed:
+            return "Marks or unmarks this Apple Photos item as a favorite."
+        case .needsFullAccess:
+            return "Favorite requires Full Photos access. Exclude never deletes originals."
+        case .notApplePhoto:
+            return "Favorites apply to Apple Photos items. Exclude hides this item in Canvas only."
+        }
+    }
+
+    private func excludeCurrent() {
+        guard let id = model.currentAsset?.id else { return }
+        store.settingsStore.update {
+            $0.filters.excludedAssetIDs = SlideshowItemActionPolicy.excluding(id, from: $0.filters.excludedAssetIDs)
+        }
+        scheduleHide()
+    }
+
+    private func favoriteCurrent() {
+        guard let item = model.currentAsset else { return }
+        switch SlideshowItemActionPolicy.favoriteAvailability(source: item.source, authorization: store.library.authorization) {
+        case .allowed:
+            if let asset = item.appleAsset {
+                Task { await store.library.toggleFavorite(asset) }
+            }
+        case .needsFullAccess:
+            itemActionMessage = "Favorite needs Full Photos access in Settings. Exclude hides this item from Canvas slideshows and never deletes the original."
+        case .notApplePhoto:
+            itemActionMessage = "Favorites apply to Apple Photos items. Use Exclude to hide this item from Canvas without deleting it."
+        }
+        scheduleHide()
+    }
+
+    private var keyboardShortcuts: some View {
+        VStack {
+            Button("Previous photo") { model.previous(); scheduleHide() }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Next photo") { model.next(); scheduleHide() }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+            Button(model.isPlaying ? "Pause slideshow" : "Resume slideshow") { model.togglePlaying(); scheduleHide() }
+                .keyboardShortcut(.space, modifiers: [])
+            Button("Close slideshow") { closePlayer() }
+                .keyboardShortcut(.escape, modifiers: [])
+            Button("Exclude from Canvas") { excludeCurrent() }
+                .keyboardShortcut("e", modifiers: [.command])
+        }
+        .opacity(0.001)
+        .frame(width: 0, height: 0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var layoutPreviewWidth: CGFloat? {
@@ -497,11 +591,35 @@ struct PlayerView: View {
                 ProgressView(value: model.progress).tint(.white).padding(.horizontal, 16)
                 HStack(spacing: 34) {
                     Button { model.previous(); scheduleHide() } label: { Image(systemName: "backward.fill").font(.title2) }
+                        .accessibilityLabel("Previous photo")
+                        .accessibilityIdentifier("previous-slideshow-item")
                     Button { model.togglePlaying(); scheduleHide() } label: { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.title).frame(width: 64, height: 64).background(.white, in: Circle()).foregroundStyle(.black) }
                         .accessibilityLabel(model.isPlaying ? "Pause slideshow" : "Resume slideshow")
                         .accessibilityIdentifier("toggle-slideshow-playback")
                     Button { model.next(); scheduleHide() } label: { Image(systemName: "forward.fill").font(.title2) }
+                        .accessibilityLabel("Next photo")
+                        .accessibilityIdentifier("next-slideshow-item")
                 }.foregroundStyle(.white)
+                HStack(spacing: 20) {
+                    Button(action: excludeCurrent) {
+                        Label("Exclude", systemImage: "eye.slash")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .accessibilityLabel("Exclude from Canvas")
+                    .accessibilityHint("Hides this item from future slideshows. Originals are not deleted.")
+                    .accessibilityIdentifier("exclude-slideshow-item")
+                    Button(action: favoriteCurrent) {
+                        Label(
+                            model.currentAsset?.isFavorite == true ? "Favorited" : "Favorite",
+                            systemImage: model.currentAsset?.isFavorite == true ? "heart.fill" : "heart"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                    }
+                    .accessibilityLabel(model.currentAsset?.isFavorite == true ? "Remove favorite" : "Favorite")
+                    .accessibilityHint(favoriteHint)
+                    .accessibilityIdentifier("favorite-slideshow-item")
+                }
+                .foregroundStyle(.white)
                 HStack { Label("\(model.currentIndex + 1) of \(model.queueCount)", systemImage: "photo").font(.caption); Spacer(); if model.currentAsset?.isFavorite == true { Image(systemName: "heart.fill") } }
                     .foregroundStyle(.white.opacity(0.8)).padding(.horizontal, 16)
             }.padding(.bottom, 8).background(LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom))
@@ -717,8 +835,8 @@ struct PlayerView: View {
             showDate: settings.showDate,
             showAlbum: settings.showAlbum && model.currentAsset?.albumTitle != nil,
             showWeekday: settings.showWeekday,
-            showLocation: settings.showLocation && model.currentAsset?.appleAsset?.location != nil,
-            showCaption: settings.showCaption && !(model.currentAsset?.filename ?? "").isEmpty,
+            showLocation: overlayLocationText != nil,
+            showCaption: overlayCaptionText != nil,
             showItemCount: settings.showItemCount,
             showBattery: settings.showBattery,
             showWeather: settings.showWeather
@@ -752,16 +870,16 @@ struct PlayerView: View {
                 .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
                 .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
         case .location:
-            if let location = model.currentAsset?.appleAsset?.location {
-                Text("\(location.coordinate.latitude, specifier: "%.3f"), \(location.coordinate.longitude, specifier: "%.3f")")
-                    .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight, design: .monospaced))
+            if let overlayLocationText {
+                Text(overlayLocationText)
+                    .font(.system(size: settings.fontSize * 0.54, weight: settings.effectiveTextWeight.fontWeight))
                     .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
             }
         case .caption:
-            if let filename = model.currentAsset?.filename, !filename.isEmpty {
-                Text(filename)
+            if let overlayCaptionText {
+                Text(overlayCaptionText)
                     .font(.system(size: settings.fontSize * 0.62, weight: settings.effectiveTextWeight.fontWeight))
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .overlayTextStroke(settings: settings, mediaImage: model.currentImage, opacity: textOpacity)
             }
         case .itemCount:
@@ -880,10 +998,13 @@ struct PlayerView: View {
                     LabeledContent("Dimensions", value: "\(item.pixelWidth) × \(item.pixelHeight)")
                     LabeledContent("Favorite", value: item.isFavorite ? "Yes" : "No")
                     if let asset = item.appleAsset {
-                        Button { Task { await store.library.toggleFavorite(asset) } } label: { Label(asset.isFavorite ? "Remove favorite" : "Favorite", systemImage: asset.isFavorite ? "heart.slash" : "heart") }
+                        Button { favoriteCurrent() } label: { Label(asset.isFavorite ? "Remove favorite" : "Favorite", systemImage: asset.isFavorite ? "heart.slash" : "heart") }
                         Button { UIApplication.shared.open(URL(string: "photos-redirect://")!) } label: { Label("Open Photos", systemImage: "photo.on.rectangle") }
                     }
-                    Button { store.settingsStore.settings.filters.excludedAssetIDs.insert(item.id); showDetails = false; Task { await model.reload() } } label: { Label("Exclude from Canvas", systemImage: "eye.slash") }
+                    Button {
+                        excludeCurrent()
+                        showDetails = false
+                    } label: { Label("Exclude from Canvas", systemImage: "eye.slash") }
                     if let url = item.localURL { ShareLink(item: url) { Label("Share item", systemImage: "square.and.arrow.up") } }
                 }
             }.navigationTitle("Photo details").navigationBarTitleDisplayMode(.inline)

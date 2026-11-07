@@ -151,6 +151,8 @@ struct SettingsView: View {
             Toggle("Include still photos", isOn: filterBinding(\.includePhotos))
             Toggle("Favorites only", isOn: binding(\.filters.favoritesOnly))
             Toggle("Include videos", isOn: binding(\.filters.includeVideos))
+            Text("New setups leave screenshots and videos off so Recents does not surprise a first frame. Existing saved choices are kept.")
+                .font(.footnote).foregroundStyle(.secondary)
             Toggle("Include Live Photos", isOn: binding(\.filters.includeLivePhotos))
             Toggle("Include hidden items", isOn: binding(\.filters.includeHidden))
             Toggle("Include screenshots", isOn: filterBinding(\.includeScreenshots))
@@ -248,7 +250,11 @@ struct SettingsView: View {
                 Toggle("Item count", isOn: binding(\.overlays.showItemCount))
                 Toggle("Battery", isOn: binding(\.overlays.showBattery))
                 Toggle("Location", isOn: binding(\.overlays.showLocation))
-                Toggle("Filename caption", isOn: binding(\.overlays.showCaption))
+                Toggle("Coordinates", isOn: optionalOverlayBinding(\.showCoordinates, default: false))
+                Toggle("Photo caption", isOn: binding(\.overlays.showCaption))
+                Toggle("Filename", isOn: optionalOverlayBinding(\.showFilename, default: false))
+                Text("Caption and location use text stored in the photo file on this device. Canvas does not reverse-geocode coordinates over the network. Filename and coordinates stay off unless you choose them.")
+                    .font(.footnote).foregroundStyle(.secondary)
             } label: {
                 Text(OverlaySettingsGroup.visibility.title)
             }
@@ -594,6 +600,22 @@ struct SettingsView: View {
     private var powerSection: some View {
         Section("Power & Display") {
             Toggle("Keep awake while playing", isOn: binding(\.keepAwake))
+            Toggle(
+                "Resume last frame when Canvas opens",
+                isOn: Binding(
+                    get: {
+                        store.settings.effectiveResumeFrameOnOpen(
+                            device: FrameResumePolicy.deviceKind(UIDevice.current.userInterfaceIdiom)
+                        )
+                    },
+                    set: { enabled in
+                        store.settingsStore.update { $0.resumeFrameOnOpen = enabled }
+                    }
+                )
+            )
+            .accessibilityIdentifier("resume-frame-on-open-toggle")
+            Text("On iPad this starts on so a docked frame can return to the same slideshow. Closing Home always returns here. Canvas will not reopen an empty or blocked library.")
+                .font(.footnote).foregroundStyle(.secondary)
             Toggle("Charging-only operation", isOn: binding(\.chargingOnly))
             Stepper("Stop below \(store.settings.lowBatteryStop)%", value: binding(\.lowBatteryStop), in: 0...50)
             Toggle(
@@ -649,7 +671,8 @@ struct SettingsView: View {
         Section("Accessibility") {
             Toggle("Lock controls in slideshow", isOn: binding(\.lockControls))
             Picker("Appearance", selection: binding(\.appearanceMode)) { ForEach(AppearanceMode.allCases) { Text($0.title).tag($0) } }
-            Text("Canvas follows Dynamic Type, VoiceOver labels, Reduce Motion, pointer, keyboard, and iPhone and iPad multitasking conventions.").font(.footnote).foregroundStyle(.secondary)
+            Text("Canvas follows Dynamic Type, VoiceOver, and Reduce Motion. While a slideshow is open, a hardware keyboard can use Left/Right to skip, Space to pause, Escape to close, and Command-E to exclude. Pointer clicks use the on-screen buttons. Locking controls disables those shortcuts.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
     private var presetsSection: some View {
@@ -669,6 +692,20 @@ struct SettingsView: View {
                     Button(role: .destructive) { store.settingsStore.settings.presets.removeAll { $0.id == preset.id } } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
                 }
             }
+            Button {
+                store.settingsStore.update { settings in
+                    settings = ShelfFrameSetup.applying(to: settings)
+                    if case .success(let presets) = ShelfFrameSetup.savingPreset(from: settings) {
+                        settings.presets = presets
+                    }
+                }
+                store.weather.update(showWeather: true)
+            } label: {
+                Label("Use shelf frame setup", systemImage: "display")
+            }
+            .accessibilityIdentifier("apply-shelf-frame")
+            Text("Turns on clock, weather, and keep-awake using your current albums. Weather asks for location if it is not already allowed. Existing installs are unchanged until you choose this.")
+                .font(.footnote).foregroundStyle(.secondary)
             Button {
                 newPresetName = ""
                 presetNameError = nil

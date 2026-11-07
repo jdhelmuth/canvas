@@ -660,6 +660,10 @@ final class CanvasUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout: 5))
         app.buttons["Continue"].tap()
         XCTAssertTrue(app.staticTexts["Family favorites"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.switches["onboarding-include-screenshots"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.switches["onboarding-include-screenshots"].value as? String, "0")
+        XCTAssertEqual(app.switches["onboarding-include-videos"].value as? String, "0")
+        XCTAssertTrue(app.switches["onboarding-shelf-frame"].exists)
 
         app.buttons["Continue"].tap()
         XCTAssertFalse(app.navigationBars["Choose albums"].exists)

@@ -982,11 +982,17 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         }
     }
 
-    func requestImage(for asset: PHAsset, targetSize: CGSize, contentMode: PHImageContentMode = PhotoLibraryService.displayImageContentMode) async throws -> UIImage {
+    func requestImage(
+        for asset: PHAsset,
+        targetSize: CGSize,
+        contentMode: PHImageContentMode = PhotoLibraryService.displayImageContentMode,
+        onPreview: ((UIImage) -> Void)? = nil
+    ) async throws -> UIImage {
         let request = PhotoImageRequest()
+        if let onPreview { request.installPreviewHandler(onPreview) }
         let timeout = Task {
             do { try await Task.sleep(for: .seconds(60)) } catch { return }
-            request.finish(.failure(PhotoLibraryError.imageUnavailable))
+            request.finishUsingPreviewIfNeeded()
         }
         defer { timeout.cancel() }
         let manager = imageManager
@@ -998,16 +1004,23 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                     return
                 }
                 let options = PHImageRequestOptions()
-                options.deliveryMode = .highQualityFormat
+                options.deliveryMode = .opportunistic
                 options.resizeMode = .fast
                 options.isNetworkAccessAllowed = true
                 let requestID = manager.requestImage(for: asset, targetSize: targetSize, contentMode: contentMode, options: options) { image, info in
                     if info?[PHImageCancelledKey] as? Bool == true {
                         request.finish(.failure(CancellationError()))
                     } else if let error = info?[PHImageErrorKey] as? Error {
-                        request.finish(.failure(error))
+                        request.finish(error, preservingPreview: true)
+                    } else if let image {
+                        let degraded = info?[PHImageResultIsDegradedKey] as? Bool == true
+                        if degraded {
+                            request.deliverPreview(image)
+                        } else {
+                            request.finish(.success(image))
+                        }
                     } else if info?[PHImageResultIsDegradedKey] as? Bool != true {
-                        request.finish(image.map { .success($0) } ?? .failure(PhotoLibraryError.imageUnavailable))
+                        request.finishUsingPreviewIfNeeded()
                     }
                 }
                 request.installCancellation { manager.cancelImageRequest(requestID) }
@@ -1015,6 +1028,27 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         } onCancel: {
             request.finish(.failure(CancellationError()))
         }
+    }
+
+    func overlayMetadata(for asset: PHAsset) async -> (caption: String?, placeName: String?) {
+        await withCheckedContinuation { continuation in
+            let options = PHImageRequestOptions()
+            options.deliveryMode = .fastFormat
+            options.isNetworkAccessAllowed = false
+            options.isSynchronous = false
+            imageManager.requestImageDataAndOrientation(for: asset, options: options) { data, _, _, _ in
+                guard let data else {
+                    continuation.resume(returning: (nil, nil))
+                    return
+                }
+                continuation.resume(returning: PhotoMetadataParser.overlayFields(from: data))
+            }
+        }
+    }
+
+    func overlayMetadata(at url: URL) -> (caption: String?, placeName: String?) {
+        guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else { return (nil, nil) }
+        return PhotoMetadataParser.overlayFields(from: data)
     }
 
     func toggleFavorite(_ asset: PHAsset) async {
@@ -1773,29 +1807,31 @@ final class AssetImageLoader: ObservableObject {
         }
     }
 
-    func image(for asset: PHAsset, service: PhotoLibraryService, size: CGSize) async -> UIImage? {
+    func image(for asset: PHAsset, service: PhotoLibraryService, size: CGSize, onPreview: ((UIImage) -> Void)? = nil) async -> UIImage? {
         let key = AssetImageCacheKey.apple(identifier: asset.localIdentifier, modificationDate: asset.modificationDate, libraryRevision: service.libraryRevision, size: size)
         if let cached = cache.object(forKey: key) { return cached }
         do {
             // Keep the complete source aspect ratio. Canvas performs the
             // intentional fit/fill crop in LayoutCanvas after loading.
+            // Previews are not cached so a later load still requests HQ.
             let image = try await service.requestImage(
                 for: asset,
                 targetSize: size,
-                contentMode: PhotoLibraryService.displayImageContentMode
+                contentMode: PhotoLibraryService.displayImageContentMode,
+                onPreview: onPreview
             )
             store(image, forKey: key)
             return image
         } catch { return nil }
     }
-    func image(for item: CanvasMediaItem, service: PhotoLibraryService, size: CGSize) async -> UIImage? {
+    func image(for item: CanvasMediaItem, service: PhotoLibraryService, size: CGSize, onPreview: ((UIImage) -> Void)? = nil) async -> UIImage? {
         let key = AssetImageCacheKey.local(item: item, size: size)
         if let cached = cache.object(forKey: key) { return cached }
         var image: UIImage?
         if let asset = item.appleAsset {
             // The asset-keyed path already owns the cache entry. Avoid adding
             // a second key for the same decoded UIImage on every Apple item.
-            return await self.image(for: asset, service: service, size: size)
+            return await self.image(for: asset, service: service, size: size, onPreview: onPreview)
         } else if let url = item.localURL, item.kind == .video {
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
@@ -1857,6 +1893,8 @@ final class PhotoImageRequest: @unchecked Sendable {
     private var continuation: CheckedContinuation<UIImage, Error>?
     private var result: Result<UIImage, Error>?
     private var cancellation: (() -> Void)?
+    private var previewHandler: ((UIImage) -> Void)?
+    private var previewImage: UIImage?
 
     func install(_ continuation: CheckedContinuation<UIImage, Error>) {
         lock.lock()
@@ -1864,6 +1902,14 @@ final class PhotoImageRequest: @unchecked Sendable {
         if result == nil { self.continuation = continuation }
         lock.unlock()
         if let result { continuation.resume(with: result) }
+    }
+
+    func installPreviewHandler(_ handler: @escaping (UIImage) -> Void) {
+        lock.lock()
+        previewHandler = handler
+        let preview = previewImage
+        lock.unlock()
+        if let preview { handler(preview) }
     }
 
     func installCancellation(_ cancellation: @escaping () -> Void) {
@@ -1874,7 +1920,43 @@ final class PhotoImageRequest: @unchecked Sendable {
         if finished { cancellation() }
     }
 
+    func deliverPreview(_ image: UIImage) {
+        lock.lock()
+        guard result == nil else { lock.unlock(); return }
+        previewImage = image
+        let handler = previewHandler
+        lock.unlock()
+        handler?(image)
+    }
+
     func finish(_ result: Result<UIImage, Error>) {
+        finish(result, preservingPreview: false)
+    }
+
+    func finish(_ error: Error, preservingPreview: Bool) {
+        if preservingPreview {
+            finishUsingPreviewIfNeeded(fallback: error)
+        } else {
+            finish(.failure(error))
+        }
+    }
+
+    func finishUsingPreviewIfNeeded(fallback: Error = PhotoLibraryError.imageUnavailable) {
+        lock.lock()
+        if let previewImage, result == nil {
+            lock.unlock()
+            finish(.success(previewImage))
+            return
+        }
+        lock.unlock()
+        finish(.failure(fallback))
+    }
+
+    private func finish(_ result: Result<UIImage, Error>, preservingPreview: Bool) {
+        if preservingPreview, case .failure = result {
+            finishUsingPreviewIfNeeded()
+            return
+        }
         lock.lock()
         guard self.result == nil else { lock.unlock(); return }
         self.result = result
@@ -1882,6 +1964,7 @@ final class PhotoImageRequest: @unchecked Sendable {
         let cancellation = self.cancellation
         self.continuation = nil
         self.cancellation = nil
+        previewHandler = nil
         lock.unlock()
         continuation?.resume(with: result)
         cancellation?()
