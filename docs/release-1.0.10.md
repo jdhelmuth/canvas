@@ -1,0 +1,5 @@
+# Canvas Slideshow 1.0.10 (77)
+
+Adds the eight frame-experience refinements and membership-aware Apple Photos album recovery. Resume last frame on iPad by default, load PhotoKit previews while high-quality images arrive, keep skip/exclude/favorite visible, default first-run Recents away from screenshots and videos, clarify Google import without auto sync, make shelf-frame setup opt-in, show captions and places from on-device file metadata only, and keep keyboard/VoiceOver statements accurate. Album observation reloads content for membership-only Photos events instead of rebuilding identities, coalesces bursts, and keeps last-good playback through transient PhotoKit misses without clearing saved selections or treating last-good playback as a healthy warning state.
+
+Live App Store Connect before this bump: public 1.0.9 READY_FOR_SALE on build 76; highest uploaded build 76; no in-flight review. Source 1.0.10 emits unused build 77. One Manual Public Release App Store-eligible archive is intended for the existing internal TestFlight group and App Review. Physical-device, iCloud, APNs, and multi-day playback checks are not claimed from simulator evidence.
