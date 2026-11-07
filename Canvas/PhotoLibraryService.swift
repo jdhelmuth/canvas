@@ -190,6 +190,27 @@ enum AlbumObservationPolicy {
     }
 }
 
+enum AlbumRefreshApplicationPolicy {
+    /// Membership-only updates normally skip identity rebuild. Unresolved
+    /// selections still need another identifier pass so a later catalog/cloud
+    /// proof can clear the warning without waiting for the recovery timer.
+    static func rebuildsIdentity(
+        kind: AlbumRefreshKind,
+        authorizationChanged: Bool,
+        canRead: Bool,
+        hasUnresolvedAlbums: Bool
+    ) -> Bool {
+        switch kind {
+        case .none:
+            return false
+        case .identityAndContent:
+            return true
+        case .contentOnly:
+            return authorizationChanged || !canRead || hasUnresolvedAlbums
+        }
+    }
+}
+
 enum AlbumChangeCoalescePolicy {
     static let interval: TimeInterval = 0.35
 
@@ -203,7 +224,8 @@ enum AlbumChangeCoalescePolicy {
 }
 
 /// Playback may keep fetching a last-good collection while live identity
-/// resolution is still failing. Warnings use live resolution only.
+/// resolution is still failing. A last-good ID that PhotoKit still returns is
+/// live availability, not a fake healthy state.
 enum AlbumPlaybackIdentityPolicy {
     static func collection(
         selected: AlbumReference,
@@ -234,7 +256,8 @@ enum AlbumTransientRetentionPolicy {
 /// Failed/ambiguous cloud mappings return nil. Names never establish identity.
 enum AlbumIdentityResolver {
     static func resolve(_ original: AlbumReference, known: [AlbumReference], authorization: PhotoAuthorizationState,
-                        lookup: (String) -> AlbumReference?, cloudID: (String) -> String?, localID: (String) -> String?) -> AlbumReference? {
+                        lookup: (String) -> AlbumReference?, cloudID: (String) -> String?, localID: (String) -> String?,
+                        catalog: [AlbumReference] = [], retained: AlbumReference? = nil) -> AlbumReference? {
         guard original.source == .applePhotos, authorization.canRead else { return nil }
         let allSuccessors = known.filter { $0.source == .applePhotos && $0.previousLocalIdentifiers.contains(original.id) }
         let successors = allSuccessors.filter { candidate in
@@ -280,6 +303,11 @@ enum AlbumIdentityResolver {
         if let found = lookup(identity.id) {
             return finish(found, requireCompatibleKind: found.id != identity.id)
         }
+        // A last-good local identifier that PhotoKit still returns is the same
+        // collection. Catalog enumeration may omit it while fetch-by-id works.
+        if let retained, retained.id != identity.id, let found = lookup(retained.id) {
+            return finish(found)
+        }
         guard authorization == .authorized, let cloud = identity.cloudIdentifier else { return nil }
         if let mapped = localID(cloud), let found = lookup(mapped) { return finish(found) }
         let aliases = Set(identity.previousLocalIdentifiers + original.previousLocalIdentifiers)
@@ -287,8 +315,20 @@ enum AlbumIdentityResolver {
             guard let found = lookup(id), cloudID(id) == cloud else { return nil }
             return finish(found)
         }
-        guard Set(candidates.map(\.id)).count == 1 else { return nil }
-        return candidates.first
+        let uniqueAliasIDs = Set(candidates.map(\.id))
+        if uniqueAliasIDs.count == 1 { return candidates.first }
+        if uniqueAliasIDs.count > 1 { return nil }
+        // TestFlight 1.0.10 (78) showed the settled unavailable banner for
+        // Joey — Canvas after this reverse-mapping miss (not the Checking copy,
+        // Limited copy, or denied copy). Catalog rows were not consulted for a
+        // unique cloud identity. Titles still never bind.
+        let catalogMatches = catalog.compactMap { candidate -> AlbumReference? in
+            guard candidate.source == .applePhotos, cloudID(candidate.id) == cloud else { return nil }
+            guard let found = lookup(candidate.id) else { return nil }
+            return finish(found)
+        }
+        guard Set(catalogMatches.map(\.id)).count == 1 else { return nil }
+        return catalogMatches.first
     }
 }
 
@@ -797,25 +837,23 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     }
 
     private func applyRefresh(_ kind: AlbumRefreshKind) {
-        switch kind {
-        case .none:
-            return
-        case .contentOnly:
-            // Membership changed; identities did not. Keep last-good
-            // resolution so an in-progress frame is not treated as missing.
-            let previousAuthorization = authorization
+        guard kind != .none else { return }
+        let previousAuthorization = authorization
+        if kind != .identityAndContent {
             authorization = PhotoAuthorizationState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
-            if previousAuthorization != authorization || !authorization.canRead {
-                refreshAlbumSnapshot(forceRevision: true)
-                updateRecoveryRunner()
-                return
-            }
-            libraryRevision += 1
-            updateRecoveryRunner()
-        case .identityAndContent:
+        }
+        if AlbumRefreshApplicationPolicy.rebuildsIdentity(
+            kind: kind,
+            authorizationChanged: previousAuthorization != authorization,
+            canRead: authorization.canRead,
+            hasUnresolvedAlbums: hasUnresolvedAlbums
+        ) {
             refreshAlbumSnapshot(forceRevision: true)
             updateRecoveryRunner()
+            return
         }
+        libraryRevision += 1
+        updateRecoveryRunner()
     }
 
     private func updateRecoveryRunner() {
@@ -884,7 +922,11 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                         let reference = self.reference(for: collection)
                         direct[id] = reference
                         return reference
-                    }, cloudID: { self.cloudIdentity(for: $0, refresh: false) }, localID: { self.localIdentity(for: $0) })
+                    },
+                    cloudID: { self.cloudIdentity(for: $0, refresh: previousResolved[original.id] == nil) },
+                    localID: { self.localIdentity(for: $0) },
+                    catalog: result,
+                    retained: previousResolved[original.id] ?? lastPlayableReferences[original.id])
                 if let found {
                     resolved[original.id] = found
                     resolved[found.id] = found
@@ -1103,8 +1145,9 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         var output: [PHAsset] = []
         var seen = Set<String>()
         for reference in references where reference.source == .applePhotos {
-            // Warnings use live resolution only. Playback may keep a last-good
-            // collection through a transient catalog/iCloud glitch.
+            // Prefer live resolution, including identifier-proven recovery of a
+            // last-good collection PhotoKit still returns. Playback may keep a
+            // last-good ID only while that fetch still succeeds.
             let isTracked = trackedReferences.contains { $0.id == reference.id }
             let resolved = AlbumPlaybackIdentityPolicy.collection(
                 selected: reference,

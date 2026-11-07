@@ -201,11 +201,15 @@ final class AlbumRecoveryTests: XCTestCase {
     }
 
     private func resolve(_ selected: AlbumReference, known: [AlbumReference] = [], access: PhotoAuthorizationState = .authorized,
-                         available: [AlbumReference], mappings: [String: String] = [:]) -> AlbumReference? {
+                         available: [AlbumReference], mappings: [String: String] = [:],
+                         catalog: [AlbumReference]? = nil, retained: AlbumReference? = nil,
+                         clouds: [String: String]? = nil) -> AlbumReference? {
         AlbumIdentityResolver.resolve(selected, known: known, authorization: access,
             lookup: { id in available.first { $0.id == id } },
-            cloudID: { id in available.first { $0.id == id }?.cloudIdentifier },
-            localID: { mappings[$0] })
+            cloudID: { id in clouds?[id] ?? available.first { $0.id == id }?.cloudIdentifier },
+            localID: { mappings[$0] },
+            catalog: catalog ?? available,
+            retained: retained)
     }
 
     func testCloudIdentityRefreshPreventsLaterLocalIdentifierDisconnection() throws {
@@ -391,6 +395,50 @@ final class AlbumRecoveryTests: XCTestCase {
         XCTAssertNil(AlbumSelectionResolution.warning(selected: selected, available: selected, authorization: .authorized))
     }
 
+    func testTestFlight11078BannerIsSettledUnavailableNotCheckingOrPermission() {
+        // TestFlight 1.0.10 (78), 17:44 ET 7 Nov 2026. Exact player banner:
+        // "Selected albums are not currently available to Canvas: Joey — Canvas.
+        // Your selections are saved and Canvas will retry automatically. Check
+        // that these albums are visible in Photos on this device."
+        // Photos remained visible under the banner; that is not proof the album
+        // is live-resolved or that the queue is advancing.
+        let joey = AlbumReference(id: "old", title: "Joey — Canvas", subtype: 2,
+            estimatedCount: 12, isSmart: false, isShared: false, cloudIdentifier: "cloud")
+        let banner = AlbumSelectionResolution.warning(
+            selected: [joey], available: [], authorization: .authorized, checking: false)
+        XCTAssertEqual(
+            banner,
+            "Selected albums are not currently available to Canvas: Joey — Canvas. Your selections are saved and Canvas will retry automatically. Check that these albums are visible in Photos on this device."
+        )
+        XCTAssertNotEqual(
+            banner,
+            AlbumSelectionResolution.warning(selected: [joey], available: [], authorization: .authorized, checking: true)
+        )
+        XCTAssertFalse(banner!.hasPrefix("Checking selected albums"))
+        XCTAssertFalse(banner!.contains("Limited Photos access"))
+        XCTAssertFalse(banner!.contains("Review Photos access in Settings"))
+        XCTAssertEqual(
+            AlbumSelectionResolution.warning(selected: [joey], available: [], authorization: .limited),
+            "Some selected albums are unavailable with Limited Photos access: Joey — Canvas. Your selections are saved. Review Photos access or reconnect in Selected albums."
+        )
+        XCTAssertEqual(
+            AlbumSelectionResolution.warning(selected: [joey], available: [], authorization: .denied),
+            "Selected Apple Photos albums are unavailable. Review Photos access in Settings."
+        )
+        XCTAssertNil(AlbumSelectionResolution.warning(selected: [joey], available: [joey], authorization: .authorized))
+        let favorites = AlbumReference(id: "fav", title: "Favorites", subtype: 203,
+            estimatedCount: 100, isSmart: true, isShared: false)
+        let gianna = AlbumReference(id: "gianna", title: "Gianna — Canvas", subtype: 2,
+            estimatedCount: 100, isSmart: false, isShared: false)
+        XCTAssertEqual(
+            AlbumSelectionResolution.warning(
+                selected: [favorites, gianna, joey], available: [favorites, gianna],
+                authorization: .authorized, checking: false),
+            "Selected albums are not currently available to Canvas: Joey — Canvas. Your selections are saved and Canvas will retry automatically. Check that these albums are visible in Photos on this device.",
+            "1.0.10 (78) named only Joey; other selected albums can still supply the visible frame"
+        )
+    }
+
     func testSameLocalIdentifierSurvivesSharedAlbumSubtypeFlicker() throws {
         let selected = album("joey", cloud: "cloud")
         let flickered = AlbumReference(id: "joey", title: "Joey — Canvas", subtype: 203,
@@ -467,6 +515,38 @@ final class AlbumRecoveryTests: XCTestCase {
         XCTAssertLessThan(AlbumChangeCoalescePolicy.interval, 2)
     }
 
+    func testShipped11078LeavesWarningWhenCatalogCloudProofExistsWithoutReverseMapping() throws {
+        // Current TestFlight 1.0.10 (78) evidence supersedes the earlier
+        // "Checking selected albums…" screenshot: the visible banner is the
+        // settled unavailable copy for Joey — Canvas with checking=false.
+        // Device PhotoKit reverse-mapping failure is not reproduced here.
+        let selected = AlbumReference(id: "old", title: "Joey — Canvas", subtype: 2,
+            estimatedCount: 12, isSmart: false, isShared: false, cloudIdentifier: "cloud")
+        let catalogRow = AlbumReference(id: "new", title: "Joey — Canvas", subtype: 2,
+            estimatedCount: 12, isSmart: false, isShared: false)
+        let shipped78 = AlbumIdentityResolver.resolve(
+            selected, known: [], authorization: .authorized,
+            lookup: { id in catalogRow.id == id ? catalogRow : nil },
+            cloudID: { id in id == "new" ? "cloud" : nil },
+            localID: { _ in nil },
+            catalog: [],
+            retained: nil
+        )
+        XCTAssertNil(shipped78, "1.0.10 (78) did not scan catalog cloud IDs after localIdentifierMappings failed")
+        XCTAssertEqual(
+            AlbumSelectionResolution.warning(selected: [selected], available: [], authorization: .authorized),
+            "Selected albums are not currently available to Canvas: Joey — Canvas. Your selections are saved and Canvas will retry automatically. Check that these albums are visible in Photos on this device."
+        )
+        XCTAssertEqual(AlbumPlaybackIdentityPolicy.collection(
+            selected: selected, liveResolved: nil, lastPlayable: selected, isTracked: true, catalog: nil)?.id, "old")
+
+        let recovered = try XCTUnwrap(resolve(
+            selected, available: [catalogRow], mappings: [:], clouds: ["new": "cloud"]))
+        XCTAssertEqual(recovered.id, "new")
+        XCTAssertNil(AlbumSelectionResolution.warning(
+            selected: [recovered], available: [catalogRow], authorization: .authorized, checking: false))
+    }
+
     func testPlaybackKeepsLastGoodCollectionWhileWarningUsesLiveResolution() {
         let selected = album("a")
         XCTAssertEqual(AlbumPlaybackIdentityPolicy.collection(
@@ -481,6 +561,91 @@ final class AlbumRecoveryTests: XCTestCase {
             selected: [selected], available: [selected], authorization: .authorized))
         XCTAssertEqual(AlbumSelectionResolution.committing(
             selectedIDs: ["a"], saved: [selected], available: []), [selected])
+    }
+
+    func testFetchableLastGoodIdentityClearsUnavailableWarningWithoutNameBinding() throws {
+        let selected = album("old", cloud: "cloud")
+        let retained = album("new", cloud: "cloud", previous: ["old"])
+        let recovered = try XCTUnwrap(resolve(selected, available: [retained], mappings: [:], catalog: [], retained: retained))
+        XCTAssertEqual(recovered.id, "new")
+        XCTAssertNil(AlbumSelectionResolution.warning(
+            selected: [recovered], available: [retained], authorization: .authorized))
+        XCTAssertNil(resolve(selected, available: [], mappings: [:], catalog: [], retained: retained),
+                     "An in-memory last-good ID that PhotoKit no longer returns is not live availability")
+        XCTAssertNotNil(AlbumSelectionResolution.warning(
+            selected: [selected], available: [], authorization: .authorized))
+    }
+
+    func testUniqueCatalogCloudIdentityRecoversWhenReverseMappingIsMissing() throws {
+        let selected = album("old", cloud: "cloud")
+        // Production catalog rows from 1.0.10 (78) do not store cloudIdentifier.
+        let current = AlbumReference(id: "new", title: "Joey — Canvas", subtype: 2,
+            estimatedCount: 12, isSmart: false, isShared: false)
+        let sameName = AlbumReference(id: "other", title: "Joey — Canvas", subtype: 2,
+            estimatedCount: 12, isSmart: false, isShared: false)
+        let recovered = try XCTUnwrap(resolve(
+            selected, available: [current, sameName], mappings: [:],
+            clouds: ["new": "cloud", "other": "other-cloud"]))
+        XCTAssertEqual(recovered.id, "new")
+        XCTAssertTrue(recovered.previousLocalIdentifiers.contains("old"))
+        XCTAssertNil(AlbumSelectionResolution.warning(
+            selected: [recovered], available: [current, sameName], authorization: .authorized))
+    }
+
+    func testSavedSelectionWithoutCloudIdentityDoesNotBindVisibleSameNameCatalog() {
+        let selected = album("old")
+        let visible = AlbumReference(id: "new", title: "Joey — Canvas", subtype: 2,
+            estimatedCount: 12, isSmart: false, isShared: false)
+        XCTAssertNil(resolve(selected, available: [visible], mappings: [:], clouds: ["new": "cloud"]))
+        XCTAssertTrue(AlbumSelectionResolution.warning(
+            selected: [selected], available: [], authorization: .authorized)!.contains("not currently available"))
+        XCTAssertEqual(AlbumSelectionResolution.committing(
+            selectedIDs: ["old"], saved: [selected], available: [visible]), [selected])
+    }
+
+    func testAmbiguousCatalogCloudIdentityDoesNotBindByTitle() {
+        let selected = album("old", cloud: "cloud")
+        XCTAssertNil(resolve(selected, available: [
+            AlbumReference(id: "one", title: "Joey — Canvas", subtype: 2, estimatedCount: 1, isSmart: false, isShared: false, cloudIdentifier: "cloud"),
+            AlbumReference(id: "two", title: "Joey — Canvas", subtype: 2, estimatedCount: 1, isSmart: false, isShared: false, cloudIdentifier: "cloud")
+        ], mappings: [:]))
+        XCTAssertNil(resolve(selected, available: [
+            AlbumReference(id: "other", title: "Joey — Canvas", subtype: 2, estimatedCount: 1, isSmart: false, isShared: false, cloudIdentifier: "other-cloud")
+        ], mappings: [:]))
+        XCTAssertNotNil(AlbumSelectionResolution.warning(
+            selected: [selected], available: [], authorization: .authorized))
+    }
+
+    func testLimitedAccessCannotUseCatalogCloudRecovery() {
+        let selected = album("old", cloud: "cloud")
+        let current = album("new", cloud: "cloud")
+        XCTAssertNil(resolve(selected, access: .limited, available: [current], mappings: [:]))
+        XCTAssertTrue(AlbumSelectionResolution.warning(
+            selected: [selected], available: [current], authorization: .limited)!.contains("Limited"))
+    }
+
+    func testDeniedAccessIsNotATransientAlbumMiss() {
+        let selected = album("old", cloud: "cloud")
+        XCTAssertNil(resolve(selected, access: .denied, available: [album("new", cloud: "cloud")]))
+        XCTAssertTrue(AlbumSelectionResolution.warning(
+            selected: [selected], available: [], authorization: .denied)!.contains("Settings"))
+        XCTAssertNil(AlbumTransientRetentionPolicy.retainedPlayable(
+            previous: selected, live: nil, authorization: .denied))
+    }
+
+    func testUnresolvedContentChangeRetriesIdentityInsteadOfOnlyReloadingMedia() {
+        XCTAssertFalse(AlbumRefreshApplicationPolicy.rebuildsIdentity(
+            kind: .contentOnly, authorizationChanged: false, canRead: true, hasUnresolvedAlbums: false))
+        XCTAssertTrue(AlbumRefreshApplicationPolicy.rebuildsIdentity(
+            kind: .contentOnly, authorizationChanged: false, canRead: true, hasUnresolvedAlbums: true))
+        XCTAssertTrue(AlbumRefreshApplicationPolicy.rebuildsIdentity(
+            kind: .contentOnly, authorizationChanged: true, canRead: true, hasUnresolvedAlbums: false))
+        XCTAssertTrue(AlbumRefreshApplicationPolicy.rebuildsIdentity(
+            kind: .contentOnly, authorizationChanged: false, canRead: false, hasUnresolvedAlbums: false))
+        XCTAssertTrue(AlbumRefreshApplicationPolicy.rebuildsIdentity(
+            kind: .identityAndContent, authorizationChanged: false, canRead: true, hasUnresolvedAlbums: false))
+        XCTAssertFalse(AlbumRefreshApplicationPolicy.rebuildsIdentity(
+            kind: .none, authorizationChanged: false, canRead: true, hasUnresolvedAlbums: true))
     }
 
     func testPermissionRevocationDropsPlayableIdentityAndEmptyCatalogDoesNotEraseSelection() {
