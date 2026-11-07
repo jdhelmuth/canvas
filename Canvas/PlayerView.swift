@@ -29,44 +29,17 @@ struct PlayerView: View {
     @State private var itemActionMessage: String?
     private var isEditingLayout: Bool { layoutDraft != nil }
 
+    private var isItemActionAlertPresented: Binding<Bool> {
+        Binding(
+            get: { itemActionMessage != nil },
+            set: { presented in
+                if !presented { itemActionMessage = nil }
+            }
+        )
+    }
+
     var body: some View {
-        ZStack {
-            // Media gestures belong below the controls. A button tap must not
-            // also toggle away the control layer before its action completes.
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if isWeatherFramePreview {
-                    weatherFramePreview
-                } else if !powerAllowsPlayback {
-                    VStack(spacing: 14) { Image(systemName: "bolt.fill").font(.largeTitle); Text("Canvas is waiting for power") .font(.headline); Text("Charging-only mode or the low-battery limit is enabled in Power & Display.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
-                } else if !store.settings.schedules.isEmpty && !scheduleMonitor.isPlaybackAllowed {
-                    if store.settings.schedules.contains(where: \.blackSleepScreen) {
-                        Color.black.ignoresSafeArea()
-                    } else {
-                        VStack(spacing: 14) { Image(systemName: "moon.stars.fill").font(.largeTitle); Text("Canvas is resting until the next schedule").font(.headline); Text("You can close this frame or adjust Schedules in Settings.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
-                    }
-                } else { nightDimmedMedia }
-            }
-            .contentShape(Rectangle())
-            .simultaneousGesture(tapGesture)
-            .simultaneousGesture(swipeGesture)
-            .simultaneousGesture(magnifyGesture)
-            .onLongPressGesture(minimumDuration: 0.55) { if !isEditingLayout { if isLocked { isLocked = false } else { showDetails = true } } }
-            GeometryReader { proxy in
-                let canvasSize = CGSize(width: min(proxy.size.width, layoutPreviewWidth ?? proxy.size.width), height: proxy.size.height)
-                let portrait = canvasSize.height > canvasSize.width
-                if (isWeatherFramePreview || (powerAllowsPlayback && scheduleMonitor.isPlaybackAllowed))
-                    && (isEditingLayout || portrait || store.settings.overlays.layouts?.layout(portrait: portrait) != nil) {
-                    movableOverlays(size: canvasSize, insets: proxy.safeAreaInsets)
-                        .colorMultiply(isNightDimActive && !isWeatherFramePreview && !isEditingLayout
-                            ? Color(white: 1 - NightDimmingPolicy.overlayOpacity) : .white)
-                }
-                if isEditingLayout { layoutEditorToolbar(portrait: portrait) }
-            }
-            if controlsVisible && !isLocked && !isEditingLayout { controls }
-            if isLocked { lockBadge }
-            if !isLocked && !isEditingLayout { keyboardShortcuts }
-        }
+        playerSurface
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // Photo surfaces ignore the safe area so the frame can fill the
         // display. Overlay chrome stays inside the safe area so compact
@@ -169,10 +142,7 @@ struct PlayerView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in scheduleHide() }
         .sheet(isPresented: $showDetails) { detailsSheet }
-        .alert("Photos access needed", isPresented: Binding(
-            get: { itemActionMessage != nil },
-            set: { if !$0 { itemActionMessage = nil } }
-        )) {
+        .alert("Photos access needed", isPresented: isItemActionAlertPresented) {
             Button("OK", role: .cancel) { itemActionMessage = nil }
         } message: {
             Text(itemActionMessage ?? "")
@@ -180,6 +150,46 @@ struct PlayerView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Canvas slideshow")
         .accessibilityHint("Swipe left or right to change photos. Playback controls include previous, next, exclude, and favorite.")
+    }
+
+    private var playerSurface: some View {
+        ZStack {
+            // Media gestures belong below the controls. A button tap must not
+            // also toggle away the control layer before its action completes.
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if isWeatherFramePreview {
+                    weatherFramePreview
+                } else if !powerAllowsPlayback {
+                    VStack(spacing: 14) { Image(systemName: "bolt.fill").font(.largeTitle); Text("Canvas is waiting for power") .font(.headline); Text("Charging-only mode or the low-battery limit is enabled in Power & Display.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
+                } else if !store.settings.schedules.isEmpty && !scheduleMonitor.isPlaybackAllowed {
+                    if store.settings.schedules.contains(where: \.blackSleepScreen) {
+                        Color.black.ignoresSafeArea()
+                    } else {
+                        VStack(spacing: 14) { Image(systemName: "moon.stars.fill").font(.largeTitle); Text("Canvas is resting until the next schedule").font(.headline); Text("You can close this frame or adjust Schedules in Settings.").font(.subheadline).foregroundStyle(.white.opacity(0.65)) }.foregroundStyle(.white.opacity(0.85)).padding(28).multilineTextAlignment(.center)
+                    }
+                } else { nightDimmedMedia }
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(tapGesture)
+            .simultaneousGesture(swipeGesture)
+            .simultaneousGesture(magnifyGesture)
+            .onLongPressGesture(minimumDuration: 0.55) { if !isEditingLayout { if isLocked { isLocked = false } else { showDetails = true } } }
+            GeometryReader { proxy in
+                let canvasSize = CGSize(width: min(proxy.size.width, layoutPreviewWidth ?? proxy.size.width), height: proxy.size.height)
+                let portrait = canvasSize.height > canvasSize.width
+                if (isWeatherFramePreview || (powerAllowsPlayback && scheduleMonitor.isPlaybackAllowed))
+                    && (isEditingLayout || portrait || store.settings.overlays.layouts?.layout(portrait: portrait) != nil) {
+                    movableOverlays(size: canvasSize, insets: proxy.safeAreaInsets)
+                        .colorMultiply(isNightDimActive && !isWeatherFramePreview && !isEditingLayout
+                            ? Color(white: 1 - NightDimmingPolicy.overlayOpacity) : .white)
+                }
+                if isEditingLayout { layoutEditorToolbar(portrait: portrait) }
+            }
+            if controlsVisible && !isLocked && !isEditingLayout { controls }
+            if isLocked { lockBadge }
+            if !isLocked && !isEditingLayout { keyboardShortcuts }
+        }
     }
 
     private func closePlayer() {
