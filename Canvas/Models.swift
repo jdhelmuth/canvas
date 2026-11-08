@@ -880,10 +880,10 @@ struct OverlaySettings: Codable, Equatable {
     var showCaption = false
     /// Optional so older settings decode. When missing, a previously enabled
     /// caption overlay keeps showing the filename; new setups do not.
-    var showFilename: Bool?
+    var showFilename: Bool? = false
     /// Optional so older settings decode. When missing, a previously enabled
     /// location overlay keeps coordinates; new setups show place names only.
-    var showCoordinates: Bool?
+    var showCoordinates: Bool? = false
     var showItemCount = false
     var showBattery = false
     var showWeather = false
@@ -1010,12 +1010,12 @@ struct OverlaySettings: Codable, Equatable {
     @discardableResult
     mutating func migrateLegacyCaptionAndLocation() -> Bool {
         var changed = false
-        if showCaption, showFilename == nil {
-            showFilename = true
+        if showFilename == nil {
+            showFilename = showCaption
             changed = true
         }
-        if showLocation, showCoordinates == nil {
-            showCoordinates = true
+        if showCoordinates == nil {
+            showCoordinates = showLocation
             changed = true
         }
         return changed
