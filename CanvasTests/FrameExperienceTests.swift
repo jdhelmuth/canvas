@@ -75,6 +75,8 @@ final class FrameExperienceTests: XCTestCase {
 
     func testLegacyCaptionAndLocationKeepTechnicalOverlays() {
         var overlays = OverlaySettings()
+        overlays.showFilename = nil
+        overlays.showCoordinates = nil
         overlays.showCaption = true
         overlays.showLocation = true
         XCTAssertTrue(overlays.migrateLegacyCaptionAndLocation())
@@ -194,6 +196,9 @@ final class FrameExperiencePersistenceTests: XCTestCase {
         original.filters.includeVideos = true
         original.overlays.showCaption = true
         original.overlays.showLocation = true
+        // Legacy serialized settings omitted these newly introduced fields.
+        original.overlays.showFilename = nil
+        original.overlays.showCoordinates = nil
         original.resumeFrameOnOpen = nil
         defaults.set(try JSONEncoder().encode(original), forKey: "canvas.settings.v1")
         defaults.set(5, forKey: "canvas.settings.schema")
@@ -336,5 +341,139 @@ final class PlaybackPreviewReplacementTests: XCTestCase {
         }
         XCTAssertEqual(model.currentAsset?.id, "two")
         XCTAssertTrue(model.displayedFrame?.image === second)
+    }
+}
+
+@MainActor
+final class ReviewRegressionTests: XCTestCase {
+    func testIdentitySnapshotRefreshesResolvedCloudMappingBeforeLocalIDChanges() {
+        var cache = AlbumCloudIdentityCache()
+        var cloud = "cloud-old"
+        var lookups = 0
+        func lookup(_ id: String) -> String? { lookups += 1; return cloud }
+        cache.beginIdentitySnapshot()
+        XCTAssertEqual(cache.identityForSnapshot("local", lookup: lookup), "cloud-old")
+        cloud = "cloud-new"
+        // Content-only updates retain the snapshot and need no PhotoKit lookup.
+        XCTAssertEqual(cache.identityForSnapshot("local", lookup: lookup), "cloud-old")
+        XCTAssertEqual(lookups, 1)
+        cache.beginIdentitySnapshot()
+        let refreshed = cache.identityForSnapshot("local", lookup: lookup)
+        XCTAssertEqual(refreshed, "cloud-new")
+        let selected = AlbumReference(id: "local", title: "Family", subtype: 2, estimatedCount: 1,
+                                     isSmart: false, isShared: false, cloudIdentifier: refreshed)
+        let replacement = AlbumReference(id: "replacement", title: "Renamed", subtype: 2,
+                                        estimatedCount: 1, isSmart: false, isShared: false)
+        cache.beginIdentitySnapshot()
+        let recovered = AlbumIdentityResolver.resolve(selected, known: [selected], authorization: .authorized,
+            lookup: { $0 == replacement.id ? replacement : nil },
+            cloudID: { cache.identityForSnapshot($0) { _ in cloud } },
+            localID: { $0 == "cloud-new" ? replacement.id : nil }, catalog: [], retained: nil)
+        XCTAssertEqual(recovered?.id, replacement.id)
+        cache.beginIdentitySnapshot()
+        XCTAssertNil(cache.identityForSnapshot("replacement") { _ in nil }, "A failed refresh must not reuse stale identity")
+    }
+
+    func testFallbackIsDisplayedButNextLoadRetriesAndCachesHQ() async throws {
+        for errorFallback in [false, true] {
+            let loader = AssetImageLoader()
+            let preview = UIImage()
+            let hq = UIImage()
+            let key: NSString = "cloud-photo"
+            let request = PhotoImageRequest()
+            var previewCount = 0
+            request.installPreviewHandler { _ in previewCount += 1 }
+            let first = await loader.image(forKey: key) {
+                let image: UIImage = try await withCheckedThrowingContinuation {
+                    request.install($0)
+                    request.deliverPreview(preview)
+                    if errorFallback {
+                        request.finish(PhotoLibraryError.imageUnavailable, preservingPreview: true)
+                    } else {
+                        request.finishUsingPreviewIfNeeded()
+                    }
+                    request.finish(.success(hq)) // Late HQ must not change terminal quality.
+                }
+                return PhotoImageResult(image: image, isDegraded: request.isDegraded)
+            }
+            XCTAssertTrue(first === preview)
+            XCTAssertEqual(previewCount, 1)
+            XCTAssertNil(loader.cache.object(forKey: key))
+            var retries = 0
+            let second = await loader.image(forKey: key) {
+                retries += 1
+                return PhotoImageResult(image: hq, isDegraded: false)
+            }
+            XCTAssertTrue(second === hq)
+            XCTAssertEqual(retries, 1)
+            let cached = await loader.image(forKey: key) {
+                XCTFail("HQ should be cached")
+                return PhotoImageResult(image: preview, isDegraded: true)
+            }
+            XCTAssertTrue(cached === hq)
+        }
+    }
+
+    func testCancelledLoaderDoesNotPublishOrCacheCompletedImage() async {
+        let loader = AssetImageLoader()
+        let key: NSString = "cancelled-photo"
+        let task = Task { @MainActor in
+            await loader.image(forKey: key) {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return PhotoImageResult(image: UIImage(), isDegraded: false)
+            }
+        }
+        let result = await task.value
+        XCTAssertNil(result)
+        XCTAssertNil(loader.cache.object(forKey: key))
+    }
+
+    func testNewCaptionPreferencesAndPresetsRemainNontechnicalAfterRelaunch() {
+        let suite = "Canvas.review-new.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = SettingsStore(defaults: defaults)
+        store.update {
+            $0.overlays.showCaption = true
+            $0.overlays.showLocation = true
+            $0.presets = [CanvasPreset(name: "New", settings: $0)]
+        }
+        let restored = SettingsStore(defaults: defaults)
+        for overlays in [restored.settings.overlays, restored.settings.presets[0].settings.overlays] {
+            XCTAssertEqual(overlays.showFilename, false)
+            XCTAssertEqual(overlays.showCoordinates, false)
+        }
+    }
+
+    func testLegacyCaptionMigrationIsPersistedOnceIncludingDisabledPresets() throws {
+        for enabled in [false, true] {
+            let suite = "Canvas.review-legacy.\(UUID())"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            var legacy = CanvasSettings()
+            legacy.overlays.showCaption = enabled
+            legacy.overlays.showLocation = enabled
+            legacy.overlays.showFilename = nil
+            legacy.overlays.showCoordinates = nil
+            legacy.presets = [CanvasPreset(name: "Legacy", settings: legacy)]
+            defaults.set(try JSONEncoder().encode(legacy), forKey: "canvas.settings.v1")
+            defaults.set(5, forKey: "canvas.settings.schema")
+            let migrated = SettingsStore(defaults: defaults)
+            for overlays in [migrated.settings.overlays, migrated.settings.presets[0].settings.overlays] {
+                XCTAssertEqual(overlays.showFilename, enabled)
+                XCTAssertEqual(overlays.showCoordinates, enabled)
+            }
+            migrated.update {
+                $0.overlays.showCaption = true
+                $0.overlays.showLocation = true
+                $0.presets[0].settings.overlays.showCaption = true
+                $0.presets[0].settings.overlays.showLocation = true
+            }
+            let restored = SettingsStore(defaults: defaults)
+            for overlays in [restored.settings.overlays, restored.settings.presets[0].settings.overlays] {
+                XCTAssertEqual(overlays.showFilename, enabled)
+                XCTAssertEqual(overlays.showCoordinates, enabled)
+            }
+        }
     }
 }

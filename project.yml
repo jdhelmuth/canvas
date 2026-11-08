@@ -73,7 +73,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "1.0.10"
-        CURRENT_PROJECT_VERSION: "77"
+        CURRENT_PROJECT_VERSION: "81"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         UIRequiredDeviceCapabilities:
           - arm64

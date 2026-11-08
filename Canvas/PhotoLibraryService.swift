@@ -726,7 +726,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     private var trackedReferences: [AlbumReference] = []
     private var resolvedReferences: [String: AlbumReference] = [:]
     private var lastPlayableReferences: [String: AlbumReference] = [:]
-    private var cloudIdentities: [String: String] = [:]
+    private var cloudIdentities = AlbumCloudIdentityCache()
     private var identityHistory = AlbumIdentityHistory()
     private var canSaveIdentityHistory = true
     private let identityHistoryKey = "canvas.album-identities.v1"
@@ -766,12 +766,11 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                        isShared: collection.assetCollectionSubtype == .albumCloudShared)
     }
 
-    private func cloudIdentity(for id: String, refresh: Bool = false) -> String? {
-        if !refresh, let cached = cloudIdentities[id] { return cached }
-        if refresh { cloudIdentities.removeValue(forKey: id) }
-        guard case .success(let cloud)? = PHPhotoLibrary.shared().cloudIdentifierMappings(forLocalIdentifiers: [id])[id] else { return nil }
-        cloudIdentities[id] = cloud.stringValue
-        return cloud.stringValue
+    private func cloudIdentity(for id: String) -> String? {
+        cloudIdentities.identityForSnapshot(id) { id in
+            guard case .success(let cloud)? = PHPhotoLibrary.shared().cloudIdentifierMappings(forLocalIdentifiers: [id])[id] else { return nil }
+            return cloud.stringValue
+        }
     }
 
     private func localIdentity(for archived: String) -> String? {
@@ -896,6 +895,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     }
 
     private func refreshAlbumSnapshot(forceRevision: Bool) {
+        cloudIdentities.beginIdentitySnapshot()
         let previousAuthorization = authorization
         authorization = PhotoAuthorizationState(PHPhotoLibrary.authorizationStatus(for: .readWrite))
         let previousAlbums = albums
@@ -923,7 +923,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                         direct[id] = reference
                         return reference
                     },
-                    cloudID: { self.cloudIdentity(for: $0, refresh: previousResolved[original.id] == nil) },
+                    cloudID: { self.cloudIdentity(for: $0) },
                     localID: { self.localIdentity(for: $0) },
                     catalog: result,
                     retained: previousResolved[original.id] ?? lastPlayableReferences[original.id])
@@ -1203,7 +1203,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         targetSize: CGSize,
         contentMode: PHImageContentMode = PhotoLibraryService.displayImageContentMode,
         onPreview: ((UIImage) -> Void)? = nil
-    ) async throws -> UIImage {
+    ) async throws -> PhotoImageResult {
         let request = PhotoImageRequest()
         if let onPreview { request.installPreviewHandler(onPreview) }
         let timeout = Task {
@@ -1212,7 +1212,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         }
         defer { timeout.cancel() }
         let manager = imageManager
-        return try await withTaskCancellationHandler {
+        let image: UIImage = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 request.install(continuation)
                 guard !Task.isCancelled else {
@@ -1244,6 +1244,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         } onCancel: {
             request.finish(.failure(CancellationError()))
         }
+        return PhotoImageResult(image: image, isDegraded: request.isDegraded)
     }
 
     func overlayMetadata(for asset: PHAsset) async -> (caption: String?, placeName: String?) {
@@ -2027,6 +2028,27 @@ enum AssetImageCacheKey {
     }
 }
 
+/// Identity rebuilds must revalidate even a previously resolved local ID.
+/// Content-only refreshes never consult this cache or rebuild identities.
+struct AlbumCloudIdentityCache {
+    private var values: [String: String] = [:]
+
+    mutating func beginIdentitySnapshot() { values.removeAll() }
+
+    mutating func identityForSnapshot(_ id: String, lookup: (String) -> String?) -> String? {
+        if let cached = values[id] { return cached }
+        values[id] = lookup(id)
+        return values[id]
+    }
+
+    mutating func removeAll() { values.removeAll() }
+}
+
+struct PhotoImageResult {
+    let image: UIImage
+    let isDegraded: Bool
+}
+
 @MainActor
 final class AssetImageLoader: ObservableObject {
     // NSCache has no useful default memory budget. A frame can run for days,
@@ -2061,19 +2083,24 @@ final class AssetImageLoader: ObservableObject {
 
     func image(for asset: PHAsset, service: PhotoLibraryService, size: CGSize, onPreview: ((UIImage) -> Void)? = nil) async -> UIImage? {
         let key = AssetImageCacheKey.apple(identifier: asset.localIdentifier, modificationDate: asset.modificationDate, libraryRevision: service.libraryRevision, size: size)
-        if let cached = cache.object(forKey: key) { return cached }
-        do {
-            // Keep the complete source aspect ratio. Canvas performs the
-            // intentional fit/fill crop in LayoutCanvas after loading.
-            // Previews are not cached so a later load still requests HQ.
-            let image = try await service.requestImage(
+        return await image(forKey: key) {
+            try await service.requestImage(
                 for: asset,
                 targetSize: size,
                 contentMode: PhotoLibraryService.displayImageContentMode,
                 onPreview: onPreview
             )
-            store(image, forKey: key)
-            return image
+        }
+    }
+
+    func image(forKey key: NSString, request: () async throws -> PhotoImageResult) async -> UIImage? {
+        if let cached = cache.object(forKey: key) { return cached }
+        do {
+            let result = try await request()
+            guard !Task.isCancelled else { return nil }
+            // Keep degraded fallback visible, but retry HQ on the next load.
+            if !result.isDegraded { store(result.image, forKey: key) }
+            return result.image
         } catch { return nil }
     }
     func image(for item: CanvasMediaItem, service: PhotoLibraryService, size: CGSize, onPreview: ((UIImage) -> Void)? = nil) async -> UIImage? {
@@ -2147,6 +2174,12 @@ final class PhotoImageRequest: @unchecked Sendable {
     private var cancellation: (() -> Void)?
     private var previewHandler: ((UIImage) -> Void)?
     private var previewImage: UIImage?
+    private var degradedResult = false
+    var isDegraded: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return degradedResult
+    }
 
     func install(_ continuation: CheckedContinuation<UIImage, Error>) {
         lock.lock()
@@ -2197,14 +2230,14 @@ final class PhotoImageRequest: @unchecked Sendable {
         lock.lock()
         if let previewImage, result == nil {
             lock.unlock()
-            finish(.success(previewImage))
+            finish(.success(previewImage), preservingPreview: false, isDegraded: true)
             return
         }
         lock.unlock()
         finish(.failure(fallback))
     }
 
-    private func finish(_ result: Result<UIImage, Error>, preservingPreview: Bool) {
+    private func finish(_ result: Result<UIImage, Error>, preservingPreview: Bool, isDegraded: Bool = false) {
         if preservingPreview, case .failure = result {
             finishUsingPreviewIfNeeded()
             return
@@ -2212,6 +2245,7 @@ final class PhotoImageRequest: @unchecked Sendable {
         lock.lock()
         guard self.result == nil else { lock.unlock(); return }
         self.result = result
+        degradedResult = isDegraded
         let continuation = self.continuation
         let cancellation = self.cancellation
         self.continuation = nil
