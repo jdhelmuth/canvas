@@ -111,4 +111,42 @@ final class AlbumAdditionUITests: XCTestCase {
         clean(app); app.terminate()
     }
 
+    func testFirstPortraitRenderPairsDelayedMetadataWithoutSwipe() {
+        continueAfterFailure = true
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-simulator-cleanup"]
+        app.launch(); XCTAssertTrue(app.buttons["fixture-cleanup"].waitForExistence(timeout: 10)); clean(app)
+        app.terminate()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        app.launchArguments = ["--canvas-simulator-album-additions", "--canvas-simulator-portrait-pairing"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["fixture-player-state"].waitForExistence(timeout: 15))
+        wait { self.state(app)["frame"] != "none" }
+        let first = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        first.name = "Synthetic first render before any swipe"; first.lifetime = .keepAlways; add(first)
+        XCTAssertEqual(state(app)["firstGroup"], "2", "The very first publication must contain both portraits, even with an early preview and missing dimensions")
+        guard state(app)["firstGroup"] == "2" else { clean(app); app.terminate(); XCUIDevice.shared.orientation = .portrait; return }
+        XCTAssertEqual(state(app)["index"], "0")
+        let window = app.windows.firstMatch
+        let left = window.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        let right = window.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        right.press(forDuration: 0.05, thenDragTo: left)
+        wait { self.state(app)["index"] == "2" && self.state(app)["group"] == "1" }
+        let single = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        single.name = "Synthetic landscape remains deliberate single"; single.lifetime = .keepAlways; add(single)
+        left.press(forDuration: 0.05, thenDragTo: right)
+        wait { self.state(app)["index"] == "0" && self.state(app)["group"] == "2" }
+        XCUIDevice.shared.orientation = .portrait
+        wait { self.state(app)["group"] == "1" }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        wait { self.state(app)["group"] == "2" }
+        XCUIDevice.shared.press(.home); app.activate()
+        wait { self.state(app)["group"] == "2" }
+        app.terminate(); app.launch()
+        wait { self.state(app)["group"] == "2" }
+        XCTAssertEqual(state(app)["firstGroup"], "2")
+        XCTAssertEqual(state(app)["warning"], "0")
+        clean(app); app.terminate()
+        XCUIDevice.shared.orientation = .portrait
+    }
 }

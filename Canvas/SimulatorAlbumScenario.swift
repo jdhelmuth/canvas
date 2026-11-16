@@ -15,6 +15,7 @@ struct SimulatorAlbumScenario: View {
     private let receiptKey = "canvas.simulator-fixture-cleanup"
     private let activeKey = "canvas.simulator-active-album"
     private let missingKey = "canvas.simulator-missing-album"
+    private var pairingScenario: Bool { ProcessInfo.processInfo.arguments.contains("--canvas-simulator-portrait-pairing") }
     private var recoveryScenario: Bool { ProcessInfo.processInfo.arguments.contains("--canvas-simulator-stuck-recovery") }
 
     var body: some View {
@@ -55,6 +56,25 @@ struct SimulatorAlbumScenario: View {
         }
     }
 
+    private func pairingImage(portrait: Bool, label: String, color: UIColor) -> UIImage {
+        let size = portrait ? CGSize(width: 240, height: 360) : CGSize(width: 480, height: 240)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            color.setFill(); context.fill(CGRect(origin: .zero, size: size))
+            UIColor.white.setStroke(); context.cgContext.setLineWidth(8)
+            context.cgContext.stroke(CGRect(origin: .zero, size: size).insetBy(dx: 12, dy: 12))
+            (label as NSString).draw(at: CGPoint(x: 25, y: 100), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 23), .foregroundColor: UIColor.white])
+        }
+    }
+
+    /// Deterministic provider gap for the disposable mixed-orientation fixture.
+    /// Real PhotoKit pixels and the production player/renderer are still used.
+    static func missingDimensions(_ item: CanvasMediaItem) -> CanvasMediaItem {
+        CanvasMediaItem(id: item.id, source: item.source, kind: item.kind, creationDate: item.creationDate,
+            filename: item.filename, isFavorite: item.isFavorite, pixelWidth: 0, pixelHeight: 0,
+            albumTitle: item.albumTitle, appleAsset: item.appleAsset, localURL: item.localURL,
+            contentHash: item.contentHash, libraryID: item.libraryID)
+    }
+
     private func prepare() async {
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized else {
             status = "Fixture requires simulator Photos authorization"; return
@@ -69,11 +89,17 @@ struct SimulatorAlbumScenario: View {
         }
         do {
             var albumID = "", secondID = "", ids: [String] = []
-            let picture = image()
+            let pictures = pairingScenario ? [pairingImage(portrait: true, label: "PORTRAIT A", color: .systemTeal),
+                pairingImage(portrait: true, label: "PORTRAIT B", color: .systemOrange),
+                pairingImage(portrait: false, label: "LANDSCAPE C", color: .systemIndigo)] : [image(), image(), image()]
             try await write {
                 let request = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: "Canvas disposable addition scenario \(UUID())")
                 albumID = request.placeholderForCreatedAssetCollection.localIdentifier
-                let placeholders = (0..<3).compactMap { _ in PHAssetChangeRequest.creationRequestForAsset(from: picture).placeholderForCreatedAsset }
+                let placeholders = pictures.enumerated().compactMap { index, picture in
+                    let asset = PHAssetChangeRequest.creationRequestForAsset(from: picture)
+                    asset.creationDate = Date(timeIntervalSince1970: 1_700_000_000 + Double(index))
+                    return asset.placeholderForCreatedAsset
+                }
                 ids = placeholders.map(\.localIdentifier)
                 request.addAssets(placeholders as NSArray)
                 if recoveryScenario {
@@ -110,7 +136,9 @@ struct SimulatorAlbumScenario: View {
             store.settingsStore.update {
                 $0.presets = presets
                 $0.hasCompletedOnboarding = true; $0.selectedAlbums = selections
-                $0.queueMode = .shuffle; $0.layout = .single; $0.photoDuration = 600
+                $0.queueMode = pairingScenario ? .albumOrder : .shuffle
+                $0.layout = pairingScenario ? .automatic : .single; $0.photoDuration = 600
+                if pairingScenario { $0.framingMode = .fillZoom }
                 $0.schedules = []; $0.lockControls = false
             }
             store.reconcileAlbumSelections()

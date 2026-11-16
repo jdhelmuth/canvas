@@ -26,6 +26,9 @@ struct PlayerView: View {
     @State private var layoutDraft: OverlayLayouts?
     @State private var selectedOverlay: OverlayBlock = .clock
     @State private var resolvedOverlayDefaults: [OverlayBlock: OverlayPlacement] = [:]
+#if DEBUG && targetEnvironment(simulator)
+    @State private var fixtureFirstGroupCount = 0
+#endif
     @State private var itemActionMessage: String?
     private var isEditingLayout: Bool { layoutDraft != nil }
 
@@ -47,9 +50,12 @@ struct PlayerView: View {
     var body: some View {
         playerWithLifecycle
 #if DEBUG && targetEnvironment(simulator)
+            .onReceive(model.$displayedFrame) { frame in
+                if fixtureFirstGroupCount == 0, let frame { fixtureFirstGroupCount = frame.layoutAssets.count }
+            }
             .overlay(alignment: .bottom) {
                 if ProcessInfo.processInfo.arguments.contains("--canvas-simulator-album-additions") {
-                    Text("queue=\(model.queueCount);frame=\(model.displayedFrame?.id.uuidString ?? "none");seen=\(ShuffleCycleStore().load()?.displayedIDs.count ?? 0);warning=\(playbackStatusMessage == nil ? 0 : 1);checking=\(store.library.checkingAlbums ? 1 : 0);resolved=\(store.library.selectionsAreResolved(store.settings.selectedAlbums) ? 1 : 0);settingsWarning=\(store.library.selectionWarning(for: store.settings.selectedAlbums) == nil ? 0 : 1)")
+                    Text("firstGroup=\(fixtureFirstGroupCount);group=\(model.layoutAssets.count);index=\(model.currentIndex);queue=\(model.queueCount);frame=\(model.displayedFrame?.id.uuidString ?? "none");seen=\(ShuffleCycleStore().load()?.displayedIDs.count ?? 0);warning=\(playbackStatusMessage == nil ? 0 : 1);checking=\(store.library.checkingAlbums ? 1 : 0);resolved=\(store.library.selectionsAreResolved(store.settings.selectedAlbums) ? 1 : 0);settingsWarning=\(store.library.selectionWarning(for: store.settings.selectedAlbums) == nil ? 0 : 1)")
                         .font(.caption2).padding().background(.white).foregroundStyle(.black)
                         .accessibilityIdentifier("fixture-player-state")
                 }
@@ -470,7 +476,7 @@ struct PlayerView: View {
                 LayoutCanvas(
                     images: frame.layoutImages,
                     style: fullscreenLayout,
-                    fit: store.settings.effectiveFramingMode.preservesEntireImage,
+                    fit: frame.preservesIncompletePair || store.settings.effectiveFramingMode.preservesEntireImage,
                     background: MediaBackdropView.neutralFallback,
                     blurredBackground: store.settings.blurBackground,
                     spacing: CGFloat(store.settings.spacing),
@@ -478,7 +484,7 @@ struct PlayerView: View {
                     captureDates: frame.layoutAssets.map(\.creationDate),
                     showCaptureDates: false,
                     captureDateStyle: store.settings.overlays.captureDateStyle ?? .darkBadgeLightText,
-                    framingMode: store.settings.effectiveFramingMode,
+                    framingMode: frame.preservesIncompletePair ? .fitWithBorder : store.settings.effectiveFramingMode,
                     overlaySettings: store.settings.overlays
                 )
                 .frame(width: size.width, height: size.height, alignment: .topLeading)

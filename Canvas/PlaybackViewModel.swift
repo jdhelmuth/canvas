@@ -26,6 +26,7 @@ final class PlaybackViewModel: ObservableObject {
         let transitionSeed: UInt64
         let gestureDirection: Int
         let isLayoutRefresh: Bool
+        var preservesIncompletePair = false
     }
 
     @Published private(set) var isPlaying = true
@@ -42,6 +43,10 @@ final class PlaybackViewModel: ObservableObject {
     private var previewImageLoader: ((CanvasMediaItem, CGSize, @escaping (UIImage) -> Void) async -> UIImage?)?
     private var overlayMetadataLoader: ((CanvasMediaItem) async -> (caption: String?, placeName: String?))?
     private var prefetchImages: (([CanvasMediaItem], CGSize) -> Void)?
+    private var decodedImageSizes: [String: CGSize] = [:]
+    private var companionRetryTask: Task<Void, Never>?
+    private var companionRetryGeneration: Int?
+    private var needsCompanionRepair = false
     private var displayedImageIsPreview = false
     private var sessionActive = true
     private var reloadTask: Task<Void, Never>?
@@ -104,6 +109,7 @@ final class PlaybackViewModel: ObservableObject {
         loadTask?.cancel()
         reloadTask?.cancel()
         retryTask?.cancel()
+        companionRetryTask?.cancel()
     }
 
     func configure(library: PhotoLibraryService, googlePhotos: GooglePhotosService, loader: AssetImageLoader, settings: CanvasSettings) {
@@ -122,6 +128,17 @@ final class PlaybackViewModel: ObservableObject {
         previewImageLoader = { item, size, onPreview in
             await loader.image(for: item, service: library, size: size, onPreview: onPreview)
         }
+#if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--canvas-simulator-portrait-pairing"),
+           let realItems = mediaItems {
+            mediaItems = { realItems($0).map(SimulatorAlbumScenario.missingDimensions) }
+            previewImageLoader = { item, size, onPreview in
+                if let preview = await loader.image(for: item, service: library, size: CGSize(width: 120, height: 120)) { onPreview(preview) }
+                try? await Task.sleep(for: .milliseconds(300))
+                return await loader.image(for: item, service: library, size: size)
+            }
+        }
+#endif
         overlayMetadataLoader = { item in
             if let asset = item.appleAsset {
                 return await library.overlayMetadata(for: asset)
@@ -150,6 +167,10 @@ final class PlaybackViewModel: ObservableObject {
         reloadTask = nil
         retryTask?.cancel()
         retryTask = nil
+        companionRetryTask?.cancel()
+        companionRetryTask = nil
+        needsCompanionRepair = false
+        decodedImageSizes = [:]
         pendingReload = false
         pendingSettings = nil
         pendingQueueRebuild = false
@@ -286,6 +307,14 @@ final class PlaybackViewModel: ObservableObject {
             forceReload: rebuildQueue
         )
 
+        let previousGroupIDs = currentGroupIndices.map { queue[$0].id }
+        let oldItems = Dictionary(queue.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let changedSizes = Set(candidateQueue.compactMap { item -> String? in
+            guard let old = oldItems[item.id], old.pixelWidth != item.pixelWidth || old.pixelHeight != item.pixelHeight else { return nil }
+            return item.id
+        })
+        let candidateIDs = Set(candidateQueue.map(\.id))
+        decodedImageSizes = decodedImageSizes.filter { candidateIDs.contains($0.key) && !changedSizes.contains($0.key) }
         replayingHistory = false
         queue = candidateQueue
         queueCount = queue.count
@@ -313,7 +342,22 @@ final class PlaybackViewModel: ObservableObject {
         }
         waitingForAlbums = false
 
+        if canPreserveFrame && !isRecovering && !pendingFrameReload,
+           !changedSizes.isEmpty, previousGroupIDs != currentGroupIndices.map({ queue[$0].id }) {
+            // The identities survived, but late dimensions changed the group.
+            // Reuse the visible primary and repair its companions in place.
+            pendingLayoutRefresh = true
+            cancelTimer()
+            loadTask?.cancel()
+            loadGeneration &+= 1
+            if playbackAllowed {
+                await loadCurrent(generation: loadGeneration, transitionSeed: 1, gestureDirection: 0)
+                startTimer()
+            }
+            return
+        }
         if canPreserveFrame && !isRecovering && !pendingLayoutRefresh && !pendingFrameReload {
+            if needsCompanionRepair { scheduleCompanionRecovery(generation: loadGeneration) }
             // Keep the current visual frame and its transition route intact;
             // only the future queue may have changed underneath it.
             navigationHistory.reset(to: currentPosition)
@@ -390,9 +434,11 @@ final class PlaybackViewModel: ObservableObject {
                 scheduleLoad(generation: loadGeneration, transitionSeed: 1, gestureDirection: 0)
             } else {
                 startTimer()
+                if needsCompanionRepair { scheduleCompanionRecovery(generation: loadGeneration) }
             }
         } else {
             cancelTimer()
+            companionRetryTask?.cancel()
             retryTask?.cancel()
             loadTask?.cancel()
             if changed { loadGeneration &+= 1 }
@@ -409,9 +455,13 @@ final class PlaybackViewModel: ObservableObject {
         if isPlaying {
             if needsFrameLoad && playbackAllowed {
                 scheduleLoad(generation: loadGeneration, transitionSeed: 1, gestureDirection: 0)
-            } else { startTimer() }
+            } else {
+                startTimer()
+                if needsCompanionRepair { scheduleCompanionRecovery(generation: loadGeneration) }
+            }
         } else {
             cancelTimer()
+            companionRetryTask?.cancel()
             retryTask?.cancel()
         }
     }
@@ -457,7 +507,7 @@ final class PlaybackViewModel: ObservableObject {
         guard currentAsset?.kind == .photo else {
             return advance(direction: direction, gestureDirection: gestureDirection)
         }
-        let imageSizes = queue.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
+        let imageSizes = queue.map { imageSize(for: $0) }
         let singleMediaIndices = Set(queue.indices.filter { PlaybackMediaSurfacePolicy.usesSingleTile(for: queue[$0].kind) })
         let targetSize = canvasSize.width > 0 && canvasSize.height > 0
             ? canvasSize
@@ -715,6 +765,10 @@ final class PlaybackViewModel: ObservableObject {
                     ) else { return }
                     guard self.sessionActive else { return }
                     guard self.displayedFrame?.asset.id != expectedID || self.displayedImageIsPreview else { return }
+                    self.rememberImageSize(preview, for: asset)
+                    // Publish pairs/collages atomically. A primary-only preview
+                    // otherwise renders as a zoomed single before its companion.
+                    guard self.companionCandidates().isEmpty else { return }
                     self.commitDisplayedFrame(
                         asset: asset,
                         images: [preview],
@@ -733,13 +787,13 @@ final class PlaybackViewModel: ObservableObject {
         }
         guard !Task.isCancelled, loadGeneration == generation else { return false }
         if let image {
-            // Build the complete displayed group before publishing HQ. A
-            // degraded preview may already be on screen as a single tile.
+            rememberImageSize(image, for: asset)
+            // Resolve grouping from decoded display sizes before the first
+            // publication; provider dimensions can be missing or stale.
             var loadedImages = [image]
             var loadedAssets = [asset]
-            let companions = PlaybackMediaSurfacePolicy.allowsCompanions(for: asset.kind)
-                ? companionAssets(after: asset)
-                : []
+            let companions = companionCandidates()
+            var missingCompanion = false
             for companion in companions {
                 guard !Task.isCancelled, loadGeneration == generation else { return false }
                 let companionImage: UIImage?
@@ -758,11 +812,19 @@ final class PlaybackViewModel: ObservableObject {
                 }
                 if let companionImage {
                     guard !Task.isCancelled, loadGeneration == generation else { return false }
+                    rememberImageSize(companionImage, for: companion)
                     loadedImages.append(companionImage)
                     loadedAssets.append(companion)
+                } else {
+                    missingCompanion = true
                 }
             }
             guard !Task.isCancelled, loadGeneration == generation else { return false }
+            let selectedIDs = Set(currentGroupIndices.map { queue[$0].id })
+            let selected = zip(loadedAssets, loadedImages).filter { selectedIDs.contains($0.0.id) }
+            loadedAssets = selected.map(\.0)
+            loadedImages = selected.map(\.1)
+            needsCompanionRepair = missingCompanion
             commitDisplayedFrame(
                 asset: asset,
                 images: loadedImages,
@@ -770,8 +832,11 @@ final class PlaybackViewModel: ObservableObject {
                 transitionSeed: transitionSeed,
                 gestureDirection: gestureDirection,
                 isLayoutRefresh: retainedFrame != nil || displayedFrame?.asset.id == expectedID,
-                isPreview: false
+                isPreview: false,
+                preservesIncompletePair: missingCompanion && loadedAssets.count == 1 && isPairLayout
             )
+            if missingCompanion { scheduleCompanionRecovery(generation: generation) }
+            else { companionRetryTask?.cancel() }
             await refreshOverlayMetadata(for: asset, generation: generation)
             return true
         }
@@ -792,7 +857,8 @@ final class PlaybackViewModel: ObservableObject {
         transitionSeed: UInt64,
         gestureDirection: Int,
         isLayoutRefresh: Bool,
-        isPreview: Bool
+        isPreview: Bool,
+        preservesIncompletePair: Bool = false
     ) {
         displayedFrame = DisplayedFrame(
             asset: asset,
@@ -801,7 +867,8 @@ final class PlaybackViewModel: ObservableObject {
             layoutAssets: assets,
             transitionSeed: transitionSeed,
             gestureDirection: gestureDirection,
-            isLayoutRefresh: isLayoutRefresh
+            isLayoutRefresh: isLayoutRefresh,
+            preservesIncompletePair: preservesIncompletePair
         )
         displayedImageIsPreview = isPreview
         if settings.queueMode == .shuffle && !replayingHistory {
@@ -827,13 +894,64 @@ final class PlaybackViewModel: ObservableObject {
         overlayPlaceName = fields.placeName
     }
 
-    private func companionAssets(after asset: CanvasMediaItem) -> [CanvasMediaItem] {
-        guard PlaybackMediaSurfacePolicy.allowsCompanions(for: asset.kind) else { return [] }
-        return currentGroupIndices.dropFirst().compactMap { queue.indices.contains($0) ? queue[$0] : nil }
+    private var targetCanvasSize: CGSize {
+        canvasSize.width > 0 && canvasSize.height > 0 ? canvasSize : UIScreen.main.bounds.size
+    }
+
+    private var isPairLayout: Bool {
+        [.automatic, .portraitPair, .pairHorizontal, .pairVertical].contains(settings.layout)
+    }
+
+    private func imageSize(for item: CanvasMediaItem) -> CGSize {
+        decodedImageSizes[item.id] ?? CGSize(width: item.pixelWidth, height: item.pixelHeight)
+    }
+
+    private func rememberImageSize(_ image: UIImage, for item: CanvasMediaItem) {
+        let size = image.canvasDisplaySize
+        if size.width > 0 && size.height > 0 { decodedImageSizes[item.id] = size }
+    }
+
+    private func companionCandidates() -> [CanvasMediaItem] {
+        guard queue.indices.contains(currentIndex), PlaybackMediaSurfacePolicy.allowsCompanions(for: queue[currentIndex].kind) else { return [] }
+        if isPairLayout {
+            let next = currentIndex + 1
+            guard queue.indices.contains(next), PlaybackMediaSurfacePolicy.allowsCompanions(for: queue[next].kind) else { return [] }
+            let primarySize = imageSize(for: queue[currentIndex])
+            // Probe only the immediate neighbor, never skip an intervening
+            // landscape/video. Its decoded orientation may correct metadata.
+            let possiblePair = PairLayoutResolver.selection(imageSizes: [primarySize, primarySize],
+                canvasSize: targetCanvasSize, requestedLayout: settings.layout)
+            guard possiblePair.indices.count == 2 else { return [] }
+            let nextOrientation = PairLayoutResolver.orientation(for: imageSize(for: queue[next]))
+            guard nextOrientation == .unknown || nextOrientation == PairLayoutResolver.targetOrientation(canvasSize: targetCanvasSize) else { return [] }
+            if settings.queueMode == .shuffle && !replayingHistory && shuffleCycle.displayedIDs.contains(queue[next].id)
+                && !(displayedFrame?.asset.id == queue[currentIndex].id && layoutAssets.contains { $0.id == queue[next].id }) { return [] }
+            return [queue[next]]
+        }
+        return currentGroupIndices.dropFirst().map { queue[$0] }
+    }
+
+    private func scheduleCompanionRecovery(generation: Int) {
+        // Frequent Photos refreshes must not keep postponing a healthy retry.
+        if let companionRetryTask, !companionRetryTask.isCancelled, companionRetryGeneration == generation { return }
+        companionRetryTask?.cancel()
+        guard sessionActive, playbackAllowed, isPlaying, needsCompanionRepair,
+              let id = displayedFrame?.asset.id else { return }
+        companionRetryGeneration = generation
+        companionRetryTask = Task { [weak self, recoveryDelay] in
+            do { try await Task.sleep(for: recoveryDelay) } catch { return }
+            guard let self, self.sessionActive, self.playbackAllowed, self.isPlaying,
+                  self.loadGeneration == generation, self.currentAsset?.id == id,
+                  self.queue.indices.contains(self.currentIndex), self.queue[self.currentIndex].id == id else { return }
+            self.companionRetryTask = nil
+            self.pendingLayoutRefresh = true
+            self.cancelTimer()
+            self.scheduleLoad(generation: generation, transitionSeed: 1, gestureDirection: 0)
+        }
     }
 
     private var currentGroupIndices: [Int] {
-        let imageSizes = queue.map { CGSize(width: $0.pixelWidth, height: $0.pixelHeight) }
+        let imageSizes = queue.map { imageSize(for: $0) }
         let singleMediaIndices = Set(queue.indices.filter { PlaybackMediaSurfacePolicy.usesSingleTile(for: queue[$0].kind) })
         let targetSize = canvasSize.width > 0 && canvasSize.height > 0
             ? canvasSize

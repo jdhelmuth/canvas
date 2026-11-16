@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import UIKit
 import AVFoundation
 @testable import Canvas
@@ -1337,5 +1338,171 @@ final class ShuffleCycleStateTests: XCTestCase {
         await model.refreshLibrary()
         XCTAssertTrue(model.isRecovering)
         XCTAssertFalse(requests.contains(shown!))
+    }
+}
+
+
+@MainActor
+final class InitialPortraitPairingTests: XCTestCase {
+    private func item(_ id: String, width: Int = 100, height: Int = 200) -> CanvasMediaItem {
+        CanvasMediaItem(id: id, source: .applePhotos, kind: .photo, creationDate: nil,
+            filename: "\(id).jpg", isFavorite: false, pixelWidth: width, pixelHeight: height,
+            albumTitle: "Disposable", appleAsset: nil, localURL: nil, contentHash: nil)
+    }
+    private func image(_ size: CGSize = CGSize(width: 100, height: 200)) -> UIImage {
+        UIGraphicsImageRenderer(size: size).image { context in
+            UIColor.systemTeal.setFill(); context.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+    private var settings: CanvasSettings {
+        var value = CanvasSettings(); value.layout = .automatic; value.queueMode = .albumOrder
+        value.photoDuration = 100; value.repeatEnabled = false
+        return value
+    }
+    private func settle(_ condition: () -> Bool) async {
+        for _ in 0..<200 { if condition() { return }; try? await Task.sleep(for: .milliseconds(5)) }
+        XCTFail("Playback did not settle")
+    }
+
+    func testFirstPublishedFrameIncludesPairEvenWhenPrimaryPreviewArrivesEarly() async {
+        let items = [item("portrait-a"), item("portrait-b"), item("landscape", width: 200, height: 100)]
+        let portrait = image()
+        var release: CheckedContinuation<UIImage?, Never>?
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in items },
+            imageLoader: { _, _ in portrait }, previewImageLoader: { _, _, preview in
+                preview(portrait)
+                return await withCheckedContinuation { release = $0 }
+            })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        var groups: [[String]] = []
+        let observation = model.$displayedFrame.compactMap { $0 }.sink { groups.append($0.layoutAssets.map(\.id)) }
+        defer { observation.cancel() }
+        let loading = Task { await model.reload() }
+        await settle { release != nil }
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(groups.isEmpty || groups.allSatisfy { $0 == ["portrait-a", "portrait-b"] }, "A portrait preview must never be published as a cropped single before its pair")
+        release?.resume(returning: portrait)
+        await loading.value
+        XCTAssertEqual(groups.first, ["portrait-a", "portrait-b"])
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["portrait-a", "portrait-b"])
+    }
+
+    func testUnknownDimensionsUseDecodedImagesOnVeryFirstRenderAndBack() async {
+        let items = [item("portrait-a", width: 0, height: 0), item("portrait-b", width: 0, height: 0), item("landscape", width: 200, height: 100)]
+        let portrait = image(), landscape = image(CGSize(width: 200, height: 100))
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in items }, imageLoader: { item, _ in
+            try? await Task.sleep(for: .milliseconds(10))
+            return item.id == "landscape" ? landscape : portrait
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        var groups: [[String]] = []
+        let observation = model.$displayedFrame.compactMap { $0 }.sink { groups.append($0.layoutAssets.map(\.id)) }
+        defer { observation.cancel() }
+        await model.reload()
+        XCTAssertEqual(groups.first, ["portrait-a", "portrait-b"])
+        XCTAssertTrue(model.next()); await settle { model.currentAsset?.id == "landscape" }
+        XCTAssertEqual(model.layoutAssets.count, 1, "Landscape remains a deliberate single")
+        XCTAssertTrue(model.previous()); await settle { model.currentAsset?.id == "portrait-a" }
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["portrait-a", "portrait-b"])
+    }
+
+    func testTemporarilyMissingCompanionRecoversWithoutSwipeOrPrimaryReload() async {
+        let items = [item("portrait-a"), item("portrait-b"), item("landscape", width: 200, height: 100)]
+        let portrait = image()
+        var available = false, primaryRequests = 0
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "portrait-a" { primaryRequests += 1 }
+            return item.id == "portrait-b" && !available ? nil : portrait
+        }, recoveryDelay: .milliseconds(30))
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await model.reload()
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["portrait-a"])
+        XCTAssertFalse(model.isRecovering)
+        available = true
+        await settle { model.layoutAssets.count == 2 }
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["portrait-a", "portrait-b"])
+        XCTAssertEqual(primaryRequests, 1, "Repair companions in place without downloading the primary again")
+        XCTAssertNil(model.errorMessage)
+    }
+    func testLateCompanionMetadataRepairsSameFrameWithoutReconnection() async {
+        var items = [item("a"), item("b", width: 200, height: 100), item("landscape", width: 200, height: 100)]
+        let portrait = image(); var primaryRequests = 0
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "a" { primaryRequests += 1 }; return portrait
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024))
+        await model.reload(); XCTAssertEqual(model.layoutAssets.map(\.id), ["a"])
+        items[1] = item("b")
+        await model.refreshLibrary()
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a", "b"])
+        XCTAssertEqual(primaryRequests, 1)
+        XCTAssertTrue(model.displayedFrame?.isLayoutRefresh == true)
+        XCTAssertTrue(model.next()); await settle { model.currentAsset?.id == "landscape" }
+        XCTAssertTrue(model.previous()); await settle { model.currentAsset?.id == "a" }
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a", "b"], "Swiping back must not be needed to discover this same pair")
+    }
+
+    func testDeliberateSingleDoesNotProbeOrPairUnknownPortraits() async {
+        var value = settings; value.layout = .single
+        let items = [item("a", width: 0, height: 0), item("b", width: 0, height: 0)]
+        let portrait = image(); var requests: [String] = []
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in
+            requests.append(item.id); return portrait
+        })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024)); await model.reload()
+        XCTAssertEqual(requests, ["a"]); XCTAssertEqual(model.layoutAssets.map(\.id), ["a"])
+        XCTAssertFalse(model.displayedFrame?.preservesIncompletePair ?? true)
+    }
+
+    func testCompanionRetryRespectsPauseAndCannotReplaceNavigatedFrame() async {
+        let items = [item("a"), item("b"), item("landscape", width: 200, height: 100)]
+        let portrait = image(), landscape = image(CGSize(width: 200, height: 100))
+        var attempts = 0, available = false
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "b" { attempts += 1; return available ? portrait : nil }
+            return item.id == "landscape" ? landscape : portrait
+        }, recoveryDelay: .milliseconds(30))
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024)); await model.reload()
+        XCTAssertTrue(model.displayedFrame?.preservesIncompletePair == true)
+        model.togglePlaying(); try? await Task.sleep(for: .milliseconds(80)); XCTAssertEqual(attempts, 1)
+        model.togglePlaying(); available = true
+        XCTAssertTrue(model.next()); await settle { model.currentAsset?.id == "landscape" }
+        try? await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["landscape"])
+        XCTAssertEqual(attempts, 1)
+    }
+
+    func testAutomaticAdvanceUsesDecodedPairAsAWhole() async {
+        var value = settings; value.photoDuration = 1
+        let items = [item("a", width: 0, height: 0), item("b", width: 0, height: 0), item("landscape", width: 200, height: 100)]
+        let portrait = image(), landscape = image(CGSize(width: 200, height: 100))
+        let model = PlaybackViewModel(settings: value, mediaItems: { _ in items }, imageLoader: { item, _ in item.id == "landscape" ? landscape : portrait })
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024)); await model.reload()
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a", "b"])
+        for _ in 0..<300 where model.currentAsset?.id != "landscape" { try? await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.currentAsset?.id, "landscape")
+    }
+    func testFrequentLibraryRefreshesDoNotPostponeCompanionRecovery() async {
+        let items = [item("a"), item("b")]; let portrait = image()
+        var available = false, attempts = 0
+        let model = PlaybackViewModel(settings: settings, mediaItems: { _ in items }, imageLoader: { item, _ in
+            if item.id == "b" { attempts += 1; return available ? portrait : nil }; return portrait
+        }, recoveryDelay: .milliseconds(60))
+        defer { model.stop() }
+        model.updateCanvasSize(CGSize(width: 1366, height: 1024)); await model.reload()
+        available = true
+        for _ in 0..<5 {
+            try? await Task.sleep(for: .milliseconds(20)); await model.refreshLibrary()
+        }
+        XCTAssertGreaterThanOrEqual(attempts, 2, "Refresh notifications must not perpetually push back the retry deadline")
+        XCTAssertEqual(model.layoutAssets.map(\.id), ["a", "b"])
+        XCTAssertFalse(model.displayedFrame?.preservesIncompletePair ?? true)
     }
 }
