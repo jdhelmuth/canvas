@@ -6,6 +6,7 @@ import Photos
 @MainActor
 struct SimulatorAlbumScenario: View {
     @EnvironmentObject var store: AppStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var ready = false
     @State private var status = "Preparing"
     @State private var savedCatalog: ((PHFetchResult<PHAssetCollection>) -> [PHAssetCollection])?
@@ -13,6 +14,8 @@ struct SimulatorAlbumScenario: View {
     @State private var savedMembers: ((PHAssetCollection) -> PHFetchResult<PHAsset>)?
     private let receiptKey = "canvas.simulator-fixture-cleanup"
     private let activeKey = "canvas.simulator-active-album"
+    private let missingKey = "canvas.simulator-missing-album"
+    private var recoveryScenario: Bool { ProcessInfo.processInfo.arguments.contains("--canvas-simulator-stuck-recovery") }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -22,10 +25,19 @@ struct SimulatorAlbumScenario: View {
                 HStack {
                     Button("Add batch during gap") { Task { await addBatch() } }.accessibilityIdentifier("fixture-add")
                     Button("Recover") { recover() }.accessibilityIdentifier("fixture-recover")
+                    if recoveryScenario {
+                        Button("Restore Photos reads") { restoreReads(); status = "Reads restored" }
+                            .accessibilityIdentifier("fixture-restore-reads")
+                    }
                     Button("Clean fixtures") { Task { await cleanup() } }.accessibilityIdentifier("fixture-cleanup")
                 }
             }.padding().background(.white).foregroundStyle(.black)
         }.task { await prepare() }
+        .onChange(of: scenePhase) { _, phase in
+            // This diagnostic root replaces RootView; mirror its recovery
+            // lifecycle so foreground tests exercise the production policy.
+            store.library.setRecoveryActive(phase == .active)
+        }
     }
 
     private func write(_ block: @escaping () -> Void) async throws {
@@ -56,7 +68,7 @@ struct SimulatorAlbumScenario: View {
             ready = true; status = "Ready"; return
         }
         do {
-            var albumID = "", ids: [String] = []
+            var albumID = "", secondID = "", ids: [String] = []
             let picture = image()
             try await write {
                 let request = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: "Canvas disposable addition scenario \(UUID())")
@@ -64,24 +76,50 @@ struct SimulatorAlbumScenario: View {
                 let placeholders = (0..<3).compactMap { _ in PHAssetChangeRequest.creationRequestForAsset(from: picture).placeholderForCreatedAsset }
                 ids = placeholders.map(\.localIdentifier)
                 request.addAssets(placeholders as NSArray)
+                if recoveryScenario {
+                    let second = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: "Canvas disposable recovery scenario \(UUID())")
+                    secondID = second.placeholderForCreatedAssetCollection.localIdentifier
+                    second.addAssets(placeholders as NSArray)
+                }
             }
             var receipts = UserDefaults.standard.array(forKey: receiptKey) as? [[String: Any]] ?? []
             receipts.append(["albumID": albumID, "assetIDs": ids])
+            if !secondID.isEmpty { receipts.append(["albumID": secondID, "assetIDs": [String]()]) }
             UserDefaults.standard.set(receipts, forKey: receiptKey)
             UserDefaults.standard.set(albumID, forKey: activeKey)
+            UserDefaults.standard.set(secondID, forKey: missingKey)
             let reference = AlbumReference(id: albumID, title: "Disposable simulator album", subtype: PHAssetCollectionSubtype.albumRegular.rawValue, estimatedCount: 3, isSmart: false, isShared: false)
+            var selections = [reference]
+            var presets: [CanvasPreset] = []
+            if recoveryScenario {
+                let reader = store.library.simulatorReadAccess
+                savedCatalog = reader.catalog; savedCollection = reader.collection; savedMembers = reader.members
+                let hiddenID = secondID, liveCatalog = reader.catalog, liveCollection = reader.collection
+                reader.catalog = { liveCatalog($0).filter { $0.localIdentifier != hiddenID } }
+                reader.collection = { $0 == hiddenID ? nil : liveCollection($0) }
+                // Saved metadata from two versions of the same local album.
+                // Mapping service remains unavailable even after local reads recover.
+                reader.cloudIdentity = { _ in nil }; reader.localIdentity = { _ in nil }
+                var second = AlbumReference(id: secondID, title: "Recovering simulator album", subtype: reference.subtype,
+                    estimatedCount: 3, isSmart: false, isShared: false, cloudIdentifier: "fixture-current-cloud")
+                selections.append(second)
+                second.cloudIdentifier = "fixture-older-cloud"
+                var snapshot = CanvasSettings(); snapshot.selectedAlbums = [second]
+                presets = [CanvasPreset(name: "Older saved identity", settings: snapshot)]
+            }
             store.settingsStore.update {
-                $0.hasCompletedOnboarding = true; $0.selectedAlbums = [reference]
+                $0.presets = presets
+                $0.hasCompletedOnboarding = true; $0.selectedAlbums = selections
                 $0.queueMode = .shuffle; $0.layout = .single; $0.photoDuration = 600
                 $0.schedules = []; $0.lockControls = false
             }
-            store.library.track([reference])
+            store.reconcileAlbumSelections()
             ready = true; status = "Ready"
         } catch { status = "Fixture failed: \(error.localizedDescription)" }
     }
 
     private func addBatch() async {
-        guard let id = UserDefaults.standard.string(forKey: activeKey),
+        guard let id = UserDefaults.standard.string(forKey: recoveryScenario ? missingKey : activeKey),
               let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [id], options: nil).firstObject else { return }
         let reader = store.library.simulatorReadAccess
         if savedCatalog == nil {
@@ -108,11 +146,15 @@ struct SimulatorAlbumScenario: View {
         } catch { status = "Addition failed: \(error.localizedDescription)" }
     }
 
-    private func recover() {
+    private func restoreReads() {
         let reader = store.library.simulatorReadAccess
         if let savedCatalog { reader.catalog = savedCatalog }
         if let savedCollection { reader.collection = savedCollection }
         if let savedMembers { reader.members = savedMembers }
+    }
+
+    private func recover() {
+        restoreReads()
         store.library.refreshAuthorization()
         status = "Recovered"
     }
@@ -129,6 +171,7 @@ struct SimulatorAlbumScenario: View {
             if photos.count > 0 { try await write { PHAssetChangeRequest.deleteAssets(photos) } }
             UserDefaults.standard.removeObject(forKey: receiptKey)
             UserDefaults.standard.removeObject(forKey: activeKey)
+            UserDefaults.standard.removeObject(forKey: missingKey)
             status = "Cleaned"
         } catch { status = "Cleanup failed: \(error.localizedDescription)" }
     }

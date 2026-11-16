@@ -272,13 +272,16 @@ enum AlbumIdentityResolver {
             if savedClouds.count > 1 {
                 // The same still-readable local object can prove which archived
                 // cloud identity is current. Without that proof, keep ambiguity.
-                guard authorization == .authorized, let local = lookup(original.id),
-                      let currentCloud = cloudID(local.id) else { return nil }
+                guard let local = lookup(original.id), local.id == original.id else { return nil }
                 // The existing local collection proves continuity even when
                 // Photos returns a third cloud identity, newer than both the
                 // saved selection and an old preset. Requiring the new value
                 // to be in savedClouds incorrectly hides a readable album.
-                identity.cloudIdentifier = currentCloud
+                // A missing cloud mapping cannot invalidate the exact local
+                // collection. Keep its saved mapping until Photos supplies a
+                // fresh one; never use conflicting clouds to choose another ID.
+                identity.cloudIdentifier = (authorization == .authorized ? cloudID(local.id) : nil)
+                    ?? original.cloudIdentifier
             } else { identity.cloudIdentifier = original.cloudIdentifier ?? savedClouds.first }
         }
         func finish(_ found: AlbumReference, requireCompatibleKind: Bool = true) -> AlbumReference? {
@@ -722,6 +725,12 @@ final class PhotoLibraryReadAccess {
         return cloud.stringValue
     }
     var localIdentity: (String) -> String? = { archived in
+#if DEBUG && targetEnvironment(simulator)
+        // Synthetic cloud strings belong only to the disposable recovery
+        // fixture, including its next launch/cleanup. Never pass them to
+        // PhotoKit, which requires its opaque archived identifier format.
+        if archived.hasPrefix("fixture-") { return nil }
+#endif
         let cloud = PHCloudIdentifier(stringValue: archived)
         guard case .success(let id)? = PHPhotoLibrary.shared().localIdentifierMappings(for: [cloud])[cloud] else { return nil }
         return id
@@ -733,6 +742,9 @@ final class PhotoLibraryReadAccess {
     }
     var collection: (String) -> PHAssetCollection? = {
         PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [$0], options: nil).firstObject
+    }
+    var assets: ([String]) -> PHFetchResult<PHAsset> = {
+        PHAsset.fetchAssets(withLocalIdentifiers: $0, options: PhotoLibraryService.assetFetchOptions(includeHidden: true))
     }
     var members: (PHAssetCollection) -> PHFetchResult<PHAsset> = {
         PHAsset.fetchAssets(in: $0, options: PhotoLibraryService.assetFetchOptions(includeHidden: true))
@@ -835,7 +847,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                 membership = saved
                 membership.beginSession()
                 let ids = Array(Set(saved.records.values.flatMap(\.assetIDs)))
-                PHAsset.fetchAssets(withLocalIdentifiers: ids, options: Self.assetFetchOptions(includeHidden: true))
+                readAccess.assets(ids)
                     .enumerateObjects { asset, _, _ in self.retainedAssets[asset.localIdentifier] = asset }
                 var aliases: [String: [AlbumReference]] = [:]
                 for record in saved.records.values where !record.deleted {
@@ -872,7 +884,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     func selectionWarning(for selected: [AlbumReference]) -> String? {
         if let warning = AlbumSelectionResolution.warning(selected: reconciled(selected), available: Array(resolvedReferences.values),
                                          authorization: authorization, checking: checkingAlbums) { return warning }
-        if selected.contains(where: { membership.records[membershipID(for: $0)]?.pending == true }) {
+        if selected.contains(where: membershipNeedsRecovery) {
             return "Photos is updating selected album contents. Canvas is keeping the last verified photos and will retry automatically."
         }
         return nil
@@ -898,7 +910,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         let apple = selected.filter { $0.source == .applePhotos }
         guard !apple.isEmpty else { return true }
         return authorization.canRead && unavailableSelections(apple).isEmpty
-            && !apple.contains { membership.records[membershipID(for: $0)]?.pending == true }
+            && !apple.contains(where: membershipNeedsRecovery)
     }
 
     func setRecoveryActive(_ active: Bool) {
@@ -971,7 +983,12 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
     }
 
     private var needsRecovery: Bool {
-        hasUnresolvedAlbums || trackedReferences.contains { membership.records[membershipID(for: $0)]?.pending == true }
+        hasUnresolvedAlbums || trackedReferences.contains(where: membershipNeedsRecovery)
+    }
+
+    private func membershipNeedsRecovery(_ reference: AlbumReference) -> Bool {
+        guard let record = membership.records[membershipID(for: reference)], !record.deleted else { return false }
+        return record.pending || (authorization == .authorized && record.assetIDs.contains { retainedAssets[$0] == nil })
     }
 
     private func membershipID(for reference: AlbumReference) -> String {
@@ -1012,6 +1029,21 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                 membership.observe(reference: reference, ids: nil, authoritative: false, generation: membershipGeneration)
             }
         }
+        // A launch-time asset lookup can be partial independently of the album
+        // catalog. Retry the saved, proven IDs, not just collection enumeration.
+        // Only Full Access may restore this durable cache. Limited Access keeps
+        // revalidating its current grant in assets(for:filters:).
+        if authorization == .authorized {
+            let missing = Set(trackedReferences.flatMap { original -> [String] in
+                guard let record = membership.records[membershipID(for: original)], !record.deleted else { return [] }
+                return record.assetIDs.filter { retainedAssets[$0] == nil }
+            })
+            if !missing.isEmpty {
+                readAccess.assets(Array(missing)).enumerateObjects { asset, _, _ in
+                    if missing.contains(asset.localIdentifier) { self.retainedAssets[asset.localIdentifier] = asset }
+                }
+            }
+        }
         persistMembership()
     }
 
@@ -1031,6 +1063,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
         authorization = PhotoAuthorizationState(readAccess.authorization())
         if previousAuthorization != authorization || authorization != .authorized { discardReadableSnapshot() }
         let previousMembership = membership
+        let previousReadableIDs = Set(retainedAssets.keys)
         let previousAlbums = albums
         let previousResolved = resolvedReferences
         var result: [AlbumReference] = []
@@ -1060,7 +1093,13 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
                     localID: { self.localIdentity(for: $0) },
                     catalog: result,
                     retained: previousResolved[original.id] ?? lastPlayableReferences[original.id])
-                if let found, membership.records[found.id]?.deleted != true {
+                if var found, membership.records[found.id]?.deleted != true {
+                    // Selected albums precede preset snapshots in track(). If
+                    // cloud lookup is unavailable, an older preset must not
+                    // overwrite the current selection's saved cloud identity.
+                    if let current = resolved[found.id] {
+                        found = AlbumSelectionResolution.retainingIdentity(current, from: found)
+                    }
                     resolved[original.id] = found
                     resolved[found.id] = found
                     direct[found.id] = found
@@ -1092,7 +1131,7 @@ final class PhotoLibraryService: NSObject, ObservableObject, PHPhotoLibraryChang
             defaults.set(data, forKey: identityHistoryKey)
         }
         albums = result.sorted { $0.title == $1.title ? $0.id < $1.id : $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        if forceRevision || previousAuthorization != authorization || previousAlbums != albums || previousResolved != resolvedReferences || previousMembership != membership {
+        if forceRevision || previousAuthorization != authorization || previousAlbums != albums || previousResolved != resolvedReferences || previousMembership != membership || previousReadableIDs != Set(retainedAssets.keys) {
             libraryRevision += 1
         }
     }

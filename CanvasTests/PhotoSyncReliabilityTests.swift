@@ -247,6 +247,20 @@ final class AlbumRecoveryTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(resolve(oldPreset, known: [result], available: [current])).cloudIdentifier, "third")
     }
 
+    func testReadableLocalAlbumDoesNotRequireCloudServiceToReconcileStalePreset() throws {
+        let current = album("same-local", cloud: "current-cloud")
+        let stalePreset = album("same-local", cloud: "older-cloud")
+        // The local collection exists throughout. Only cloud metadata is
+        // unavailable, as can happen independently of local membership.
+        for access in [PhotoAuthorizationState.authorized, .limited] {
+            let result = try XCTUnwrap(resolve(current, known: [stalePreset], access: access,
+                available: [album("same-local")]))
+            XCTAssertEqual(result.id, current.id)
+            XCTAssertEqual(result.cloudIdentifier, current.cloudIdentifier)
+        }
+        XCTAssertNil(resolve(current, known: [stalePreset], available: [album("other")]))
+    }
+
     func testForegroundRefreshInvalidatesContentWhenAlbumMetadataIsUnchanged() {
         let library = PhotoLibraryService()
         library.setRecoveryActive(false)
@@ -354,7 +368,9 @@ final class AlbumRecoveryTests: XCTestCase {
 
     func testConflictingIdentityHistoryIsNotGuessed() {
         XCTAssertNil(resolve(album("a"), known: [album("b", previous: ["a"]), album("c", previous: ["a"])], available: [album("b"), album("c")]))
-        XCTAssertNil(resolve(album("a", cloud: "first"), known: [album("a", cloud: "other")], available: [album("a")]))
+        // Conflicting archived clouds cannot choose a different local object.
+        // A readable exact local ID is continuity, covered separately below.
+        XCTAssertNil(resolve(album("a", cloud: "first"), known: [album("a", cloud: "other")], available: [album("b"), album("c")], mappings: ["first": "b", "other": "c"]))
     }
 
     func testPickerDonePreservesUnavailableAndExplicitRemovalStillWorks() {

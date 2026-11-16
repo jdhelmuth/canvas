@@ -29,6 +29,12 @@ struct PlayerView: View {
     @State private var itemActionMessage: String?
     private var isEditingLayout: Bool { layoutDraft != nil }
 
+    private var playbackStatusMessage: String? {
+        PlaybackStatusPresentation.message(hasFrame: presentedFrame != nil,
+            selectionWarning: store.library.playbackSelectionWarning(for: store.settings.selectedAlbums),
+            mediaError: model.errorMessage)
+    }
+
     private var isItemActionAlertPresented: Binding<Bool> {
         Binding(
             get: { itemActionMessage != nil },
@@ -43,7 +49,7 @@ struct PlayerView: View {
 #if DEBUG && targetEnvironment(simulator)
             .overlay(alignment: .bottom) {
                 if ProcessInfo.processInfo.arguments.contains("--canvas-simulator-album-additions") {
-                    Text("queue=\(model.queueCount);frame=\(model.displayedFrame?.id.uuidString ?? "none");seen=\(ShuffleCycleStore().load()?.displayedIDs.count ?? 0);warning=\(store.library.playbackSelectionWarning(for: store.settings.selectedAlbums) == nil ? 0 : 1)")
+                    Text("queue=\(model.queueCount);frame=\(model.displayedFrame?.id.uuidString ?? "none");seen=\(ShuffleCycleStore().load()?.displayedIDs.count ?? 0);warning=\(playbackStatusMessage == nil ? 0 : 1);checking=\(store.library.checkingAlbums ? 1 : 0);resolved=\(store.library.selectionsAreResolved(store.settings.selectedAlbums) ? 1 : 0);settingsWarning=\(store.library.selectionWarning(for: store.settings.selectedAlbums) == nil ? 0 : 1)")
                         .font(.caption2).padding().background(.white).foregroundStyle(.black)
                         .accessibilityIdentifier("fixture-player-state")
                 }
@@ -58,14 +64,6 @@ struct PlayerView: View {
             // display. Overlay chrome stays inside the safe area so compact
             // widths keep controls out of the status region and home indicator.
             .canvasPlaybackSystemChrome()
-            .overlay(alignment: .top) {
-                if let warning = store.library.playbackSelectionWarning(for: store.settings.selectedAlbums) {
-                    Label(warning, systemImage: "exclamationmark.triangle")
-                        .font(.callout).foregroundStyle(.white).padding(12)
-                        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
-                        .padding(24).allowsHitTesting(false)
-                }
-            }
             .sheet(isPresented: $showDetails) { detailsSheet }
             .alert("Photos access needed", isPresented: isItemActionAlertPresented) {
                 Button("OK", role: .cancel) { itemActionMessage = nil }
@@ -342,21 +340,14 @@ struct PlayerView: View {
                 }
                 if let presentedFrame {
                     frameLayer(presentedFrame, role: .incoming, in: proxy.size)
-                } else if model.errorMessage != nil {
-                    VStack(spacing: 12) { Image(systemName: "icloud.slash").font(.largeTitle); Text(model.errorMessage ?? "Unavailable").foregroundStyle(.white.opacity(0.8)) }.transition(.opacity)
+                } else if let message = playbackStatusMessage {
+                    VStack(spacing: 12) { Image(systemName: "icloud.slash").font(.largeTitle); Text(message).foregroundStyle(.white.opacity(0.8)) }
+                        .padding(28).multilineTextAlignment(.center).transition(.opacity)
+                        .accessibilityIdentifier("playback-status")
                 } else {
                     ProgressView().tint(.white)
                 }
                 legacyOverlayIfNeeded(in: proxy.size)
-                if model.isRecovering, presentedFrame != nil, let message = model.errorMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.white)
-                        .padding(12)
-                        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 12))
-                        .padding(24)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
 #if DEBUG
                 // A uniform media surface lets UI tests measure the real
                 // dimming layer at display edges without private photo data.

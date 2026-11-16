@@ -69,4 +69,46 @@ final class AlbumAdditionUITests: XCTestCase {
         app.terminate()
         XCTAssertTrue(springboard.wait(for: .runningForeground, timeout: 5))
     }
+    func testCheckingThenSettledGapStaysSilentAndAutomaticallyReconnectsExactAlbum() {
+        continueAfterFailure = true
+        let app = XCUIApplication()
+        app.launchArguments = ["--canvas-simulator-cleanup"]
+        app.launch()
+        XCTAssertTrue(app.buttons["fixture-cleanup"].waitForExistence(timeout: 10)); clean(app)
+        app.terminate()
+        app.launchArguments = ["--canvas-simulator-album-additions", "--canvas-simulator-stuck-recovery"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["fixture-player-state"].waitForExistence(timeout: 15))
+        wait { self.state(app)["queue"] == "3" && self.state(app)["frame"] != "none" }
+        let original = state(app)
+        let checking = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        checking.name = "Synthetic recovery checking phase"; checking.lifetime = .keepAlways; add(checking)
+        app.buttons["fixture-add"].tap()
+        wait { app.staticTexts["fixture-status"].label == "Gap active" }
+        wait({ self.state(app)["checking"] == "0" }, timeout: 20)
+        let settled = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        settled.name = "Synthetic recovery settled phase"; settled.lifetime = .keepAlways; add(settled)
+        XCTAssertEqual(state(app)["frame"], original["frame"])
+        XCTAssertEqual(state(app)["seen"], original["seen"])
+        XCTAssertEqual(state(app)["settingsWarning"], "1")
+        XCTAssertEqual(state(app)["warning"], "0", "Recoverable gaps must not overlay an existing slide")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Selected albums are not currently available")).firstMatch.exists)
+        // This changes only the fake Photos read boundary. No reconnect,
+        // retry button, foreground event, or service refresh is invoked.
+        app.buttons["fixture-restore-reads"].tap()
+        wait({ self.state(app)["queue"] == "7" && self.state(app)["resolved"] == "1" }, timeout: 45)
+        XCTAssertEqual(state(app)["frame"], original["frame"])
+        XCTAssertEqual(state(app)["seen"], original["seen"])
+        XCTAssertEqual(state(app)["settingsWarning"], "0")
+        XCUIDevice.shared.press(.home); app.activate()
+        wait { self.state(app)["queue"] == "7" }
+        XCTAssertEqual(state(app)["warning"], "0")
+        app.terminate(); app.launch()
+        wait { self.state(app)["queue"] == "7" && self.state(app)["frame"] != "none" }
+        XCTAssertEqual(state(app)["warning"], "0")
+        XCTAssertEqual(state(app)["settingsWarning"], "0")
+        XCTAssertGreaterThanOrEqual(Int(state(app)["seen"] ?? "0") ?? 0, Int(original["seen"] ?? "0") ?? 0)
+        clean(app); app.terminate()
+    }
+
 }

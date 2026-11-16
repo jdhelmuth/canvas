@@ -2,6 +2,15 @@ import Foundation
 import UIKit
 import AVFoundation
 
+/// Recovery status belongs in Settings while a usable slide is displayed.
+/// Empty playback still explains permission, selection, and download failures.
+enum PlaybackStatusPresentation {
+    static func message(hasFrame: Bool, selectionWarning: String?, mediaError: String?) -> String? {
+        guard !hasFrame else { return nil }
+        return selectionWarning ?? mediaError
+    }
+}
+
 @MainActor
 final class PlaybackViewModel: ObservableObject {
     /// The media and all of its visible companions are published as one

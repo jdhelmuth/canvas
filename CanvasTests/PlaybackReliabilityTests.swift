@@ -29,6 +29,16 @@ final class PlaybackReliabilityTests: XCTestCase {
         XCTFail("Timed out waiting for playback", file: file, line: line)
     }
 
+    func testRecoveryStatusNeverCoversAnExistingSlideButExplainsEmptyPlayback() {
+        for warning in ["Checking selected albums", "Selected albums unavailable", "Photos access denied", nil] {
+            XCTAssertNil(PlaybackStatusPresentation.message(hasFrame: true, selectionWarning: warning,
+                mediaError: "Photos are temporarily unavailable"))
+        }
+        XCTAssertEqual(PlaybackStatusPresentation.message(hasFrame: false, selectionWarning: "Photos access denied", mediaError: nil), "Photos access denied")
+        XCTAssertEqual(PlaybackStatusPresentation.message(hasFrame: false, selectionWarning: nil, mediaError: "Choose an album"), "Choose an album")
+        XCTAssertNil(PlaybackStatusPresentation.message(hasFrame: false, selectionWarning: nil, mediaError: nil))
+    }
+
     func testUnavailablePrimaryImagesAreSkippedToNextPlayableItem() async {
         let items = [item("missing-a"), item("missing-b"), item("good")]
         var requests: [String] = []

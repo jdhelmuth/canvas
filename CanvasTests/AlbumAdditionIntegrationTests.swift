@@ -153,14 +153,67 @@ final class AlbumAdditionIntegrationTests: XCTestCase {
             library.refreshAuthorization()
             XCTAssertEqual(library.assets(for: [selected], filters: settings.filters).count, 3)
         } catch {
-            try await cleanup(albumID: albumID, assetIDs: createdIDs)
+            cleanup(albumID: albumID, assetIDs: createdIDs)
             throw error
         }
-        try await cleanup(albumID: albumID, assetIDs: createdIDs)
+        cleanup(albumID: albumID, assetIDs: createdIDs)
 #endif
     }
 
-    private func cleanup(albumID: String, assetIDs: [String]) async throws {
+    func testRestartRetriesSavedAssetsWithoutAlbumLookupOrManualReconnect() async throws {
+#if !targetEnvironment(simulator)
+        throw XCTSkip("Disposable Photos fixture is simulator-only")
+#else
+        XCTAssertEqual(PHPhotoLibrary.authorizationStatus(for: .readWrite), .authorized)
+        let suite = "canvas-restoration-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var albumID = "", ids: [String] = []
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32)).image { c in
+            UIColor.systemTeal.setFill(); c.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        }
+        try await change {
+            let album = PHAssetCollectionChangeRequest.creationRequestForAssetCollection(withTitle: suite)
+            albumID = album.placeholderForCreatedAssetCollection.localIdentifier
+            let asset = PHAssetChangeRequest.creationRequestForAsset(from: image).placeholderForCreatedAsset!
+            ids = [asset.localIdentifier]; album.addAssets([asset] as NSArray)
+        }
+        defer { cleanup(albumID: albumID, assetIDs: ids) }
+        let selected = AlbumReference(id: albumID, title: suite, subtype: PHAssetCollectionSubtype.albumRegular.rawValue,
+            estimatedCount: 1, isSmart: false, isShared: false, cloudIdentifier: "fixture-current-cloud")
+        var oldPreset = selected; oldPreset.cloudIdentifier = "fixture-older-cloud"
+        let writingReader = PhotoLibraryReadAccess()
+        writingReader.cloudIdentity = { _ in nil }; writingReader.localIdentity = { _ in nil }
+        let writer = PhotoLibraryService(defaults: defaults, readAccess: writingReader)
+        writer.track([selected, oldPreset]); writer.setRecoveryActive(false)
+        XCTAssertEqual(writer.assets(for: [selected], filters: CanvasFilters()).count, 1)
+        XCTAssertEqual(writer.reconciled([selected, oldPreset]), [selected], "An old preset must not overwrite the current saved cloud identity")
+        let reader = PhotoLibraryReadAccess()
+        reader.cloudIdentity = { _ in nil }; reader.localIdentity = { _ in nil }
+        let liveAssets = reader.assets
+        reader.catalog = { _ in [] }; reader.collection = { _ in nil }
+        reader.assets = { _ in PHAsset.fetchAssets(withLocalIdentifiers: [], options: nil) }
+        let restarted = PhotoLibraryService(defaults: defaults, readAccess: reader)
+        restarted.track([selected])
+        defer { restarted.setRecoveryActive(false) }
+        XCTAssertTrue(restarted.assets(for: [selected], filters: CanvasFilters()).isEmpty)
+        let revision = restarted.libraryRevision
+        // Photos becomes readable without emitting a notification. Do not
+        // reconnect, retrack, or explicitly refresh the service.
+        reader.assets = liveAssets
+        for _ in 0..<100 {
+            if restarted.assets(for: [selected], filters: CanvasFilters()).count == 1 { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(restarted.assets(for: [selected], filters: CanvasFilters()).count, 1)
+        XCTAssertGreaterThan(restarted.libraryRevision, revision, "Restored readable assets must wake the player")
+        XCTAssertNil(restarted.playbackSelectionWarning(for: [selected]))
+        XCTAssertNotNil(restarted.selectionWarning(for: [selected]), "Settings must still explain the unresolved album catalog")
+        XCTAssertEqual(restarted.reconciled([selected]), [selected])
+#endif
+    }
+
+    private func cleanup(albumID: String, assetIDs: [String]) {
         // PhotoKit deletion prompts require a UI runner. Preserve an exact
         // receipt for the simulator-only UI cleanup flow; never match names.
         let key = "canvas.simulator-fixture-cleanup"
