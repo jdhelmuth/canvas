@@ -807,10 +807,15 @@ final class FullShuffleTests: XCTestCase {
         XCTAssertFalse(model.next())
         await model.refreshLibrary()
         XCTAssertTrue(model.isPlaying, "Partial coverage must not complete a non-repeating slideshow")
+        let heldFrame = model.displayedFrame?.id
         complete = true
         await model.refreshLibrary()
-        XCTAssertNotEqual(model.currentAsset?.id, first)
+        XCTAssertEqual(model.currentAsset?.id, first, "Recovery must not interrupt the held frame")
+        XCTAssertEqual(model.displayedFrame?.id, heldFrame)
         XCTAssertTrue(model.isPlaying)
+        XCTAssertTrue(model.next())
+        await settle(model, after: heldFrame)
+        XCTAssertNotEqual(model.currentAsset?.id, first)
         XCTAssertFalse(model.next())
         XCTAssertFalse(model.isPlaying, "Stop only after every selected album was available")
     }

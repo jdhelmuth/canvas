@@ -40,6 +40,15 @@ struct PlayerView: View {
 
     var body: some View {
         playerWithLifecycle
+#if DEBUG && targetEnvironment(simulator)
+            .overlay(alignment: .bottom) {
+                if ProcessInfo.processInfo.arguments.contains("--canvas-simulator-album-additions") {
+                    Text("queue=\(model.queueCount);frame=\(model.displayedFrame?.id.uuidString ?? "none");seen=\(ShuffleCycleStore().load()?.displayedIDs.count ?? 0);warning=\(store.library.playbackSelectionWarning(for: store.settings.selectedAlbums) == nil ? 0 : 1)")
+                        .font(.caption2).padding().background(.white).foregroundStyle(.black)
+                        .accessibilityIdentifier("fixture-player-state")
+                }
+            }
+#endif
     }
 
     private var playerChrome: some View {
@@ -50,7 +59,7 @@ struct PlayerView: View {
             // widths keep controls out of the status region and home indicator.
             .canvasPlaybackSystemChrome()
             .overlay(alignment: .top) {
-                if let warning = store.library.selectionWarning(for: store.settings.selectedAlbums) {
+                if let warning = store.library.playbackSelectionWarning(for: store.settings.selectedAlbums) {
                     Label(warning, systemImage: "exclamationmark.triangle")
                         .font(.callout).foregroundStyle(.white).padding(12)
                         .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))

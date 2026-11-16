@@ -259,7 +259,7 @@ final class PlaybackViewModel: ObservableObject {
             ? (shuffleCycle.lastGroupIDs.first(where: { id in candidateQueue.contains { $0.id == id } })
                 ?? candidateQueue.last?.id) : nil
         let resumeID = settings.queueMode == .shuffle
-            ? ((isRecovering || waitingForAlbums ? nil : preservedID) ?? shuffleCycle.pendingIDs().first ?? completedFrameID)
+            ? ((isRecovering || (waitingForAlbums && displayedFrame == nil) ? nil : preservedID) ?? shuffleCycle.pendingIDs().first ?? completedFrameID)
             : identityToPreserve
         // Reopening a finished non-repeating slideshow shows its final photo
         // paused, rather than leaving an empty player waiting for an image.
@@ -274,7 +274,7 @@ final class PlaybackViewModel: ObservableObject {
             queueCurrentAssetID: queueCurrentAssetID,
             displayedGroupIDs: displayedFrame?.layoutAssets.map(\.id) ?? [],
             candidateQueue: candidateQueue,
-            forceReload: rebuildQueue || waitingForAlbums
+            forceReload: rebuildQueue
         )
 
         replayingHistory = false
@@ -299,7 +299,7 @@ final class PlaybackViewModel: ObservableObject {
             waitingForAlbums = true
             pendingFrameReload = false
             if !canPreserveFrame { displayedFrame = nil }
-            errorMessage = "Waiting for selected albums. Your shuffle progress is saved."
+            errorMessage = displayedFrame == nil ? "Waiting for selected albums. Your shuffle progress is saved." : nil
             return
         }
         waitingForAlbums = false
@@ -348,7 +348,15 @@ final class PlaybackViewModel: ObservableObject {
     /// restart only the current timer. Selection and layout edits reconcile
     /// the shuffle cycle and reload companions without forgetting coverage.
     func updateSettings(_ updatedSettings: CanvasSettings) async {
-        let requiresReload = settings.selectedAlbums != updatedSettings.selectedAlbums
+        // Photo counts, titles, and cloud mapping refreshes are metadata, not
+        // a new user selection. Rebuilding for those changes consumes another
+        // frame whenever an album gains a photo. Proven local-ID migrations
+        // likewise retain the same effective selection.
+        let sameSelection = settings.selectedAlbums.count == updatedSettings.selectedAlbums.count
+            && zip(settings.selectedAlbums, updatedSettings.selectedAlbums).allSatisfy { old, new in
+                old.source == new.source && (old.id == new.id || new.previousLocalIdentifiers.contains(old.id))
+            }
+        let requiresReload = !sameSelection
             || settings.filters != updatedSettings.filters
             || settings.queueMode != updatedSettings.queueMode
             || settings.recentAvoidance != updatedSettings.recentAvoidance
@@ -543,7 +551,7 @@ final class PlaybackViewModel: ObservableObject {
             guard libraryIsComplete?(settings) ?? true else {
                 waitingForAlbums = true
                 cancelTimer()
-                errorMessage = "Waiting for selected albums. Your shuffle progress is saved."
+                errorMessage = displayedFrame == nil ? "Waiting for selected albums. Your shuffle progress is saved." : nil
                 return false
             }
             guard settings.repeatEnabled else {

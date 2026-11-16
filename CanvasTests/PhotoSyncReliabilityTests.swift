@@ -259,7 +259,12 @@ final class AlbumRecoveryTests: XCTestCase {
     }
 
     func testExplicitPhotosRetryInvalidatesContentWithoutChangingSavedSelections() {
-        let library = PhotoLibraryService()
+        let reader = PhotoLibraryReadAccess()
+        // Synthetic cloud IDs are intentionally opaque to this test. Passing
+        // "saved-cloud" to PhotoKit under Full Access raises an ObjC exception.
+        reader.catalog = { _ in [] }; reader.collection = { _ in nil }
+        reader.cloudIdentity = { _ in nil }; reader.localIdentity = { _ in nil }
+        let library = PhotoLibraryService(defaults: .standard, readAccess: reader)
         let saved = [album("unavailable", cloud: "saved-cloud")]
         library.track(saved)
         library.setRecoveryActive(false)

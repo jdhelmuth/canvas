@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		045AD57B5DA98AB633475E67 /* PhotoLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B380B71F82FF74DEE95762 /* PhotoLibraryService.swift */; };
+		04ACA1CCE0B7FABA0ED4E35D /* AlbumMembershipSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F2874D5CD322BDDAD986AE /* AlbumMembershipSnapshot.swift */; };
 		06ADCAA0434B61EA4864CFB7 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2571C01CD7FBD18E30621F77 /* Models.swift */; };
 		0B3756741CA77517FB2BE21B /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 912AC961545646EAF400FA11 /* PlayerView.swift */; };
 		144A52B4B2038CF78818C0B6 /* delicate-arch.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 319981DAE22A4CCDC3F151E7 /* delicate-arch.jpg */; };
@@ -51,22 +52,26 @@
 		9E6624AC3B1C5E0F6F4634B5 /* MediaRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3BE561BC20E80C66A71AADD /* MediaRenderer.swift */; };
 		A3F473E66902055E2D772C63 /* yellowstone-lake.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 2B188B2A2FC43066B602DD7D /* yellowstone-lake.jpg */; };
 		A4E9F5EC503E86CD48F8BDB9 /* montreal-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = C033CD8E62F86C12A379B0A0 /* montreal-night.jpg */; };
+		A67D33E9077839AE3C3D7173 /* AlbumAdditionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1ACA6881DEA71CEEFCA5F7 /* AlbumAdditionUITests.swift */; };
 		B3CBDFF72A635B17B87DEB77 /* PhotoSyncReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58521AF67DE3FC4CE4086A1B /* PhotoSyncReliabilityTests.swift */; };
 		B6A836F73CA36D222031AB78 /* san-francisco-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 070F843F21B9DC80E6153E97 /* san-francisco-night.jpg */; };
 		B720295E345F7E5A480E5F2E /* LayoutCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */; };
 		B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */; };
 		BE9612A953DC29173D6A7B28 /* olympic-twilight.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 175EAB8D8D8208BCF80B4FB4 /* olympic-twilight.jpg */; };
+		BFF799E48C4161AE04D58044 /* AlbumAdditionIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBAEBD6B063FB5EFF6F872C8 /* AlbumAdditionIntegrationTests.swift */; };
 		C5FD500D9F843C3796FD0F48 /* OverlayLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5A2A279EF17ABEEF38BE1C /* OverlayLayout.swift */; };
 		C6C75FBDD785B60DB5DC09C3 /* olympic-sea-stacks.jpg in Resources */ = {isa = PBXBuildFile; fileRef = F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */; };
 		C84E1E6614EBDF510752F72D /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 141DE4CA1F3AAFF208D74F5E /* RootView.swift */; };
 		D0BA5FE9A8CFB8F883789D66 /* WeatherReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 658228CE8B3B29DF87728805 /* WeatherReliabilityTests.swift */; };
 		D65E0406CF9A5E4050EF8F11 /* lagoon-nebula.jpg in Resources */ = {isa = PBXBuildFile; fileRef = BD0B9017CE22F3F5F7E95242 /* lagoon-nebula.jpg */; };
 		D7EC0C38F8A9BC5F40863EDA /* los-angeles-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 913195214E517C663AB0086C /* los-angeles-night.jpg */; };
+		DA39D53CCBBEDE0921FABE8A /* AlbumMembershipSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37042D073C9438261B81E26D /* AlbumMembershipSnapshotTests.swift */; };
 		DBE9FA74FB00F8B5DD6047D0 /* whirlpool-galaxy.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 032B6D801002B79240A16AD8 /* whirlpool-galaxy.jpg */; };
 		E35A46222E562C0934EB7C55 /* PlaybackViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E2895031A481ABFE0EB164 /* PlaybackViewModel.swift */; };
 		E385175AE9768A27384FCF14 /* national-mall.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 00D23C9A88C331D2A4E2B56D /* national-mall.jpg */; };
 		E9ED90AD8A282FBF6397F088 /* akpatok-island.jpg in Resources */ = {isa = PBXBuildFile; fileRef = D52EB493A85D234721E4DFB2 /* akpatok-island.jpg */; };
 		EC7A9E1D177CC5FE1025A20A /* BundledPhotoLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */; };
+		FBE86D588E42851D94838D88 /* SimulatorAlbumScenario.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DF5DD73912498ACDA1F122 /* SimulatorAlbumScenario.swift */; };
 		FD03977AA8C94209CA484065 /* tokyo-night.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 13109BE567BBD27D10450F1D /* tokyo-night.jpg */; };
 /* End PBXBuildFile section */
 
@@ -92,6 +97,7 @@
 		032B6D801002B79240A16AD8 /* whirlpool-galaxy.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "whirlpool-galaxy.jpg"; sourceTree = "<group>"; };
 		070F843F21B9DC80E6153E97 /* san-francisco-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "san-francisco-night.jpg"; sourceTree = "<group>"; };
 		09B914DC989141AA2940C250 /* QueueService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueService.swift; sourceTree = "<group>"; };
+		0A1ACA6881DEA71CEEFCA5F7 /* AlbumAdditionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumAdditionUITests.swift; sourceTree = "<group>"; };
 		0A7020D4D196010D78B427FE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0B37A8C019E32CCFD8ADFF86 /* smoky-forest.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "smoky-forest.jpg"; sourceTree = "<group>"; };
 		0EEC5A042F199B16C1AF7320 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -108,12 +114,14 @@
 		2DE19BC26F5FEF6B30047BB7 /* chicago-night.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "chicago-night.jpg"; sourceTree = "<group>"; };
 		2F4D36887B9C8FFBA82C04D3 /* yosemite-falls.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "yosemite-falls.jpg"; sourceTree = "<group>"; };
 		319981DAE22A4CCDC3F151E7 /* delicate-arch.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "delicate-arch.jpg"; sourceTree = "<group>"; };
+		37042D073C9438261B81E26D /* AlbumMembershipSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumMembershipSnapshotTests.swift; sourceTree = "<group>"; };
 		393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledPhotoLibrary.swift; sourceTree = "<group>"; };
 		3AE73C5E036380DA10A1DAE8 /* CanvasApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasApp.swift; sourceTree = "<group>"; };
 		3BC027B1915975701C7AD946 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		3D4CC0D3F2F06FD410A3D92F /* PlaybackReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackReliabilityTests.swift; sourceTree = "<group>"; };
 		3E55871F1C2D83E54A6E27AB /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4B48EF22BA55605E981434FF /* gateway-arch.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "gateway-arch.jpg"; sourceTree = "<group>"; };
+		50DF5DD73912498ACDA1F122 /* SimulatorAlbumScenario.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatorAlbumScenario.swift; sourceTree = "<group>"; };
 		58521AF67DE3FC4CE4086A1B /* PhotoSyncReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoSyncReliabilityTests.swift; sourceTree = "<group>"; };
 		5BA999A7E935189FDA6820EE /* independence-hall.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "independence-hall.jpg"; sourceTree = "<group>"; };
 		5CCF4022578701A33BBB2E24 /* CanvasUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasUITests.swift; sourceTree = "<group>"; };
@@ -147,10 +155,12 @@
 		D52EB493A85D234721E4DFB2 /* akpatok-island.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "akpatok-island.jpg"; sourceTree = "<group>"; };
 		D538026C43233FA9E90BF233 /* FrameExperienceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameExperienceTests.swift; sourceTree = "<group>"; };
 		D8C9DE030785099CD68185CC /* golden-gate.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "golden-gate.jpg"; sourceTree = "<group>"; };
+		DBAEBD6B063FB5EFF6F872C8 /* AlbumAdditionIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumAdditionIntegrationTests.swift; sourceTree = "<group>"; };
 		DCCDB40A53D4B9937B3E4AF9 /* kenai-glacier.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "kenai-glacier.jpg"; sourceTree = "<group>"; };
 		DE9F782B9C9FF65A0127532C /* LayoutCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutCanvas.swift; sourceTree = "<group>"; };
 		DF2432B618D52CCFB579DBDE /* GooglePhotosService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GooglePhotosService.swift; sourceTree = "<group>"; };
 		E0B380B71F82FF74DEE95762 /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
+		E8F2874D5CD322BDDAD986AE /* AlbumMembershipSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumMembershipSnapshot.swift; sourceTree = "<group>"; };
 		EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasTests.swift; sourceTree = "<group>"; };
 		F165A3DAA247EA7018EFEB95 /* van-gogh-from-space.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "van-gogh-from-space.jpg"; sourceTree = "<group>"; };
 		F730FEE1C7CE0A133930949E /* olympic-sea-stacks.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "olympic-sea-stacks.jpg"; sourceTree = "<group>"; };
@@ -170,6 +180,7 @@
 		1317D8F5B65571627C8ADCA1 /* Canvas */ = {
 			isa = PBXGroup;
 			children = (
+				E8F2874D5CD322BDDAD986AE /* AlbumMembershipSnapshot.swift */,
 				887B3465A4360F74E0FDB3C4 /* AudioService.swift */,
 				393E5580716FD39150E4FBEB /* BundledPhotoLibrary.swift */,
 				21E28B3B120D9AC1C038CCC8 /* Canvas.entitlements */,
@@ -190,6 +201,7 @@
 				09B914DC989141AA2940C250 /* QueueService.swift */,
 				141DE4CA1F3AAFF208D74F5E /* RootView.swift */,
 				0EEC5A042F199B16C1AF7320 /* SettingsView.swift */,
+				50DF5DD73912498ACDA1F122 /* SimulatorAlbumScenario.swift */,
 				5DFA6B7CA8F0D64D1D44019A /* UIComponents.swift */,
 				3BC027B1915975701C7AD946 /* WeatherService.swift */,
 				3589B64B6D46911957B9AADE /* Resources */,
@@ -209,6 +221,7 @@
 		5740F2B545AA3E042FB2D3A2 /* CanvasUITests */ = {
 			isa = PBXGroup;
 			children = (
+				0A1ACA6881DEA71CEEFCA5F7 /* AlbumAdditionUITests.swift */,
 				5CCF4022578701A33BBB2E24 /* CanvasUITests.swift */,
 			);
 			path = CanvasUITests;
@@ -228,6 +241,8 @@
 		65B125DECB83636404DDF309 /* CanvasTests */ = {
 			isa = PBXGroup;
 			children = (
+				DBAEBD6B063FB5EFF6F872C8 /* AlbumAdditionIntegrationTests.swift */,
+				37042D073C9438261B81E26D /* AlbumMembershipSnapshotTests.swift */,
 				EF4F245FA6CAD8CAAE6DF3F2 /* CanvasTests.swift */,
 				D538026C43233FA9E90BF233 /* FrameExperienceTests.swift */,
 				B10FCC22ED863C3617885FEE /* OverlayLayoutTests.swift */,
@@ -452,6 +467,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A67D33E9077839AE3C3D7173 /* AlbumAdditionUITests.swift in Sources */,
 				981C2B32F2EF1F3DCDE687FA /* CanvasUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -460,6 +476,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04ACA1CCE0B7FABA0ED4E35D /* AlbumMembershipSnapshot.swift in Sources */,
 				844F92EC8939ABFAFF357BFB /* AudioService.swift in Sources */,
 				EC7A9E1D177CC5FE1025A20A /* BundledPhotoLibrary.swift in Sources */,
 				332C5C3DD86D1CE3C802F7C9 /* CanvasApp.swift in Sources */,
@@ -477,6 +494,7 @@
 				829CBC486C99D59F2F823C1C /* QueueService.swift in Sources */,
 				C84E1E6614EBDF510752F72D /* RootView.swift in Sources */,
 				7BF01F5D2AA2E7C001D60FA8 /* SettingsView.swift in Sources */,
+				FBE86D588E42851D94838D88 /* SimulatorAlbumScenario.swift in Sources */,
 				2217263011C962ED34E70955 /* UIComponents.swift in Sources */,
 				1C6035F68035422F3FCB0F6E /* WeatherService.swift in Sources */,
 			);
@@ -486,6 +504,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BFF799E48C4161AE04D58044 /* AlbumAdditionIntegrationTests.swift in Sources */,
+				DA39D53CCBBEDE0921FABE8A /* AlbumMembershipSnapshotTests.swift in Sources */,
 				B99357FF66CCDB247F596EF0 /* CanvasTests.swift in Sources */,
 				58CE70F5E268367EF0F24ECA /* FrameExperienceTests.swift in Sources */,
 				5A4569FBE29FD5340CDD087C /* OverlayLayoutTests.swift in Sources */,
